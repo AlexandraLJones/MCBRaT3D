@@ -1,0 +1,10 @@
+*.txt
+*.o
+*.dom
+*.error
+*.output
+*.nml
+*pat
+*.out
+*.deck
+*.readme
