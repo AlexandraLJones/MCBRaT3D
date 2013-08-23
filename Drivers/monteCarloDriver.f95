@@ -185,12 +185,12 @@ program monteCarloDriver
 
     if (nMu >= 1 .and. nPhi >= 1) then
     allocate(mus(nMu), phis(nPhi))
-    mus = thetaFill(1)+((/(REAL(N), N=0, nPhi-1)/))*thetaFill(3) 
+    mus = thetaFill(1)+((/(REAL(N), N=0, nMu-1)/))*thetaFill(3) 
 !     FORALL (i=0:nMu-1)
 !        mus(i)=thetaFill(1) + (i*thetaFill(3))
 !     END FORALL
       mus = cos(Pi/180. * mus)
-    phis= phiFill(1)  +((/(REAL(N),N=0,nMu-1)/)*phiFill(3)) 
+    phis= phiFill(1)  +((/(REAL(N),N=0,nPhi-1)/)*phiFill(3)) 
 !     FORALL (i=0:nPhi-1)
 !        phis(i)=phiFill(1) + (i*phiFill(3))
 !     END FORALL
