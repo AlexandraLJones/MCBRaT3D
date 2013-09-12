@@ -1,5 +1,5 @@
-# $Revision: 19 $, $Date: 2009-04-19 18:27:41 +0100 (Sun, 19 Apr 2009) $
-# $URL: http://i3rc-monte-carlo-model.googlecode.com/svn/trunk/Makefile $
+
+
 
 ## MUST SET VARIABLES 
 ## I3RCDIR and MPIDIR to run 
@@ -34,9 +34,9 @@ Libs        =
 
 #### Compiler-specific entries (may override marcos above) 
 
-# Macros are available for ifort, g95, xlf, absoft
+# Macros are available for ifort, g95, xlf, absoft, ftn
  compiler=ftn
- debug=no
+ debug=yes
 
 ifeq (${compiler},ftn)
 #   fortran compiler on Blue Waters

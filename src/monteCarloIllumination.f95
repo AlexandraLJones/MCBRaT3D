@@ -284,7 +284,10 @@ contains
 !            test=getRandomReal(randomNumbers)
 !PRINT *, 'i=', i, ' atms_rand=', test 
 !            photons%solarMu(i) = 1-(2.*test)
+          DO
             photons%solarMu(i) = 1-(2.*getRandomReal(randomNumbers))    ! This formula is from section 10.5 of '3D radiative transfer in cloudy atmospheres'. These angles will stay the same...truly random numbers, since LW emission is isotropic. But the Mu no longer has to be negative. The name "solarMu" should really just be "sourceMu" 
+            if(abs(photons%solarMu(i)) > 2 * tiny (photons%solarMu(i)))exit  ! This ensures that there is some vertical component to the photon trajectory, so the photon doesn't get permanently stuck in the layer it's initialized in
+          END DO
             photons%solarAzimuth(i) = getRandomReal(randomNumbers) * 2. * acos(-1.)
             if (numberOfPhotons < numberOfAtmsPhotons)exit
 !           end do
@@ -301,7 +304,10 @@ contains
 !        test = getRandomReal(randomNumbers)
 !PRINT *, 'i=', i, ' sfc_rand=', test
 !         photons%solarMu(     i) = sqrt(test)
+       DO
         photons%solarMu(     i) = sqrt(getRandomReal(randomNumbers))    ! This formula is from section 10.5 of '3D radiative trasnfer in cloudy atmospheres'. These angles will stay the same...truly random numbers, since LW emission is isotropic. But the Mu has to be positive for a sfc source. The name "solarMu" should really just be "sourceMu"
+        if(abs(photons%solarMu(i)) > 2 * tiny (photons%solarMu(i)))exit  ! This ensures that there is some vertical component to the photon trajectory, so the photon doesn't get permanently stuck in the lowest layer. this is especially bad when there is no atmospheric extinction because then the photon will never leave the domain or hit the surface or become extinct. Thus we enter an infinite loop
+       END DO
         photons%solarAzimuth(i) = getRandomReal(randomNumbers) * 2. * acos(-1.)
       end do  !loop over i
         photons%zPosition(numberOfAtmsPhotons+1:numberOfPhotons) = 0.0 ! must be from the sfc. Make sure this value makes sense for how the position is interpretted
