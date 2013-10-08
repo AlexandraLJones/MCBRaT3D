@@ -211,7 +211,7 @@ contains
   end function newPhotonStream_Spotlight
 
 !-------------------------------------------------------------------------------------------
-  function newPhotonStream_LWemission(numberOfPhotons, atms_photons, voxel_weights, col_weights, level_weights, nx, ny, nz, randomNumbers, status) result(photons)
+  function newPhotonStream_LWemission(numberOfPhotons, atms_photons, voxel_weights, col_weights, level_weights, nx, ny, nz, randomNumbers, status, option1) result(photons)
     ! Create a set of emitted photons with random initial azimuth, random 
     ! mus, and random x,y,z location within the domain. This is the LW source from the atmosphere
     ! and surface. The x,y,z locations are weighted based on the power emitted 
@@ -228,12 +228,15 @@ contains
     real*8, dimension(nx,ny,nz), intent(in)         :: voxel_weights
     real*8, dimension(ny,nz), intent(in)         :: col_weights
     real*8, dimension(nz), intent(in)         :: level_weights
+    integer, dimension(nx,ny,nz), optional, intent(out)   :: option1
+
     ! Local variables
     integer :: i, numberOfAtmsPhotons, startPhoton,  ii, ij, ik
     real    :: RN!, test
 !    real, dimension(0:nx*ny*nz)                      :: temp1, temp2
     
-   
+    if(present(option1))option1=0
+
     ! Checks
     if(numberOfPhotons <= 0) &
       call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
@@ -273,6 +276,10 @@ contains
             ENDDO
 
 !PRINT *, RN, ii, ij, ik
+!write(16,"(I5 ,2X, E30.20)") i, voxel_weights(ii,ij,ik)-RN
+ if(present(option1))then
+    option1(ii,ij,ik)=option1(ii,ij,ik)+1
+ end if 
 
             photons%zPosition(i) = ((ik-1)*(1.0)/nz) + (getRandomReal(randomNumbers)/nz) ! The first term represents the fractional position of the layer bottom in the column, such that ik=1 corresponds to a position of 0. The second term respresents the position within the layer.
             if(ik .eq. 1 .and. photons%zPosition(i) .eq. 0.) photons%zPosition(i)=0.+spacing(1.0)
@@ -436,18 +443,24 @@ contains
 
            totalAbsCoef=cumExt(ix,iy,iz)*(1-sum(ssas(ix,iy,iz,:)))
            voxel_weights(ix,iy,iz) = previous + 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz)     ! [Wm^-2] 
+           write(11, "(4E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
            previous=voxel_weights(ix,iy,iz)
          end do ! i loop
          col_weights(iy,iz)= previous
-!          PRINT *, ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy,iz), 'col_weights= ', col_weights(iy,iz)
+!          write(10, "(3I5, A, E30.20, A, E30.20)" ) ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy,iz), 'col_weights= ', col_weights(iy,iz)
        end do   ! j loop
        level_weights(iz)= previous
-!       PRINT *, ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy,iz), 'col_weights= ', col_weights(iy-1,iz), 'level_weights= ', level_weights(iz)
+!       write(10, "(3I5, A, E30.20, A, E30.20, A, E30.20)" ) ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy-1,iz), 'col_weights= ', col_weights(iy-1,iz), 'level_weights= ', level_weights(iz)
      end do     ! k loop
     end if
           if (voxel_weights(nx,ny,nz) .gt. 0.0) then
                atmsPower = voxel_weights(nx,ny,nz)*(SUM(dx)/nx)*(SUM(dy)/ny)*(1000**2)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
                voxel_weights(:,:,:)=voxel_weights(:,:,:)/voxel_weights(nx,ny,nz)     ! normalized
+               do iz = 1, nz
+                  do iy = 1, ny
+                     write(17, "(100E35.25)") voxel_weights(:,iy,iz)
+                  end do
+               end do    
                col_weights(:,:)=col_weights(:,:)/col_weights(ny,nz)
                level_weights(:)=level_weights(:)/level_weights(nz)
 

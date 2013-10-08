@@ -262,11 +262,12 @@ contains
   !   fluxes. There actual work might be done in other subroutines (to reflect 
   !   algorithmic choices, say). 
   !------------------------------------------------------------------------------------------
-  subroutine computeRadiativeTransfer(thisIntegrator, randomNumbers, incomingPhotons, status)
+  subroutine computeRadiativeTransfer(thisIntegrator, randomNumbers, incomingPhotons, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons  
     type(ErrorMessage),         intent(inout) :: status
+    integer,  dimension(:,:,:), intent(out) :: option2
     !
     ! Monte Carlo "integrator" to compute flux up at the top boundary, flux down at the
     !   bottom boundary, and colum absorption. (Absorption is calculated separately, 
@@ -338,7 +339,7 @@ contains
       ! Compute radiative transfer for this photon batch 
       !
       if(.not. stateIsFailure(status)) &
-         call computeRT(thisIntegrator, randomNumbers, incomingPhotons, numPhotonsProcessed, status)
+         call computeRT(thisIntegrator, randomNumbers, incomingPhotons, numPhotonsProcessed, status, option2)
 
       if(thisIntegrator%computeIntensity .and. &
          thisIntegrator%limitIntensityContributions) then 
@@ -438,12 +439,13 @@ contains
   end subroutine computeRadiativeTransfer
   !------------------------------------------------------------------------------------------
   subroutine computeRT(thisIntegrator, randomNumbers, incomingPhotons, &
-                                numPhotonsProcessed, status)
+                                numPhotonsProcessed, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons
     integer,                    intent(  out) :: numPhotonsProcessed
     type(ErrorMessage),         intent(inout) :: status
+    integer, dimension(:,:,:), intent(out) :: option2
     !
     ! Implements a standard ray-tracing Monte Carlo algorthm or 
     !   the Marchuk (1980) maximum cross-section algorithm. The extinction
@@ -473,6 +475,7 @@ contains
            allocatable :: xIndexF, yIndexF
     
     ! ---------------------------------------------------------------------------------------
+    option2=0
     useRayTracing = thisIntegrator%useRayTracing; useMaxCrossSection = .not. useRayTracing
     scatterThisEvent = .true. 
     if(useMaxCrossSection) &
@@ -517,6 +520,11 @@ contains
         zIndex = 1-(zPos-FLOOR(zPos))+((SIZE(thisIntegrator%zPosition)-1)*zPos)
         zPos = thisIntegrator%zPosition(zIndex) + (zPos-FLOOR(zPos))* (thisIntegrator%zPosition(zIndex+1)-thisIntegrator%zPosition(zIndex)) ! convert the zPos to one that works for an irregularly spaced grid. This line must follow and not preceed the zPos= line above.
       end if
+
+if (zPos > 0.0)then
+  option2(xIndex,yIndex,Zindex)=option2(xIndex,yIndex,Zindex)+1
+end if
+!write(14,"(I7, 2X, 3I5)") nPhotons, xIndex, yIndex, zIndex
 !PRINT *, xIndex, yIndex, zIndex
 !if(zIndex .ge. 36)PRINT *, zIndex, zPos, thisIntegrator%zRegularlySpaced
 

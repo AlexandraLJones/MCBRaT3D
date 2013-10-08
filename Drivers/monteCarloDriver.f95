@@ -116,9 +116,9 @@ program monteCarloDriver
   
 
    ! Local variables
-  character(len=256)   :: namelistFileName
+  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file
   integer              :: nX, nY, nZ, phtn
-  integer              :: i, j, k, batch
+  integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
   integer              :: numberOfComponents
   logical              :: computeIntensity
@@ -140,6 +140,7 @@ program monteCarloDriver
   integer              :: atms_photons, N
   real, allocatable    :: cumExt(:,:,:), temps(:,:,:)
  real*8, allocatable    :: voxel_weights(:,:,:), col_weights(:,:),level_weights(:)
+ integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
 
    ! I3RC Monte Carlo code derived type variables
   type(domain)               :: thisDomain
@@ -159,6 +160,25 @@ program monteCarloDriver
 !PRINT*, 'about to call initializeProcesses' 
   call initializeProcesses(numProcs, thisProc)
 !PRINT*, 'returned from initializeProcesses'
+
+! temporary output file for the purposes of debugging
+  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
+  write(level_file, '(A,I0.4)') "level.out.",thisProc
+  write(col_file, '(A,I0.4)') "col.out.",thisProc
+  write(row_file, '(A,I0.4)') "row.out.",thisProc
+  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
+  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
+  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
+
+  open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
+!  open(unit=12, file=trim(level_file) , status='UNKNOWN')
+!  open(unit=13, file=trim(col_file) , status='UNKNOWN')
+!  open(unit=14, file=trim(row_file) , status='UNKNOWN')
+!  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
+!  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
+  open(unit=17, file=trim(voxel_file2) , status='UNKNOWN')
+
+
   ! -----------------------------------------
   ! Get the input variables from the namelist file
   !
@@ -294,11 +314,15 @@ program monteCarloDriver
   end if
 !PRINT *, 'Driver: Specified Parameters'
    ! Allocate and zero the arrays for radiative quantities and moments 
+  allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
+  allocate (voxel_tallys2(nX, nY, nZ), voxel_tallys2_sum(nX, nY, nZ), voxel_tallys2_total(nX, nY, nZ))
   allocate (fluxUp      (nX, nY), fluxUpStats      (nX, nY, 2))
   allocate (fluxDown    (nX, nY), fluxDownStats    (nX, nY, 2))
   allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 2))
   allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 2))
   allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 2))
+  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
+  voxel_tallys2(:,:,:)=0 ; voxel_tallys2_sum(:,:,:) = 0 ; voxel_tallys2_total(:,:,:) = 0
   meanFluxUpStats(:) = 0.0  ; meanFluxDownStats(:) = 0.0  ; meanFluxAbsorbedStats(:) = 0.0
   fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
   absorbedProfilestats(:, :) = 0.0 ;  absorbedVolumeStats(:, :, :, :) = 0.0
@@ -342,17 +366,12 @@ call printStatus(status)
      call getInfo_Integrator(mcIntegrator, ssa, cumExt)
 !print *, 'Driver: got info integrator'
      call emission_weighting(nX, nY, nZ, numberOfComponents, xPosition, yPosition, zPosition, lambda, numPhotonsPerBatch, atms_photons, voxel_weights, col_weights, level_weights, temps, ssa, cumExt, surfaceTemp, (1.-surfaceAlbedo), emittedFlux) 
+!    DO iz= 1,nZ
+!      DO iy= 1,nY
+!          write (10, "(I5, I5, 2X, 3E30.20 )")  iy, iz, voxel_weights(nx,iy,iz), col_weights(iy,iz), level_weights(iz)
+!      END DO
+!    END DO
      solarFlux=emittedFlux
-!open(50, file='weighting.txt')
-!Do k=1,nZ
-! Do j=1,nY
-!  Do i=1,nX
-!   write(50, '( 3I4, 1X, 1F12.10)') i, j, k, voxel_weights(i,j,k)
-!  Enddo
-! Enddo
-!Enddo
-!close(50)
-!STOP
 !PRINT *, 'total atms photons=', atms_photons)
 !PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 !PRINT *, 'Driver: calculated emission weighting'
@@ -372,7 +391,7 @@ call printStatus(status)
 
   ! Now we compute the radiative transfer for a single photon 
   if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
-  call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status)
+  call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status, voxel_tallys2)
   call printStatus(status) 
   call finalize_PhotonStream (incomingPhotons)
 !PRINT *, 'Driver: succesfully tested photon initialization'
@@ -409,7 +428,8 @@ call printStatus(status)
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
     if(LW_flag >= 0.0)then
-       incomingPhotons = new_PhotonStream (numberOfPhotons=numPhotonsPerBatch, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights, level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
+       incomingPhotons = new_PhotonStream (numberOfPhotons=numPhotonsPerBatch, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights,&
+level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status, option1=voxel_tallys1)  
 !DO phtn=1,numPhotonsPerBatch
 !   PRINT *, incomingPhotons%xPosition(phtn), incomingPhotons%yPosition(phtn), incomingPhotons%zPosition(phtn)
 !ENDDO      
@@ -421,7 +441,7 @@ call printStatus(status)
     call printStatus(status)
 !PRINT *, 'Driver: Initialized photons for batch', batch
     ! Now we compute the radiative transfer for this batch of photons. 
-    call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status)
+    call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status, voxel_tallys2)
 !PRINT *, 'Driver: COmputed RT for batch', batch
      ! Get the radiative quantities:
      !   This particular integrator provides fluxes at the top and bottom 
@@ -434,6 +454,8 @@ call printStatus(status)
            absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
 
      ! Accumulate the first and second moments of each quantity over the batches 
+    voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1
+    voxel_tallys2_sum = voxel_tallys2_sum + voxel_tallys2
     meanFluxUpStats(1)       = meanFluxUpStats(1)       + solarFlux*meanFluxUp
     meanFluxUpStats(2)       = meanFluxUpStats(2)       + (solarFlux*meanFluxUp)**2
     meanFluxDownStats(1)     = meanFluxDownStats(1)     + solarFlux*meanFluxDown
@@ -490,6 +512,9 @@ call printStatus(status)
   !
   ! Accumulate statistics from across all the processors
   !
+ voxel_tallys1_total = sumAcrossProcesses(voxel_tallys1_sum)
+ voxel_tallys2_total = sumAcrossProcesses(voxel_tallys2_sum)
+
   ! Domain-mean fluxes
   
   meanFluxUpStats(:)       = sumAcrossProcesses(meanFluxUpStats)
@@ -522,6 +547,14 @@ call printStatus(status)
    end if
 
 !PRINT *, 'Driver: accumulated results'
+!  close(11)
+!  close(12)
+!  close(13)
+!  close(14)
+!  close(15)
+  close(16)
+!  close(17)
+
   call synchronizeProcesses
   call cpu_time(cpuTime2)
   cpuTimeTotal = sumAcrossProcesses(cpuTime2 - cpuTime0)
@@ -572,6 +605,17 @@ call printStatus(status)
 
 !PRINT *, 'Driver: calculated radiative quantities'
   if(MasterProc) then ! Write a single output file. 
+!    open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
+!    open(unit=12, file=trim(voxel_file2) , status='UNKNOWN')
+!    DO k = 1, nZ
+!      DO j = 1, nY
+!        write(11,"(100I8)") voxel_tallys1_total(:,j,k)
+!        write(12,"(100I8)") voxel_tallys2_total(:,j,k)
+!      end do
+!    end do
+!    close(11)
+!    close(12)
+
     if(any( (/ len_trim(outputFluxFile),      len_trim(outputAbsProfFile), &
                len_trim(outputAbsVolumeFile), len_trim(outputRadFile)      /) > 0)) then 
       call writeResults_ASCII(domainFileName,  numPhotonsPerBatch, numBatches,      &

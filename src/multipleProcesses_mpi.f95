@@ -20,7 +20,7 @@ module multipleProcesses
   interface sumAcrossProcesses
     module procedure sumAcrossProcesses_Real_Scalar,                         &
                      sumAcrossProcesses_Real_1D, sumAcrossProcesses_Real_2D, &
-                     sumAcrossProcesses_Real_3D, sumAcrossProcesses_Real_4D, &
+                     sumAcrossProcesses_Real_3D, sumAcrossProcesses_Int_3D, sumAcrossProcesses_Real_4D, &
                      sumAcrossProcesses_Real_5D
   end interface sumAcrossProcesses
 contains
@@ -128,8 +128,26 @@ contains
     
   end function sumAcrossProcesses_Real_3D
   ! -----------------------------------------------------------
+  function sumAcrossProcesses_Int_3D(x)
+    !
+    ! Add values across all processors
+    !
+    integer, dimension(:, :, :), intent(in) :: x
+    integer, dimension(size(x, 1), size(x, 2), &
+                    size(x, 3))          :: sumAcrossProcesses_Int_3D
+
+    integer, dimension(size(x, 1), size(x, 2), &
+                    size(x, 3))             :: temp
+    integer :: ierr
+
+    call MPI_REDUCE(x, temp, size(x), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    sumAcrossProcesses_Int_3D(:, :, :) = temp(:, :, :)
+
+  end function sumAcrossProcesses_Int_3D
+  ! -----------------------------------------------------------
   function sumAcrossProcesses_Real_4D(x) 
     real, dimension(:, :, :, :), intent(in) :: x
+
     real, dimension(size(x, 1), size(x, 2), &
                     size(x, 3), size(x, 4)) :: sumAcrossProcesses_Real_4D
     
