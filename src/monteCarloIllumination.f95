@@ -402,7 +402,7 @@ contains
      integer                                           :: ix, iy, iz!, last
      real                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda
      real(8)                                          :: previous
-     real, dimension(1:nz)                             :: dz
+     real(8), dimension(1:nz)                          :: dz
      real, dimension(1:ny)                             :: dy
      real, dimension(1:nx)                             :: dx
      real                                               :: atmsPlanckRad
@@ -422,7 +422,7 @@ contains
      dx(1:nx)=xPosition(2:nx+1)-xPosition(1:nx)
 
 
-dz(1:nz)= 0.04					! be sure to remove this line after debugging FOR DIAGNOSTIC PURPOSES ONLY!
+!dz(1:nz)= 0.04					! be sure to remove this line after debugging FOR DIAGNOSTIC PURPOSES ONLY!
 
 !     last=nx*ny*nz ! the value of the index of the last element of the voxel_weights array
 
