@@ -408,11 +408,11 @@ contains
      real                                               :: atmsPlanckRad
 !     real, dimension(1:nx, 1:ny)                       :: atmsColumn_power
 
-     real, parameter                                   :: h=6.62606957e-34 !planck's constant [Js]
-     real, parameter                                   :: c=2.99792458e+8 !speed of light [ms^-1]
-     real, parameter                                   :: k=1.3806488e-23 !boltzman constant [J/K molecule]
-     real, parameter                                   :: a=2.0*h*c**2  
-     real, parameter                                   :: Pi=4*ATAN(1.0)
+     real(8), parameter                                   :: h=6.62606957e-34 !planck's constant [Js]
+     real(8), parameter                                   :: c=2.99792458e+8 !speed of light [ms^-1]
+     real(8), parameter                                   :: k=1.3806488e-23 !boltzman constant [J/K molecule]
+     real(8), parameter                                   :: a=2.0*h*c**2  
+     real(8), parameter                                   :: Pi=4*ATAN(1.0)
 
      lambda=lambda_u/(10**6) ! convert lambda from micrometers to meters
      b=h*c/(k*lambda)
