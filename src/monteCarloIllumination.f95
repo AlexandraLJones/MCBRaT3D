@@ -421,6 +421,9 @@ contains
      dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
      dx(1:nx)=xPosition(2:nx+1)-xPosition(1:nx)
 
+
+dz(1:nz)= 0.04					! be sure to remove this line after debugging FOR DIAGNOSTIC PURPOSES ONLY!
+
 !     last=nx*ny*nz ! the value of the index of the last element of the voxel_weights array
 
 !first compute atms planck radiances then combine algorithms from mcarWld_fMC_srcDist and mcarWld_fMC_srcProf to determine the  weights of each voxel taking into consideration the ones that would be emitted from the surface instead.
