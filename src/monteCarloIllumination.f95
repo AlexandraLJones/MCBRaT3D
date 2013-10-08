@@ -400,7 +400,8 @@ contains
      real,                                intent(out)  :: totalFlux
      !Local variables
      integer                                           :: ix, iy, iz!, last
-     real                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda, previous
+     real                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda
+     real(8)                                          :: previous
      real, dimension(1:nz)                             :: dz
      real, dimension(1:ny)                             :: dy
      real, dimension(1:nx)                             :: dx
