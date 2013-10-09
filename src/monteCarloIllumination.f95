@@ -447,7 +447,7 @@ dz(1:nz)= 0.04					! be sure to remove this line after debugging FOR DIAGNOSTIC 
 
            totalAbsCoef=cumExt(ix,iy,iz)*(1-sum(ssas(ix,iy,iz,:)))
            voxel_weights(ix,iy,iz) = previous + 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz)     ! [Wm^-2] 
-           write(11, "(4E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
+!           write(11, "(4E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
            previous=voxel_weights(ix,iy,iz)
          end do ! i loop
          col_weights(iy,iz)= previous
@@ -460,11 +460,11 @@ dz(1:nz)= 0.04					! be sure to remove this line after debugging FOR DIAGNOSTIC 
           if (voxel_weights(nx,ny,nz) .gt. 0.0) then
                atmsPower = voxel_weights(nx,ny,nz)*(SUM(dx)/nx)*(SUM(dy)/ny)*(1000**2)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
                voxel_weights(:,:,:)=voxel_weights(:,:,:)/voxel_weights(nx,ny,nz)     ! normalized
-               do iz = 1, nz
-                  do iy = 1, ny
-                     write(17, "(100E35.25)") voxel_weights(:,iy,iz)
-                  end do
-               end do    
+!               do iz = 1, nz
+!                  do iy = 1, ny
+!                     write(17, "(100E35.25)") voxel_weights(:,iy,iz)
+!                  end do
+!               end do    
                col_weights(:,:)=col_weights(:,:)/col_weights(ny,nz)
                level_weights(:)=level_weights(:)/level_weights(nz)
 
