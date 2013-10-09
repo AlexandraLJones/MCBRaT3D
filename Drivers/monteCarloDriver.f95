@@ -605,15 +605,15 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
 
 !PRINT *, 'Driver: calculated radiative quantities'
   if(MasterProc) then ! Write a single output file. 
-!    open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
+    open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
 !    open(unit=12, file=trim(voxel_file2) , status='UNKNOWN')
-!    DO k = 1, nZ
-!      DO j = 1, nY
-!        write(11,"(100I8)") voxel_tallys1_total(:,j,k)
+    DO k = 1, nZ
+      DO j = 1, nY
+        write(11,"(100I8)") voxel_tallys1_total(:,j,k)
 !        write(12,"(100I8)") voxel_tallys2_total(:,j,k)
-!      end do
-!    end do
-!    close(11)
+      end do
+    end do
+    close(11)
 !    close(12)
 
     if(any( (/ len_trim(outputFluxFile),      len_trim(outputAbsProfFile), &
