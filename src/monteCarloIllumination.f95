@@ -418,12 +418,12 @@ contains
      lambda=lambda_u/(10**6) ! convert lambda from micrometers to meters
      b=h*c/(k*lambda)
 !calculate arrays of depths from the position arrays in km
-     dz(1:nz)=zPosition(2:nz+1)-zPosition(1:nz)
+!     dz(1:nz)=zPosition(2:nz+1)-zPosition(1:nz)
      dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
      dx(1:nx)=xPosition(2:nx+1)-xPosition(1:nx)
 
 
-!dz(1:nz)= 0.04					! be sure to remove this line after debugging FOR DIAGNOSTIC PURPOSES ONLY!
+dz(1:nz)= 1.44					! be sure to remove this line after debugging FOR DIAGNOSTIC PURPOSES ONLY!
 
 !     last=nx*ny*nz ! the value of the index of the last element of the voxel_weights array
 
