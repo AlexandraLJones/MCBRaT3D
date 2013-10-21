@@ -116,7 +116,7 @@ program monteCarloDriver
   
 
    ! Local variables
-  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file
+  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
   integer              :: nX, nY, nZ, phtn
   integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
@@ -163,7 +163,7 @@ program monteCarloDriver
 
 ! temporary output file for the purposes of debugging
   write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
-  write(level_file, '(A,I0.4)') "level.out.",thisProc
+  write(photon_file, '(A,I0.4)') "photon.out.",thisProc
   write(col_file, '(A,I0.4)') "col.out.",thisProc
   write(row_file, '(A,I0.4)') "row.out.",thisProc
   write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
@@ -547,13 +547,13 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
    end if
 
 !PRINT *, 'Driver: accumulated results'
-!  close(11)
+  close(11)
 !  close(12)
 !  close(13)
 !  close(14)
 !  close(15)
-  close(16)
-!  close(17)
+!  close(16)
+  close(17)
 
   call synchronizeProcesses
   call cpu_time(cpuTime2)
@@ -605,16 +605,14 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
 
 !PRINT *, 'Driver: calculated radiative quantities'
   if(MasterProc) then ! Write a single output file. 
-    open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
-!    open(unit=12, file=trim(voxel_file2) , status='UNKNOWN')
+    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
+
     DO k = 1, nZ
       DO j = 1, nY
-        write(11,"(100I8)") voxel_tallys1_total(:,j,k)
-!        write(12,"(100I8)") voxel_tallys2_total(:,j,k)
+        write(12,"(100I8)") voxel_tallys1_total(:,j,k)
       end do
     end do
-    close(11)
-!    close(12)
+    close(12)
 
     if(any( (/ len_trim(outputFluxFile),      len_trim(outputAbsProfFile), &
                len_trim(outputAbsVolumeFile), len_trim(outputRadFile)      /) > 0)) then 

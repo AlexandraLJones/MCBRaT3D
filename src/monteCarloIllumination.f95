@@ -401,7 +401,7 @@ contains
      !Local variables
      integer                                           :: ix, iy, iz!, last
      real                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda
-     real(8)                                          :: previous
+     real(8)                                          :: previous, corr_contrib,corr,temp_sum 
      real(8), dimension(1:nz)                          :: dz
      real, dimension(1:ny)                             :: dy
      real, dimension(1:nx)                             :: dx
@@ -439,16 +439,22 @@ contains
      level_weights=0.0
      col_weights=0.0
      previous=0.0
+     corr_contrib=0.0
+     temp_sum=0.0
+     corr=0.0
     if(COUNT(atmsTemp .le. 0.0) .eq. 0)then
      do iz = 1, nz
        do iy = 1, ny
          do ix = 1, nx
            atmsPlanckRad= (a/((lambda**5)*(exp(b/atmsTemp(ix,iy,iz))-1)))/(10**6) ! the 10^-6 factor converts it from Wsr^-1m^-3 to Wm^-2sr^-1micron^-1
-
            totalAbsCoef=cumExt(ix,iy,iz)*(1-sum(ssas(ix,iy,iz,:)))
-           voxel_weights(ix,iy,iz) = previous + 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz)     ! [Wm^-2] 
-!           write(11, "(4E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
-           previous=voxel_weights(ix,iy,iz)
+
+           corr_contrib = (4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz))-corr     ! [Wm^-2] 
+           temp_sum = previous + corr_contrib
+           corr = (temp_sum - previous)-corr_contrib
+           previous = temp_sum
+           voxel_weights(ix,iy,iz) = previous
+           write(11, "(6E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
          end do ! i loop
          col_weights(iy,iz)= previous
 !          write(10, "(3I5, A, E30.20, A, E30.20)" ) ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy,iz), 'col_weights= ', col_weights(iy,iz)
@@ -460,11 +466,11 @@ contains
           if (voxel_weights(nx,ny,nz) .gt. 0.0) then
                atmsPower = voxel_weights(nx,ny,nz)*(SUM(dx)/nx)*(SUM(dy)/ny)*(1000**2)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
                voxel_weights(:,:,:)=voxel_weights(:,:,:)/voxel_weights(nx,ny,nz)     ! normalized
-!               do iz = 1, nz
-!                  do iy = 1, ny
-!                     write(17, "(100E35.25)") voxel_weights(:,iy,iz)
-!                  end do
-!               end do    
+               do iz = 1, nz
+                  do iy = 1, ny
+                     write(17, "(100E35.25)") voxel_weights(:,iy,iz)
+                  end do
+               end do    
                col_weights(:,:)=col_weights(:,:)/col_weights(ny,nz)
                level_weights(:)=level_weights(:)/level_weights(nz)
 
