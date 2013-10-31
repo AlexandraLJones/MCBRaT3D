@@ -53,9 +53,9 @@ program monteCarloDriver
 
   ! Input parameters
   !   Radiative transfer 
-  real                 :: solarFlux = 1., surfaceAlbedo = 0.
-  real                 :: solarMu = 1., solarAzimuth = 0. 
-  real                 :: LW_flag = -1., lambda = 6.0, surfaceTemp = 300.0       ! added by Alexandra Jones Fall 2011. lambda in microns and surface temp in K
+  real(8)                 :: solarFlux = 1., surfaceAlbedo = 0.
+  real                 :: solarMu = 1., solarAzimuth = 0.,  LW_flag = -1. 
+  real(8)                 :: lambda = 6.0, surfaceTemp = 300.0       ! added by Alexandra Jones Fall 2011. lambda in microns and surface temp in K
   integer, parameter   :: maxNumRad = 648 !18mus*36phis , oldVal:72
   real                 :: intensityMus(maxNumRad)  = 0., &
                           intensityPhis(maxNumRad) = 0.
@@ -124,9 +124,9 @@ program monteCarloDriver
   logical              :: computeIntensity
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
-  real                 :: emittedFlux
+  real(8)                 :: emittedFlux
   real                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
-  real, allocatable    :: xPosition(:), yPosition(:), zPosition(:)
+  real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :)
   real, allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :)
   real, allocatable    :: absorbedProfile(:), absorbedProfileStats(:, :)
@@ -136,10 +136,10 @@ program monteCarloDriver
   real, allocatable    :: meanFluxUpByScatOrdStats(:,:), meanFluxDownByScatOrdStats(:,:)
   real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
   real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
-  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:), ssa(:,:,:,:)
+  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
   integer              :: atms_photons, N
-  real, allocatable    :: cumExt(:,:,:), temps(:,:,:)
- real*8, allocatable    :: voxel_weights(:,:,:), col_weights(:,:),level_weights(:)
+  real(8), allocatable    :: cumExt(:,:,:), temps(:,:,:), ssa(:,:,:,:)
+ real(8), allocatable    :: voxel_weights(:,:,:), col_weights(:,:),level_weights(:)
  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
 
    ! I3RC Monte Carlo code derived type variables
@@ -365,7 +365,7 @@ call printStatus(status)
 !print *, 'Driver: got info Domain'
      call getInfo_Integrator(mcIntegrator, ssa, cumExt)
 !print *, 'Driver: got info integrator'
-     call emission_weighting(nX, nY, nZ, numberOfComponents, xPosition, yPosition, zPosition, lambda, numPhotonsPerBatch, atms_photons, voxel_weights, col_weights, level_weights, temps, ssa, cumExt, surfaceTemp, (1.-surfaceAlbedo), emittedFlux) 
+     call emission_weighting(nX, nY, nZ, numberOfComponents, xPosition, yPosition, zPosition, lambda, numPhotonsPerBatch, atms_photons, voxel_weights, col_weights, level_weights, temps, ssa, cumExt, surfaceTemp, (1.0_8-surfaceAlbedo), emittedFlux) 
 !    DO iz= 1,nZ
 !      DO iy= 1,nY
 !          write (10, "(I5, I5, 2X, 3E30.20 )")  iy, iz, voxel_weights(nx,iy,iz), col_weights(iy,iz), level_weights(iz)
@@ -609,7 +609,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
 
     DO k = 1, nZ
       DO j = 1, nY
-        write(12,"(100I8)") voxel_tallys1_total(:,j,k)
+        write(12,"(100I12)") voxel_tallys1_total(:,j,k)
       end do
     end do
     close(12)
@@ -708,8 +708,9 @@ contains
     integer,            intent(in) :: numPhotonsPerBatch, numBatches
     logical,            intent(in) :: useRayTracing, useRussianRoulette, useHybridPhaseFunsForIntenCalcs
     real,               intent(in) :: hybridPhaseFunWidth
-    real,               intent(in) :: solarFlux, solarMu, solarAzimuth, surfaceAlbedo
-    real, dimension(:), intent(in) :: xPosition, yPosition, zPosition
+    real,               intent(in) ::  solarMu, solarAzimuth
+    real(8),    intent(in) :: solarFlux,surfaceAlbedo
+    real(8), dimension(:), intent(in) :: xPosition, yPosition, zPosition
     ! Flux variables
     character(len = *),       intent(in) :: outputFluxFile
     real, dimension(:),       intent(in) :: meanFluxUpStats, meanFluxDownStats, meanFluxAbsorbedStats
@@ -881,10 +882,11 @@ contains
     character(len = *), intent(in) :: domainFileName
     character(len = *), intent(in) :: outputFileName
     integer,            intent(in) :: numPhotonsPerBatch, numBatches
-    real,               intent(in) :: solarFlux, solarMu, solarAzimuth, surfaceAlbedo
+    real,               intent(in) ::  solarMu, solarAzimuth
+    real(8),               intent(in) :: solarFlux, surfaceAlbedo
     ! The position variables mark the edges of the cells - we'll report the 
     !   results at the midpoints. 
-    real, dimension(:), intent(in) :: xPosition, yPosition, zPosition
+    real(8), dimension(:), intent(in) :: xPosition, yPosition, zPosition
 
     ! Flux variables
     real, dimension(:, :, :),     intent(in) :: fluxUpStats, fluxDownStats, fluxAbsorbedStats
@@ -987,10 +989,10 @@ contains
     !
     ! Dimension variables
     !
-    ncStatus( 4) = nf90_def_var(ncFileId, "x", nf90_float, xDimId, ncVarId)
-    ncStatus( 5) = nf90_def_var(ncFileId, "y", nf90_float, yDimId, ncVarId)
+    ncStatus( 4) = nf90_def_var(ncFileId, "x", NF90_DOUBLE, xDimId, ncVarId)
+    ncStatus( 5) = nf90_def_var(ncFileId, "y", NF90_DOUBLE, yDimId, ncVarId)
     if(reportAbsorptionProfile .or. reportVolumeAbsorption) & 
-      ncStatus( 6) = nf90_def_var(ncFileId, "z", nf90_float, zDimId, ncVarId)
+      ncStatus( 6) = nf90_def_var(ncFileId, "z", NF90_DOUBLE, zDimId, ncVarId)
     !
     ! Flux variables
     !

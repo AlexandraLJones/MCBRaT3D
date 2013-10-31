@@ -30,9 +30,9 @@ module monteCarloIllumination
   !------------------------------------------------------------------------------------------
   type photonStream
     integer                     :: currentPhoton = 0
-    real, dimension(:), pointer :: xPosition    => null()
-    real, dimension(:), pointer :: yPosition    => null()
-    real, dimension(:), pointer :: zPosition    => null()
+    real(8), dimension(:), pointer :: xPosition    => null()
+    real(8), dimension(:), pointer :: yPosition    => null()
+    real(8), dimension(:), pointer :: zPosition    => null()
     real, dimension(:), pointer :: solarMu      => null()
     real, dimension(:), pointer :: solarAzimuth => null()
   end type photonStream
@@ -339,7 +339,8 @@ contains
   !------------------------------------------------------------------------------------------
   subroutine getNextPhoton(photons, xPosition, yPosition, zPosition, solarMu, solarAzimuth, status)
     type(photonStream), intent(inout) :: photons
-    real,                 intent(  out) :: xPosition, yPosition, zPosition, solarMu, solarAzimuth
+    real(8),                 intent(  out) :: xPosition, yPosition, zPosition
+    real,                 intent(  out) ::  solarMu, solarAzimuth
     type(ErrorMessage),   intent(inout) :: status
     
     ! Checks 
@@ -387,25 +388,25 @@ contains
      implicit none
 
      integer, intent(in)                               :: nx, ny, nz, numComponents, totalPhotons
-     real, dimension(1:nx, 1:ny, 1:nz), intent(in)     :: atmsTemp, cumExt
-     real, dimension(1:nx,1:ny,1:nz,1:numComponents), intent(in) :: ssas
-     real, dimension(1:nz+1), intent(in)               :: zPosition
-     real, dimension(1:ny+1), intent(in)               :: yPosition
-     real, dimension(1:nx+1), intent(in)               :: xPosition
-     real, intent(in)                                  :: sfcTemp, emiss, lambda_u
+     real(8), dimension(1:nx, 1:ny, 1:nz), intent(in)     :: atmsTemp, cumExt
+     real(8), dimension(1:nx,1:ny,1:nz,1:numComponents), intent(in) :: ssas
+     real(8), dimension(1:nz+1), intent(in)               :: zPosition
+     real(8), dimension(1:ny+1), intent(in)               :: yPosition
+     real(8), dimension(1:nx+1), intent(in)               :: xPosition
+     real(8), intent(in)                                  :: sfcTemp, emiss, lambda_u
      integer,  intent(out)                             :: atmsPhotons
-     real*8, dimension(nx,ny,nz), intent(out)          :: voxel_weights
-     real*8, dimension(ny,nz), intent(out)          :: col_weights
-     real*8, dimension(nz), intent(out)          :: level_weights
-     real,                                intent(out)  :: totalFlux
+     real(8), dimension(nx,ny,nz), intent(out)          :: voxel_weights
+     real(8), dimension(ny,nz), intent(out)          :: col_weights
+     real(8), dimension(nz), intent(out)          :: level_weights
+     real(8),                                intent(out)  :: totalFlux
      !Local variables
      integer                                           :: ix, iy, iz!, last
-     real                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda
-     real(8)                                          :: previous, corr_contrib,corr,temp_sum 
+     real(8)                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda
+     real(8)                                          :: previous, corr_contrib,corr,temp_sum, prev_exact
      real(8), dimension(1:nz)                          :: dz
-     real, dimension(1:ny)                             :: dy
-     real, dimension(1:nx)                             :: dx
-     real                                               :: atmsPlanckRad
+     real(8), dimension(1:ny)                             :: dy
+     real(8), dimension(1:nx)                             :: dx
+     real(8)                                               :: atmsPlanckRad
 !     real, dimension(1:nx, 1:ny)                       :: atmsColumn_power
 
      real(8), parameter                                   :: h=6.62606957e-34 !planck's constant [Js]
@@ -427,34 +428,37 @@ contains
 !     last=nx*ny*nz ! the value of the index of the last element of the voxel_weights array
 
 !first compute atms planck radiances then combine algorithms from mcarWld_fMC_srcDist and mcarWld_fMC_srcProf to determine the  weights of each voxel taking into consideration the ones that would be emitted from the surface instead.
-     if (emiss .eq. 0.0 .or. sfcTemp .eq. 0.0)then
-        sfcPower=0.0
+     if (emiss .eq. 0.0_8 .or. sfcTemp .eq. 0.0_8)then
+        sfcPower=0.0_8
      else
-        sfcPlanckRad=(a/((lambda**5)*(exp(b/sfcTemp)-1)))/(10**6)
-        sfcPower= Pi*emiss*sfcPlanckRad*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000**2)     ! [W] factor of 1000^2 needed to convert area from km to m
+        sfcPlanckRad=(a/((lambda**5.0_8)*(exp(b/sfcTemp)-1.0_8)))/(10.0_8**6.0_8)
+        sfcPower= Pi*emiss*sfcPlanckRad*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)     ! [W] factor of 1000^2 needed to convert area from km to m
      end if
 
-     atmsPower=0.0
-     voxel_weights=0.0  
-     level_weights=0.0
-     col_weights=0.0
-     previous=0.0
-     corr_contrib=0.0
-     temp_sum=0.0
-     corr=0.0
-    if(COUNT(atmsTemp .le. 0.0) .eq. 0)then
+     atmsPower=0.0_8
+     voxel_weights=0.0_8  
+     level_weights=0.0_8
+     col_weights=0.0_8
+     previous=0.0_8
+     corr_contrib=0.0_8
+     temp_sum=0.0_8
+     corr=0.0_8
+     prev_exact=0.0_8
+    if(COUNT(atmsTemp .le. 0.0_8) .eq. 0)then
      do iz = 1, nz
        do iy = 1, ny
          do ix = 1, nx
-           atmsPlanckRad= (a/((lambda**5)*(exp(b/atmsTemp(ix,iy,iz))-1)))/(10**6) ! the 10^-6 factor converts it from Wsr^-1m^-3 to Wm^-2sr^-1micron^-1
-           totalAbsCoef=cumExt(ix,iy,iz)*(1-sum(ssas(ix,iy,iz,:)))
+           atmsPlanckRad= (a/((lambda**5.0_8)*(exp(b/atmsTemp(ix,iy,iz))-1.0_8)))/(10.0_8**6.0_8) ! the 10^-6 factor converts it from Wsr^-1m^-3 to Wm^-2sr^-1micron^-1
+           totalAbsCoef=cumExt(ix,iy,iz)*(1.0_8-sum(ssas(ix,iy,iz,:)))
 
-           corr_contrib = (4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz))-corr     ! [Wm^-2] 
+           corr_contrib = (4.0_8*Pi* atmsPlanckRad * totalAbsCoef*dz(iz))-corr     ! [Wm^-2] 
            temp_sum = previous + corr_contrib
            corr = (temp_sum - previous)-corr_contrib
            previous = temp_sum
            voxel_weights(ix,iy,iz) = previous
-           write(11, "(6E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
+           prev_exact=prev_exact + dble(1.0_8/(nx*ny*nz))
+!           write(11, "(6E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
+            write(11, "(9E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz), dble( ((iz-1)*nx*ny)+((iy-1)*nx)+ix  )/dble(nx*ny*nz), prev_exact,corr
          end do ! i loop
          col_weights(iy,iz)= previous
 !          write(10, "(3I5, A, E30.20, A, E30.20)" ) ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy,iz), 'col_weights= ', col_weights(iy,iz)
@@ -463,8 +467,8 @@ contains
 !       write(10, "(3I5, A, E30.20, A, E30.20, A, E30.20)" ) ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy-1,iz), 'col_weights= ', col_weights(iy-1,iz), 'level_weights= ', level_weights(iz)
      end do     ! k loop
     end if
-          if (voxel_weights(nx,ny,nz) .gt. 0.0) then
-               atmsPower = voxel_weights(nx,ny,nz)*(SUM(dx)/nx)*(SUM(dy)/ny)*(1000**2)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
+          if (voxel_weights(nx,ny,nz) .gt. 0.0_8) then
+               atmsPower = voxel_weights(nx,ny,nz)*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)/dble(nx*ny)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
                voxel_weights(:,:,:)=voxel_weights(:,:,:)/voxel_weights(nx,ny,nz)     ! normalized
                do iz = 1, nz
                   do iy = 1, ny
@@ -474,20 +478,21 @@ contains
                col_weights(:,:)=col_weights(:,:)/col_weights(ny,nz)
                level_weights(:)=level_weights(:)/level_weights(nz)
 
-               voxel_weights(nx,ny,nz)=1.0     ! need this to be 1 for algorithm used to select emitting voxel
-               col_weights(ny,nz)=1.0
-               level_weights(nz)=1.0         
+               voxel_weights(nx,ny,nz)=1.0_8     ! need this to be 1 for algorithm used to select emitting voxel
+               col_weights(ny,nz)=1.0_8
+               level_weights(nz)=1.0_8      
           end if
       
 !PRINT *, 'level_weights= ', level_weights, 'col_weights= ', col_weights
 
      totalPower=sfcPower + atmsPower
-     if (totalPower .eq. 0.0)then
+     if (totalPower .eq. 0.0_8)then
         PRINT *, 'Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution'
      end if
-     totalFlux=totalPower/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000**2))  ! We want the units to be [Wm^-2] but the x and y positions are in km
-!PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, 'totalPower=', totalPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))  
-     if (atmsPower .eq. 0.0)then
+     totalFlux=totalPower/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
+PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1)), &
+         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny)
+     if (atmsPower .eq. 0.0_8)then
          atmsPhotons=0
      else   
         atmsPhotons=ceiling(totalPhotons * atmsPower / totalPower)

@@ -56,8 +56,8 @@ PROGRAM MakeMiePhaseFunctionTable
   
   INTEGER, ALLOCATABLE :: NLEG1(:), NLEG(:)
   REAL,    ALLOCATABLE :: RADII(:), ND(:)
-  REAL,    ALLOCATABLE :: EXTINCT1(:), SCATTER1(:), LEGEN1(:,:)
-  REAL,    ALLOCATABLE :: REFF(:), EXTINCT(:), SSALB(:), LEGCOEF(:,:)
+  REAL(8),    ALLOCATABLE :: EXTINCT1(:), SCATTER1(:),EXTINCT(:), SSALB(:)
+  REAL,    ALLOCATABLE :: REFF(:),LEGEN1(:,:), LEGCOEF(:,:)
 
   !
   ! Temperature at which to evaluate index of refraction for water and ice
@@ -543,7 +543,7 @@ contains
     CHARACTER(LEN=1), &
              INTENT(IN) :: AVGFLAG, PARTYPE
     INTEGER, INTENT(OUT) :: NLEG1(NSIZE)
-    REAL,    INTENT(OUT) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
+    REAL(8),    INTENT(OUT) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
     REAL,    INTENT(OUT) :: LEGEN1(0:MAXLEG,NSIZE)
     
     ! Local variables
@@ -563,8 +563,8 @@ contains
       ! For averaging over wavelength range:
       BBTEMP = effectiveBlackBodyTemp(WAVELEN1, WAVELEN2)
       
-      EXTINCT1(:) = 0.0
-      SCATTER1(:) = 0.0
+      EXTINCT1(:) = 0.0_8
+      SCATTER1(:) = 0.0_8
       NLEG1(:) = 1
       LEGEN1(:,:) = 0.0
       SUMP = 0.0

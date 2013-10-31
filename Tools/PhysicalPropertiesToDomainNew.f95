@@ -117,18 +117,20 @@ program ParticleFileToDomain
   integer              :: nX, nY, nZp, nZt, Pfile_type
   integer              :: i, j, k, n, iscat, ix, iy, iz, il
   integer              :: maxNretab, izLevelBase
-  real                 :: deltaX, deltaY, x, y, z, f
-  real, allocatable    :: Zpar(:), TempPar(:)
+  real(8)                 :: deltaX, deltaY, x, y, z
+  real                  :: f
+  real(8), allocatable    :: Zpar(:), TempPar(:)
   integer, allocatable :: nComp(:,:,:), ptype(:,:,:,:)
   real, allocatable    :: MassCont(:,:,:,:), Reff(:,:,:,:)
   integer, allocatable :: Nretab(:)
-  real, allocatable    :: ReffTable(:,:), ExtinctTable(:,:), ssaTable(:,:), temps(:,:,:)
-  real, allocatable    :: Zlevels(:), Temp(:)
-  real, allocatable    :: GasExt(:), RaylExt(:)
-  real, allocatable    :: ssaProf(:)
+  real, allocatable    :: ReffTable(:,:)
+  real(8), allocatable    ::  ExtinctTable(:,:), ssaTable(:,:), temps(:,:,:)
+  real(8), allocatable    :: Zlevels(:), Temp(:)
+  real(8), allocatable    :: GasExt(:), RaylExt(:)
+  real(8), allocatable    :: ssaProf(:)
   integer, allocatable :: phaseIndex(:)
   real                 :: LegendreCoefs(2)
-  real,    allocatable :: extinct(:,:,:,:), ssa(:,:,:,:)
+  real(8),    allocatable :: extinct(:,:,:,:), ssa(:,:,:,:)
   integer, allocatable :: phaseFuncIndex(:,:,:,:)
 
    ! I3RC Monte Carlo code derived type variables
@@ -219,6 +221,7 @@ program ParticleFileToDomain
   allocate (phaseFuncTables(numScatTables), Nretab(numScatTables))
    ! Read the scattering tables and get the number of entries in each table
   do i = 1, numScatTables
+PRINT *, ScatTableFiles(i)
     call read_PhaseFunctionTable(fileName = ScatTableFiles(i), &
                                  table = phaseFuncTables(i),   &
                                  status = status) 
@@ -410,7 +413,7 @@ subroutine read_particle_file (parfile, nx, ny, nzp, nscattab, &
   character(len=*), intent(in) :: parfile
   integer, intent(in) :: nx, ny, nzp, nscattab
   real,    intent(in) :: DropNumConc
-  real,    intent(out) :: delx, dely, zpar(nzp+1), temppar(nzp+1)
+  real(8),    intent(out) :: delx, dely, zpar(nzp+1), temppar(nzp+1)
   integer, intent(out) :: ncomp(nx,ny,nzp), ptype(nscattab,nx,ny,nzp)
   real,    intent(out) :: masscont(nscattab,nx,ny,nzp), reff(nscattab,nx,ny,nzp)
   
@@ -488,9 +491,9 @@ subroutine organize_levels (nZp, Zpar, TempPar, &
  ! The base level index of the particle levels is returned in izLevelBase.
   implicit none
   integer, intent(in) :: nZp, numOtherLevels, nZt
-  real,    intent(in) :: Zpar(nZp+1), TempPar(nZp+1)
+  real(8),    intent(in) :: Zpar(nZp+1), TempPar(nZp+1)
   real,    intent(in) :: OtherHeights(numOtherLevels), OtherTemps(numOtherLevels)
-  real,    intent(out) :: Zlevels(nZt+1), Temp(nZt+1)
+  real(8),    intent(out) :: Zlevels(nZt+1), Temp(nZt+1)
   integer, intent(out) :: izLevelBase
   integer :: i, j, k
 
@@ -540,10 +543,10 @@ subroutine read_molec_abs_file (MolecAbsFileName, nZt, Zlevels, GasExt)
   implicit none
   character(len=*), intent(in) :: MolecAbsFileName
   integer, intent(in) :: nZt
-  real,    intent(in) :: Zlevels(1:nZt+1)
-  real,    intent(out) :: GasExt(1:nZt+1)
+  real(8),    intent(in) :: Zlevels(1:nZt+1)
+  real(8),    intent(out) :: GasExt(1:nZt+1)
   integer :: nZ
-  real, allocatable :: Zlevin(:)
+  real(8), allocatable :: Zlevin(:)
 
   GasExt(:) = 0.0
   if (trim(MolecAbsFileName) /= 'NONE' .and. len_trim(MolecAbsFIlename) > 0) then
@@ -553,6 +556,7 @@ subroutine read_molec_abs_file (MolecAbsFileName, nZt, Zlevels, GasExt)
     read (2,*) Zlevin(1:nZ+1)
     if (nZ /= nZt .or. any(abs(Zlevin(:) - Zlevels(:)) > spacing(Zlevels))) then
       print *, 'read_molec_abs_file: input Z levels do not match'
+      print *, 'Zlevin=', Zlevin(:), 'Zlevels=', Zlevels(:)
       stop
     endif
     deallocate (Zlevin)
@@ -575,8 +579,9 @@ subroutine rayleigh_extinct (nzt, Zlevels, Temp, wavelen, RaylExt)
  ! The extinction profile is returned with zeros if wavelen<=0.
   implicit none
   integer, intent(in) :: nzt
-  real,    intent(in) :: Zlevels(nzt+1), Temp(nzt+1), wavelen
-  real,    intent(out) :: RaylExt(nzt)
+  real(8),    intent(in) :: Zlevels(nzt+1), Temp(nzt+1)
+  real ,    intent(in) :: wavelen
+  real(8),    intent(out) :: RaylExt(nzt)
   
   integer :: i
   real    :: raylcoef, pres, lapse, ts, dz, extlev(nzt+1)
@@ -614,8 +619,8 @@ subroutine create_temp_field(nZt, nx, ny, temp_in, temp_out)
 
  implicit none
  integer, intent(in)   :: nZt, nx, ny
- real, intent(in)      :: temp_in(1:nZt+1)
- real, intent(out)     :: temp_out(1:nx,1:ny,1:nZt)
+ real(8), intent(in)      :: temp_in(1:nZt+1)
+ real(8), intent(out)     :: temp_out(1:nx,1:ny,1:nZt)
 
  integer               :: i
 

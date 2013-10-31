@@ -57,18 +57,18 @@ module monteCarloRadiativeTransfer
         
     ! -------------------------------------------------------------------------=                                           
     ! The atmosphere and surface 
-    real                                    :: surfaceAlbedo = 0.  
+    real(8)                                    :: surfaceAlbedo = 0.  
     logical                                 :: xyRegularlySpaced = .false., &
                                                 zRegularlySpaced = .false. 
-    real                                    :: deltaX = 0., deltaY = 0. , deltaZ = 0., &
+    real(8)                                    :: deltaX = 0., deltaY = 0. , deltaZ = 0., &
                                                x0 = 0., y0= 0., z0 = 0.
-    real,    dimension(:),          pointer :: xPosition => null() 
-    real,    dimension(:),          pointer :: yPosition => null()
-    real,    dimension(:),          pointer :: zPosition => null()
-    real,    dimension(:, :, :),    pointer :: totalExt           => null()
-    real,    dimension(:, :, :),    pointer :: temps              => null()
-    real,    dimension(:, :, :, :), pointer :: cumulativeExt      => null()
-    real,    dimension(:, :, :, :), pointer :: ssa                => null()
+    real(8),    dimension(:),          pointer :: xPosition => null() 
+    real(8),    dimension(:),          pointer :: yPosition => null()
+    real(8),    dimension(:),          pointer :: zPosition => null()
+    real(8),    dimension(:, :, :),    pointer :: totalExt           => null()
+    real(8),    dimension(:, :, :),    pointer :: temps              => null()
+    real(8),    dimension(:, :, :, :), pointer :: cumulativeExt      => null()
+    real(8),    dimension(:, :, :, :), pointer :: ssa                => null()
     integer, dimension(:, :, :, :), pointer :: phaseFunctionIndex => null()
     real                                    :: LW_flag = -1.
     ! Surface reflection BDRF
@@ -455,8 +455,8 @@ contains
 
         
     ! Local variables
-    real :: xPos, yPos, zPos, xNew, yNew, zNew, mu, phi
-    real :: x0, y0, z0, xMax, yMax, zMax
+    real :: mu, phi
+    real(8) :: x0, y0, z0, xMax, yMax, zMax,xPos, yPos, zPos, xNew, yNew, zNew
     real :: tauToTravel, photonWeight, scatteringAngle, tauAccumulated, ssa, maxExtinction
     real :: initialMu, initialPhi
     logical :: useRayTracing, useMaxCrossSection, scatterThisEvent
@@ -784,7 +784,7 @@ end if
             !   and compute the new direction and weight of the photon. 
             !
             component = findIndex(getRandomReal(randomNumbers), &
-                                  (/ 0., thisIntegrator%cumulativeExt(xIndex, yIndex, zIndex, :) /))    
+                                  (/ 0.0_8, thisIntegrator%cumulativeExt(xIndex, yIndex, zIndex, :) /))    
             !
             ! Absorption 
             !
@@ -1080,7 +1080,7 @@ end if
                                recScatOrd, numRecScatOrd, LW_flag,                   &
                                status)
     type(integrator),   intent(inout) :: thisIntegrator
-    real,     optional, intent(in   ) :: surfaceAlbedo
+    real(8),     optional, intent(in   ) :: surfaceAlbedo
     type(surfaceDescription), &
               optional, intent(in   ) :: surfaceBDRF
     integer,  optional, intent(in   ) :: minForwardTableSize, minInverseTableSize
@@ -1691,7 +1691,7 @@ end if
  subroutine findXYIndicies(thisIntegrator, xPos, yPos, xIndex, yIndex)
 ! pure subroutine findXYIndicies(thisIntegrator, xPos, yPos, xIndex, yIndex)
     type(integrator), intent(in ) :: thisIntegrator
-    real,             intent(in ) :: xPos, yPos
+    real(8),             intent(in ) :: xPos, yPos
     integer,          intent(inout) :: xIndex, yIndex
     
     
@@ -1715,7 +1715,7 @@ end if
   !------------------------------------------------------------------------------------------
   pure subroutine findZIndex(thisIntegrator, zPos, zIndex)
     type(integrator), intent(in ) :: thisIntegrator
-    real,             intent(in ) :: zPos
+    real(8),             intent(in ) :: zPos
     integer,          intent(out) :: zIndex
     if(thisIntegrator%zRegularlySpaced) then
       zIndex = min(int((zPos - thisIntegrator%z0)/thisIntegrator%deltaZ) + 1, &
@@ -1768,7 +1768,8 @@ end if
     !   component. 
     !
     type(integrator),      intent(inout) :: thisIntegrator
-    real,                  intent(in   ) :: photonWeight, xPos,   yPos,   zPos
+    real(8),                  intent(in   ) :: xPos,   yPos,   zPos
+    real,                  intent(in   ) :: photonWeight
     integer,               intent(in   ) ::               xIndex, yIndex, zIndex
     real,    dimension(:), intent(in   ) :: directionCosines
     integer,               intent(in   ) :: component
@@ -1793,7 +1794,7 @@ end if
     !
     real    :: tauFree, tauMax
     integer :: zIndexMax
-    real    :: xTemp, yTemp, zTemp, xPosI, yPosI, zPosI
+    real(8)    :: xTemp, yTemp, zTemp, xPosI, yPosI, zPosI
     real, dimension(size(thisIntegrator%intensityDirections, 2)) &
             :: normalizedPhaseFunc
     
@@ -2007,7 +2008,7 @@ end if
     !
     type(integrator),   intent(in   ) :: thisIntegrator
     real, dimension(3), intent(in   ) :: directionCosines
-    real,               intent(inout) :: xPos, yPos, zPos
+    real(8),               intent(inout) :: xPos, yPos, zPos
     integer,            intent(inout) :: xIndex, yIndex, zIndex
     real,               intent(  out) :: extAccumulated
     real, optional,     intent(in   ) :: extToAccumulate
@@ -2407,7 +2408,7 @@ end if
 
   !------------------------------------------------------------------------------------------
   elemental function makePeriodic(a, aMin, aMax)
-    real, intent(in) :: a, aMin, aMax
+    real(8), intent(in) :: a, aMin, aMax
     real             :: makePeriodic
     !
     ! Ensure that a position is within domain when the boundary conditions are periodic
@@ -2477,8 +2478,8 @@ end if
   !------------------------------------------------------------------------------------------
   subroutine getInfo_Integrator(thisIntegrator, ssa, cumExt)
     type(Integrator), intent(in)                  :: thisIntegrator
-    real, dimension(:,:,:,:), intent(out)         :: ssa
-    real, dimension(:,:,:), intent(out)           :: cumExt
+    real(8), dimension(:,:,:,:), intent(out)         :: ssa
+    real(8), dimension(:,:,:), intent(out)           :: cumExt
 
     ssa(:,:,:,:) = thisIntegrator%ssa(:,:,:,:)
     cumExt(:,:,:) = thisIntegrator%totalExt(:,:,:)

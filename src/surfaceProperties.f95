@@ -31,7 +31,7 @@ module surfaceProperties
   !------------------------------------------------------------------------------------------
   type surfaceDescription
     private
-    real, dimension(:),       pointer :: xPosition, yPosition
+    real(8), dimension(:),       pointer :: xPosition, yPosition
     real, dimension(:, :, :), pointer :: BRDFParameters
   end type surfaceDescription
   
@@ -58,7 +58,7 @@ contains
   function newSurfaceDescriptionXY(surfaceParameters, xPosition, yPosition, status) &
     result(thisSurfaceDescription)
     real, dimension(:, :, :), intent(in   ) :: surfaceParameters
-    real, dimension(:),       intent(in   ) :: xPosition, yPosition
+    real(8), dimension(:),       intent(in   ) :: xPosition, yPosition
     type(ErrorMessage),       intent(inout) :: status
     type(surfaceDescription)                :: thisSurfaceDescription 
 
@@ -100,7 +100,7 @@ contains
     !
     ! Define a horizontally uniform surface
     !
-    real, dimension(2), parameter :: xPosition = (/ 0., huge(surfaceParameters) /), &
+    real(8), dimension(2), parameter :: xPosition = (/ 0., huge(surfaceParameters) /), &
                                      yPosition = (/ 0., huge(surfaceParameters) /)
     real, dimension(numberOfParameters, 1, 1) :: surfaceParams
  
@@ -119,10 +119,11 @@ contains
   pure function computeSurfaceReflectance(thisSurfaceDescription, xPos, yPos, &
                                      incomingMu, outgoingMu, incomingPhi, outgoingPhi) result(surfaceReflectance)
     type(surfaceDescription), intent(in) :: thisSurfaceDescription
-    real,                     intent(in) :: xPos, yPos, incomingMu, outgoingMu, incomingPhi, outgoingPhi
+    real(8),                     intent(in) :: xPos, yPos
+    real,                     intent(in) :: incomingMu, outgoingMu, incomingPhi, outgoingPhi
     real                                 :: surfaceReflectance
 
-    real    :: x0, xMax, y0, yMax
+    real(8)    :: x0, xMax, y0, yMax
     integer :: xIndex, yIndex
     
     !
@@ -208,7 +209,7 @@ contains
   ! Utility procedures private to the module 
   !------------------------------------------------------------------------------------------
   elemental function makePeriodic(a, aMin, aMax)
-    real, intent(in) :: a, aMin, aMax
+    real(8), intent(in) :: a, aMin, aMax
     real             :: makePeriodic
     !
     ! Ensure that a position is within domain when the boundary conditions are periodic

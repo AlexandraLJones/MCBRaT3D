@@ -38,8 +38,8 @@ module opticalProperties
     character (len = maxNameLength)      :: name       = ""
     integer                              :: zLevelBase = 0
     logical                              :: horizontallyUniform = .false.
-    real,    dimension(:, :, :), pointer :: extinction             => null()
-    real,    dimension(:, :, :), pointer :: singleScatteringAlbedo => null()
+    real(8),    dimension(:, :, :), pointer :: extinction             => null()
+    real(8),    dimension(:, :, :), pointer :: singleScatteringAlbedo => null()
     integer, dimension(:, :, :), pointer :: phaseFunctionIndex     => null()
     type(phaseFunctionTable)             :: table
   end type opticalComponent
@@ -49,10 +49,10 @@ module opticalProperties
     !   and/or z grids are evenly spaced, and pointers to the optical components. 
     !
     private
-    real, pointer, dimension(:)          :: xPosition => null()
-    real, pointer, dimension(:)          :: yPosition => null()
-    real, pointer, dimension(:)          :: zPosition => null()
-    real, pointer, dimension(:,:,:)      :: temps => null()   
+    real(8), pointer, dimension(:)          :: xPosition => null()
+    real(8), pointer, dimension(:)          :: yPosition => null()
+    real(8), pointer, dimension(:)          :: zPosition => null()
+    real(8), pointer, dimension(:,:,:)      :: temps => null()   
     logical                              :: xyRegularlySpaced = .false., zRegularlySpaced = .false. 
     type(opticalComponent), &
                    dimension(:), pointer :: components  => null()
@@ -85,8 +85,8 @@ contains
   ! Initialization: Routine to create new domains 
   !------------------------------------------------------------------------------------------
   function new_Domain(xPosition, yPosition, zPosition, temps, status)
-    real,    dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
-    real,    dimension(:,:,:), intent(in) :: temps
+    real(8),    dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
+    real(8),    dimension(:,:,:), intent(in) :: temps
     type(ErrorMessage),    intent(inout) :: status
     type(domain)                         :: new_Domain
     
@@ -134,7 +134,7 @@ contains
                                    zLevelBase, status)
     type(domain),                intent(inout) :: thisDomain
     character (len = *),         intent(in   ) :: componentName
-    real,    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
     integer, dimension(:, :, :), intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer, optional,           intent(in   ) :: zLevelBase
@@ -199,7 +199,7 @@ contains
                                    zLevelBase, status)
     type(domain),                intent(inout) :: thisDomain
     character (len = *),         intent(in   ) :: componentName
-    real,    dimension(:),       intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:),       intent(in   ) :: extinction, singleScatteringAlbedo
     integer, dimension(:),       intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer,           optional, intent(in   ) :: zLevelBase
@@ -234,7 +234,7 @@ contains
     type(domain),                intent(inout) :: thisDomain
     integer,                     intent(in   ) :: componentNumber
     character (len = *),         intent(in   ) :: componentName
-    real,    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
     integer, dimension(:, :, :), intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer, optional,           intent(in   ) :: zLevelBase
@@ -279,7 +279,7 @@ contains
     type(domain),                intent(inout) :: thisDomain
     integer,                     intent(in   ) :: componentNumber
     character (len = *),         intent(in   ) :: componentName
-    real,    dimension(:),       intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:),       intent(in   ) :: extinction, singleScatteringAlbedo
     integer, dimension(:),       intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer,           optional, intent(in   ) :: zLevelBase
@@ -361,8 +361,8 @@ contains
                             numberOfComponents, componentNames, status) 
     type(domain),                    intent(in   ) :: thisDomain
     integer,               optional, intent(  out) :: numX, numY, numZ
-    real,    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition
-    real, dimension(:,:,:), optional, intent( out) :: temps
+    real(8),    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition
+    real(8), dimension(:,:,:), optional, intent( out) :: temps
     integer,               optional, intent(  out) :: numberOfComponents
     character(len = *), &
              dimension(:), optional, intent(  out) :: componentNames
@@ -436,8 +436,8 @@ contains
                  totalExtinction, cumulativeExtinction, singleScatteringAlbedo, &
                  phaseFunctionIndex, phaseFunctions, status)
     type(domain),                    intent(in   ) :: thisDomain
-    real,    dimension(:, :, :),     intent(  out) :: totalExtinction
-    real,    dimension(:, :, :, :),  intent(  out) :: cumulativeExtinction, singleScatteringAlbedo
+    real(8),    dimension(:, :, :),     intent(  out) :: totalExtinction
+    real(8),    dimension(:, :, :, :),  intent(  out) :: cumulativeExtinction, singleScatteringAlbedo
     integer, dimension(:, :, :, :),  intent(  out) :: phaseFunctionIndex
     type(phaseFunctionTable), &
              dimension(:), optional, intent(  out) :: phaseFunctions
@@ -591,10 +591,10 @@ contains
       !
       ! Domain variables
       ! 
-      ncStatus( 8) = nf90_def_var(ncFileId, "x-Edges", nf90_float, xEdgeDimId, ncVarId) 
-      ncStatus( 9) = nf90_def_var(ncFileId, "y-Edges", nf90_float, yEdgeDimId, ncVarId) 
-      ncStatus(10) = nf90_def_var(ncFileId, "z-Edges", nf90_float, zEdgeDimId, ncVarId) 
-      ncStatus(11) = nf90_def_var(ncFileId, "Temperatures", nf90_float, (/ xGridDimId, yGridDimId, zGridDimId /), ncVarId)
+      ncStatus( 8) = nf90_def_var(ncFileId, "x-Edges", nf90_double, xEdgeDimId, ncVarId) 
+      ncStatus( 9) = nf90_def_var(ncFileId, "y-Edges", nf90_double, yEdgeDimId, ncVarId) 
+      ncStatus(10) = nf90_def_var(ncFileId, "z-Edges", nf90_double, zEdgeDimId, ncVarId) 
+      ncStatus(11) = nf90_def_var(ncFileId, "Temperatures", nf90_double, (/ xGridDimId, yGridDimId, zGridDimId /), ncVarId)
       !
       ! Domain attributes
       !
@@ -641,9 +641,9 @@ contains
           else
             ! Variables are 3D
             !
-            ncStatus( 7) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "Extinction",             nf90_float, &
+            ncStatus( 7) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "Extinction",             nf90_double, &
                                         (/ xGridDimId, yGridDimId, zGridDimId /) , extinctionVarId)
-            ncStatus( 8) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", nf90_float, &
+            ncStatus( 8) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", nf90_double, &
                                         (/ xGridDimId, yGridDimId, zGridDimId /) , ssaVarId)
             ! Doesn't seem like there will ever be more than 2^15 possible phase functions...
             ncStatus( 9) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex",     nf90_short, &
@@ -727,12 +727,12 @@ contains
                        :: oneByte
     integer            :: i
     integer            :: nXEdges, nYEdges, nZEdges, nComponents, nZGrid
-    real, dimension(:), &
+    real(8), dimension(:), &
            allocatable :: xEdges, yEdges, zEdges
-    real, dimension(:,:,:), allocatable :: temps
+    real(8), dimension(:,:,:), allocatable :: temps
 
     ! Variable for each component
-    real,    dimension(:, :, :), allocatable :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:, :, :), allocatable :: extinction, singleScatteringAlbedo
     integer, dimension(:, :, :), allocatable :: phaseFunctionIndex
     type(phaseFunctionTable)                 :: table
     character(len = maxNameLength)           :: name
@@ -910,7 +910,7 @@ contains
   function newOpticalComponent(componentName, extinction, singleScatteringAlbedo, &
                                phaseFunctionIndex, zLevelBase, phaseFunctions) result(newOne)
     character (len = *),         intent( in) :: componentName
-    real,    dimension(:, :, :), intent( in) :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:, :, :), intent( in) :: extinction, singleScatteringAlbedo
     integer, dimension(:, :, :), intent( in) :: phaseFunctionIndex
     integer,           optional, intent( in) :: zLevelBase
     type(phaseFunctionTable),    intent( in) :: phaseFunctions
@@ -947,7 +947,7 @@ contains
                                       zLevelBase, status)
     type(domain),                intent(inout) :: thisDomain
     character (len = *),         intent(in   ) :: componentName
-    real,    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
     integer, dimension(:, :, :), intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: table
     integer,                     intent(in   ) :: zLevelBase

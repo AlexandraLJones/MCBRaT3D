@@ -8,8 +8,16 @@
 module numericUtilities
   implicit none
   private 
+!  public :: computeLobattoTerms, computeGaussLegendreTerms, &
+!            computeLegendrePolynomials, findIndex
+
+  interface findIndex
+     module procedure findIndexDouble, findIndexReal, findIndexMixed
+  end interface
+
   public :: computeLobattoTerms, computeGaussLegendreTerms, &
             computeLegendrePolynomials, findIndex
+
 contains
   !------------------------------------------------------------------------------------------
   pure subroutine computeLobattoTerms(mus, weights)
@@ -192,11 +200,11 @@ contains
     end do 
   end function computeLegendrePolynomials
   !------------------------------------------------------------------------------------------
-  pure function findIndex(value, table, firstGuess)
-    real,               intent( in) :: value
-    real, dimension(:), intent( in) :: table
+  pure function findIndexDouble(value, table, firstGuess)
+    real(8),               intent( in) :: value
+    real(8), dimension(:), intent( in) :: table
     integer, optional,  intent( in) :: firstGuess
-    integer                         :: findIndex
+    integer                         :: findIndexDouble
     !
     ! Find the index i into the table such that table(i) <= value < table(i+i)
     !   This is modeled after routine "hunt" from Numerical Recipes, 2nd ed., 
@@ -244,9 +252,122 @@ contains
       end if
     end do bisectionLoop
     
-    findIndex = lowerBound
-  end function findIndex
+    findIndexDouble = lowerBound
+  end function findIndexDouble
   !------------------------------------------------------------------------------------------
+  pure function findIndexMixed(value, table, firstGuess)
+    real,               intent( in) :: value
+    real(8), dimension(:), intent( in) :: table
+    integer, optional,  intent( in) :: firstGuess
+    integer                         :: findIndexMixed
+    !
+    ! Find the index i into the table such that table(i) <= value < table(i+i)
+    !   This is modeled after routine "hunt" from Numerical Recipes, 2nd ed.,
+    !   pg 112. Here we know that the values in the table are always increasing,
+    !   that every value should be spanned by the table entries, and the firstGuess
+    !   always makes sense.
+
+    ! Local variables
+    integer :: lowerBound, upperBound, midPoint
+    integer :: increment
+
+    ! Hunting; only done if a first guess is supplied
+    !  Move upper and lower bounds around until the value is spanned by
+    !   table(lowerBound) and table(upperBound). Make the interval twice as
+    !   big at each step
+    if(present(firstGuess)) then
+      lowerBound = firstGuess
+      increment = 1
+      huntingLoop: do
+        upperBound = min(lowerBound + increment, size(table))
+        if(lowerBound == size(table) .or. &
+           (table(lowerBound) <= value .and. table(upperBound) > value)) exit huntingLoop
+        if(table(lowerBound) > value) then
+          upperBound = lowerBound
+          lowerBound = max(upperBound - increment, 1)
+        else
+          ! Both table(lowerBound) and table(upperBound) are <= value
+          lowerBound = upperBound
+        end if
+        increment = increment * 2
+      end do huntingLoop
+    else
+      lowerBound = 0; upperBound = size(table)
+    end if
+
+    ! Bisection: figure out which half of the remaining interval holds the
+    !   desired value, discard the other half, and repeat
+    bisectionLoop: do
+      if(lowerBound == size(table) .or. upperBound <= lowerBound + 1) exit bisectionLoop
+      midPoint = (lowerBound + upperBound)/2
+      if(value >= table(midPoint)) then
+        lowerBound = midPoint
+      else
+        upperBound = midPoint
+      end if
+    end do bisectionLoop
+
+    findIndexMixed = lowerBound
+  end function findIndexMixed
+
+  !------------------------------------------------------------------------------------------
+  pure function findIndexReal(value, table, firstGuess)
+    real,               intent( in) :: value
+    real, dimension(:), intent( in) :: table
+    integer, optional,  intent( in) :: firstGuess
+    integer                         :: findIndexReal
+    !
+    ! Find the index i into the table such that table(i) <= value < table(i+i)
+    !   This is modeled after routine "hunt" from Numerical Recipes, 2nd ed.,
+    !   pg 112. Here we know that the values in the table are always increasing,
+    !   that every value should be spanned by the table entries, and the firstGuess
+    !   always makes sense.
+
+    ! Local variables
+    integer :: lowerBound, upperBound, midPoint
+    integer :: increment
+
+    ! Hunting; only done if a first guess is supplied
+    !  Move upper and lower bounds around until the value is spanned by
+    !   table(lowerBound) and table(upperBound). Make the interval twice as
+    !   big at each step
+    if(present(firstGuess)) then
+      lowerBound = firstGuess
+      increment = 1
+      huntingLoop: do
+        upperBound = min(lowerBound + increment, size(table))
+        if(lowerBound == size(table) .or. &
+           (table(lowerBound) <= value .and. table(upperBound) > value)) exit huntingLoop      
+        if(table(lowerBound) > value) then
+          upperBound = lowerBound
+          lowerBound = max(upperBound - increment, 1)
+        else
+          ! Both table(lowerBound) and table(upperBound) are <= value
+          lowerBound = upperBound
+        end if
+        increment = increment * 2
+      end do huntingLoop
+    else
+      lowerBound = 0; upperBound = size(table)
+    end if
+
+    ! Bisection: figure out which half of the remaining interval holds the
+    !   desired value, discard the other half, and repeat
+    bisectionLoop: do
+      if(lowerBound == size(table) .or. upperBound <= lowerBound + 1) exit bisectionLoop
+      midPoint = (lowerBound + upperBound)/2
+      if(value >= table(midPoint)) then
+        lowerBound = midPoint
+      else
+        upperBound = midPoint
+      end if
+    end do bisectionLoop
+
+    findIndexReal = lowerBound
+  end function findIndexReal
+  !------------------------------------------------------------------------------------------
+
+
   elemental function gammln(x)
     ! Returns the natural log of Gamma(x)
     implicit none

@@ -23,7 +23,7 @@ module scatteringPhaseFunctions
   ! Is there a way to make this transparent?
   real,    parameter :: Pi = 3.141592654, radiansToDegrees = 180. / (Pi/2.)
   real,    parameter :: minScatteringAngle = 0., maxScatteringAngle = Pi ! radians
-  real,    parameter :: defaultExtinction = 0.,  defaultSSA = 0.
+  real(8),    parameter :: defaultExtinction = 0.,  defaultSSA = 0.
   integer, parameter :: maxSingleDescriptorLength = 64, maxTableDescriptorLength = 1024
 
   !------------------------------------------------------------------------------------------
@@ -37,7 +37,7 @@ module scatteringPhaseFunctions
     real, dimension(:), pointer :: scatteringAngle  => null()
     real, dimension(:), pointer :: value            => null()
     real, dimension(:), pointer :: legendreCoefficients  => null()
-    real                        :: extinction             = defaultExtinction, &
+    real(8)                        :: extinction             = defaultExtinction, &
                                    singleScatteringAlbedo = defaultSSA
     character(len = maxSingleDescriptorLength) &
                                 :: description = ""
@@ -100,7 +100,7 @@ contains
   function newPhaseFunctionTabulated(scatteringAngle, value, &
                                      extinction, singleScatteringAlbedo, description, status) result(newPhaseFunction)
     real, dimension(:),           intent(in   ) :: value, scatteringAngle
-    real,               optional, intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8),               optional, intent(in   ) :: extinction, singleScatteringAlbedo
     character(len = *), optional, intent(in   ) :: description
     type(ErrorMessage),           intent(inout) :: status
     type(phaseFunction)                         :: newPhaseFunction
@@ -162,7 +162,7 @@ contains
   function newPhaseFunctionExpansion(legendreCoefficients, extinction, singleScatteringAlbedo, &
                                      description, status) result(newPhaseFunction)
     real, dimension(:),           intent(in   ) :: legendreCoefficients
-    real,               optional, intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8),               optional, intent(in   ) :: extinction, singleScatteringAlbedo
     character(len = *), optional, intent(in   ) :: description
     type(ErrorMessage),           intent(inout) :: status
     type(phaseFunction)                         :: newPhaseFunction
@@ -228,7 +228,7 @@ contains
     real, dimension(:),            intent(in   ) :: scatteringAngle
     real, dimension(:, :),         intent(in   ) :: values
     real, dimension(:),            intent(in   ) :: key
-    real, dimension(:), optional,  intent(in   ) :: extinction, singleScatteringAlbedo
+    real(8), dimension(:), optional,  intent(in   ) :: extinction, singleScatteringAlbedo
     character(len = *), &
           dimension(:), optional,  intent(in   ) :: phaseFunctionDescriptions
     character(len = *), optional,  intent(in   ) :: tableDescription
@@ -417,7 +417,7 @@ contains
     type(ErrorMessage)                 :: status
     integer                            :: nAngles, nEntries, i
     real, dimension(:, :), allocatable :: values
-    real, dimension(:),    allocatable :: extinction, singleScatteringAlbedo
+    real(8), dimension(:),    allocatable :: extinction, singleScatteringAlbedo
     
     ! ------------------------
     if(original%oneAngleSet) then
@@ -808,7 +808,8 @@ contains
                                         phaseFunctionDescriptions, tableDescription, status)
     type(phaseFunctionTable),           intent(in   ) :: table
     integer,                  optional, intent(  out) :: nEntries
-    real,    dimension(:),    optional, intent(  out) :: key, extinction, singleScatteringAlbedo
+    real,    dimension(:),    optional, intent(  out) :: key
+    real(8),     dimension(:),    optional, intent(  out) ::extinction, singleScatteringAlbedo
     character(len = *), &
               dimension(:),   optional, intent(  out) :: phaseFunctionDescriptions
     character(len = *),       optional, intent(  out) :: tableDescription
@@ -943,7 +944,7 @@ contains
     integer                               :: ncFileId, entryDimID, keyVarId, &
                                              extinctionVarId, ssaVarId
     integer                               :: nEntries, i
-    real,    dimension(:),    allocatable :: extinction, singleScatteringAlbedo
+    real(8),    dimension(:),    allocatable :: extinction, singleScatteringAlbedo
     ! For angle-value pairs
     integer                               :: angleDimID, angleVarId, phaseFunctionVarID 
     integer                               :: nAngles
@@ -1001,9 +1002,9 @@ contains
       ncStatus( 3) = nf90_def_var(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT",       &
                                   nf90_float, entryDimId, keyVarID)
       ncStatus( 4) = nf90_def_var(ncFileId, trim(thisPrefix) // "extinctionT",             &
-                                  nf90_float, entryDimId, extinctionVarId)
+                                  nf90_double, entryDimId, extinctionVarId)
       ncStatus( 5) = nf90_def_var(ncFileId, trim(thisPrefix) // "singleScatteringAlbedoT", &
-                                  nf90_float, entryDimId, ssaVarId)
+                                  nf90_double, entryDimId, ssaVarId)
       if(len_trim(table%description) > 0) &
         ncStatus( 6) = nf90_put_att(ncFileID, nf90_Global, &
                                               trim(thisPrefix) // "description", trim(table%description))
@@ -1126,7 +1127,8 @@ contains
     integer                                    :: ncFileId, ncDimId, ncVarId
     integer                                    :: nEntries, i
     character(len = 32)                        :: storageType
-    real,    dimension(:),    allocatable      :: key, extinction, singleScatteringAlbedo
+    real,    dimension(:),    allocatable      :: key
+    real(8),    dimension(:),    allocatable      :: extinction, singleScatteringAlbedo
     character(len = maxTableDescriptorLength)  :: description
     ! For angle-value pairs
     integer                               :: nAngles
@@ -1152,6 +1154,9 @@ contains
       ncStatus( :) = nf90_NoErr
       ncStatus( 1) = nf90_open(trim(fileName), nf90_NoWrite, ncFileID)
       ncStatus( 2) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", storageType)
+	PRINT*, 'ncstatus:', ncstatus(:)
+        PRINT *, NF90_STRERROR(ncStatus(1))
+ 	PRINT *, NF90_STRERROR(ncStatus(2))
       if(any(ncStatus(1:2) /= nf90_noErr)) & 
         call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " is not a phase function table file.")
     else
