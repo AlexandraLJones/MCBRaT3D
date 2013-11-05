@@ -225,9 +225,9 @@ contains
     type(ErrorMessage),         intent(inout)       :: status
     type(photonStream)                              :: photons
     integer,                       intent(in)       :: atms_photons
-    real*8, dimension(nx,ny,nz), intent(in)         :: voxel_weights
-    real*8, dimension(ny,nz), intent(in)         :: col_weights
-    real*8, dimension(nz), intent(in)         :: level_weights
+    real(8), dimension(nx,ny,nz), intent(in)         :: voxel_weights
+    real(8), dimension(ny,nz), intent(in)         :: col_weights
+    real(8), dimension(nz), intent(in)         :: level_weights
     integer, dimension(nx,ny,nz), optional, intent(out)   :: option1
 
     ! Local variables
@@ -281,11 +281,11 @@ contains
     option1(ii,ij,ik)=option1(ii,ij,ik)+1
  end if 
 
-            photons%zPosition(i) = ((ik-1)*(1.0)/nz) + (getRandomReal(randomNumbers)/nz) ! The first term represents the fractional position of the layer bottom in the column, such that ik=1 corresponds to a position of 0. The second term respresents the position within the layer.
-            if(ik .eq. 1 .and. photons%zPosition(i) .eq. 0.) photons%zPosition(i)=0.+spacing(1.0)
-            if(ik .eq. nz .and. photons%zPosition(i) .gt. 1.-2.*spacing(1.0)) photons%zPosition(i)=photons%zPosition(i) - (2.*spacing(1.0))
-            photons%xPosition(i) = ((ii -1)*1.0/nx) + (getRandomReal(randomNumbers)*(1.0/nx)) 
-            photons%yPosition(i) = ((ij -1)*1.0/ny) + (getRandomReal(randomNumbers)*(1.0/ny)) 
+            photons%zPosition(i) = ((ik-1)*(1.0_8)/nz) + dble(getRandomReal(randomNumbers)/nz) ! The first term represents the fractional position of the layer bottom in the column, such that ik=1 corresponds to a position of 0. The second term respresents the position within the layer.
+            if(ik .eq. 1 .and. photons%zPosition(i) .eq. 0.0_8) photons%zPosition(i)=0.0_8+spacing(1.0_8)
+            if(ik .eq. nz .and. photons%zPosition(i) .gt. 1.0_8-2.0_8*spacing(1.0_8)) photons%zPosition(i)=photons%zPosition(i) - (2.0_8*spacing(1.0_8))
+            photons%xPosition(i) = ((ii -1)*1.0_8/nx) + dble(getRandomReal(randomNumbers)*(1.0/nx)) 
+            photons%yPosition(i) = ((ij -1)*1.0_8/ny) + dble(getRandomReal(randomNumbers)*(1.0/ny)) 
 !if(i .eq. 1) PRINT *, 'ind= ', ind, 'i= ', ik, 'j= ', ij, 'k= ', ik, 'xPos= ', photons%xPosition(i)
             ! Random initial directions
 !            test=getRandomReal(randomNumbers)
@@ -317,7 +317,7 @@ contains
        END DO
         photons%solarAzimuth(i) = getRandomReal(randomNumbers) * 2. * acos(-1.)
       end do  !loop over i
-        photons%zPosition(numberOfAtmsPhotons+1:numberOfPhotons) = 0.0 ! must be from the sfc. Make sure this value makes sense for how the position is interpretted
+        photons%zPosition(numberOfAtmsPhotons+1:numberOfPhotons) = 0.0_8 ! must be from the sfc. Make sure this value makes sense for how the position is interpretted
      end if
 !PRINT *,  ' photons%solarMu=', photons%solarMu(1)
       photons%currentPhoton = 1
@@ -412,11 +412,13 @@ contains
      real(8), parameter                                   :: h=6.62606957e-34 !planck's constant [Js]
      real(8), parameter                                   :: c=2.99792458e+8 !speed of light [ms^-1]
      real(8), parameter                                   :: k=1.3806488e-23 !boltzman constant [J/K molecule]
-     real(8), parameter                                   :: a=2.0*h*c**2  
-     real(8), parameter                                   :: Pi=4*ATAN(1.0)
+     real(8), parameter                                   :: a=2.0_8*h*c**2.0_8  
+     real(8), parameter                                   :: Pi=4*DATAN(1.0_8)
 
-     lambda=lambda_u/(10**6) ! convert lambda from micrometers to meters
+     lambda=lambda_u/(10.0_8**6.0_8) ! convert lambda from micrometers to meters
      b=h*c/(k*lambda)
+
+PRINT *, h, c, k, lambda, Pi, a, b
 !calculate arrays of depths from the position arrays in km
      dz(1:nz)=zPosition(2:nz+1)-zPosition(1:nz)
      dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
@@ -458,7 +460,7 @@ contains
            voxel_weights(ix,iy,iz) = previous
            prev_exact=prev_exact + dble(1.0_8/(nx*ny*nz))
 !           write(11, "(6E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
-            write(11, "(9E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz), dble( ((iz-1)*nx*ny)+((iy-1)*nx)+ix  )/dble(nx*ny*nz), prev_exact,corr
+            write(11, "(9E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0_8*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz), dble( ((iz-1)*nx*ny)+((iy-1)*nx)+ix  )/dble(nx*ny*nz), prev_exact,corr
          end do ! i loop
          col_weights(iy,iz)= previous
 !          write(10, "(3I5, A, E30.20, A, E30.20)" ) ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy,iz), 'col_weights= ', col_weights(iy,iz)
@@ -491,7 +493,7 @@ contains
      end if
      totalFlux=totalPower/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
 PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1)), &
-         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny)
+         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny), ' expected radiance=', atmsPlanckRad*(1.0_8-exp(-1.0_8*totalAbsCoef*(zPosition(nz+1)-zPosition(1))))
      if (atmsPower .eq. 0.0_8)then
          atmsPhotons=0
      else   

@@ -632,9 +632,9 @@ contains
           if(thisDomain%components(i)%horizontallyUniform) then
             ! Variables are 1D
             !
-            ncStatus( 7) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "Extinction",             nf90_float, &
+            ncStatus( 7) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "Extinction",             nf90_double, &
                                                        zGridDimId, extinctionVarId)
-            ncStatus( 8) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", nf90_float, &
+            ncStatus( 8) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", nf90_double, &
                                                        zGridDimId, ssaVarId)
             ncStatus( 9) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex",     nf90_short, &
                                                        zGridDimId, indexVarId)

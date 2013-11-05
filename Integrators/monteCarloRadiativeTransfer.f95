@@ -57,11 +57,11 @@ module monteCarloRadiativeTransfer
         
     ! -------------------------------------------------------------------------=                                           
     ! The atmosphere and surface 
-    real(8)                                    :: surfaceAlbedo = 0.  
+    real(8)                                    :: surfaceAlbedo = 0.0_8  
     logical                                 :: xyRegularlySpaced = .false., &
                                                 zRegularlySpaced = .false. 
-    real(8)                                    :: deltaX = 0., deltaY = 0. , deltaZ = 0., &
-                                               x0 = 0., y0= 0., z0 = 0.
+    real(8)                                    :: deltaX = 0.0_8, deltaY = 0.0_8 , deltaZ = 0.0_8, &
+                                               x0 = 0.0_8, y0= 0.0_8, z0 = 0.0_8
     real(8),    dimension(:),          pointer :: xPosition => null() 
     real(8),    dimension(:),          pointer :: yPosition => null()
     real(8),    dimension(:),          pointer :: zPosition => null()
@@ -456,11 +456,11 @@ contains
         
     ! Local variables
     real :: mu, phi
-    real(8) :: x0, y0, z0, xMax, yMax, zMax,xPos, yPos, zPos, xNew, yNew, zNew
+    real(8) :: x0, y0, z0, xMax, yMax, zMax,xPos, yPos, zPos, xNew, yNew, zNew, remainder
     real :: tauToTravel, photonWeight, scatteringAngle, tauAccumulated, ssa, maxExtinction
     real :: initialMu, initialPhi
     logical :: useRayTracing, useMaxCrossSection, scatterThisEvent
-    integer :: xIndex, yIndex, zIndex, &
+    integer :: xIndex, yIndex, zIndex, numZ, &
                component, phaseFunctionIndex, nPhotons
     integer :: i, p, scatteringOrder 
     integer :: nBad
@@ -517,11 +517,15 @@ contains
         zPos = z0 + zPos * (zMax - z0)  
         call findZIndex(thisIntegrator, zPos, zIndex)    
       else
-        zIndex = 1-(zPos-FLOOR(zPos))+((SIZE(thisIntegrator%zPosition)-1)*zPos)
-        zPos = thisIntegrator%zPosition(zIndex) + (zPos-FLOOR(zPos))* (thisIntegrator%zPosition(zIndex+1)-thisIntegrator%zPosition(zIndex)) ! convert the zPos to one that works for an irregularly spaced grid. This line must follow and not preceed the zPos= line above.
+!        zIndex = 1-(zPos-FLOOR(zPos))+((SIZE(thisIntegrator%zPosition)-1)*zPos)
+!        zPos = thisIntegrator%zPosition(zIndex) + (zPos-FLOOR(zPos))* (thisIntegrator%zPosition(zIndex+1)-thisIntegrator%zPosition(zIndex)) ! convert the zPos to one that works for an irregularly spaced grid. This line must follow and not preceed the zPos= line above.
+         numZ = SIZE(thisIntegrator%zPosition) -1
+         remainder = (zPos-z0)*numZ - FLOOR((zPos-z0)*numZ) !These lines added 11/4/2013 to replace the above calculations that seemed inaccuarate for irregularly spaced vertical levels
+         zIndex = MIN(FLOOR((zPos-z0)*numZ)+1, numZ)
+         zPos = thisIntegrator%zPosition(zIndex) + remainder*(thisIntegrator%zPosition(zIndex+1)-thisIntegrator%zPosition(zIndex))
       end if
 
-if (zPos > 0.0)then
+if (zPos > 0.0_8)then
   option2(xIndex,yIndex,Zindex)=option2(xIndex,yIndex,Zindex)+1
 end if
 !write(14,"(I7, 2X, 3I5)") nPhotons, xIndex, yIndex, zIndex
@@ -529,13 +533,13 @@ end if
 !if(zIndex .ge. 36)PRINT *, zIndex, zPos, thisIntegrator%zRegularlySpaced
 
       if(thisIntegrator%LW_flag > 0)then ! if we are doing a LW simulation we want to calculate the emmission contribution to the radiance and the absorbed flux
-        if(zPos > 0.0)then
+        if(zPos > 0.0_8)then
 	   thisIntegrator%fluxAbsorbed(xIndex, yIndex) = thisIntegrator%fluxAbsorbed(xIndex, yIndex) - 1.0
            thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) = thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) - 1.0   !These 2 lines added 1/17/13 to account for photon emission by the medium in the accurate accounting of flux divergence, ultimately
         endif
 
          if (thisIntegrator%computeIntensity)then
-           if (zPos .eq. 0.0)then
+           if (zPos .eq. 0.0_8)then
             call computeIntensityContribution(thisIntegrator, photonWeight, &
                                                 xPos,   yPos,   zPos,         &
                                                 xIndex, yIndex, zIndex,       &
@@ -753,7 +757,7 @@ end if
             !
       
             if(thisIntegrator%totalExt(xIndex, yIndex, zIndex) <= 0.) then
-              if(xPos - thisIntegrator%xPosition(xIndex) <= 0. .and. directionCosines(1) > 0. ) then
+              if(xPos - thisIntegrator%xPosition(xIndex) <= 0.0_8 .and. directionCosines(1) > 0. ) then
                 xPos = xPos - spacing(xPos) 
                 xIndex = xIndex - 1
                 if (xIndex <= 0) then
@@ -762,13 +766,13 @@ end if
                   xPos = xpos - 2. * spacing(xPos)
                 end if
               end if 
-              if(yPos - thisIntegrator%yPosition(yIndex) <= 0. .and. directionCosines(2) > 0. ) then
+              if(yPos - thisIntegrator%yPosition(yIndex) <= 0.0_8 .and. directionCosines(2) > 0. ) then
                 yPos = yPos - spacing(yPos) 
                 yIndex = yIndex - 1
                 if (yIndex <= 0) then
                   yIndex = size(thisIntegrator%yPosition) - 1
                   yPos =  thisIntegrator%xPosition(yIndex) 
-                  yPos = xpos - 2. * spacing(yPos)
+                  yPos = ypos - 2. * spacing(yPos)  ! There was a typo here. I changed it from xPos to yPos on 11/3/13
                 end if 
               end if 
               if(zPos - thisIntegrator%zPosition(zIndex) <= 0. .and. directionCosines(3) > 0. ) then
@@ -789,11 +793,11 @@ end if
             ! Absorption 
             !
             ssa = thisIntegrator%ssa(xIndex, yIndex, zIndex, component)
-            if(ssa < 1.) then 
+            if(ssa < 1.0_8) then 
               thisIntegrator%fluxAbsorbed(xIndex, yIndex) =   &
-                thisIntegrator%fluxAbsorbed(xIndex, yIndex)             + photonWeight * (1. - ssa)
+                thisIntegrator%fluxAbsorbed(xIndex, yIndex)             + photonWeight * (1.0_8 - ssa)
               thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) =   &
-                thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) + photonWeight * (1. - ssa)
+                thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) + photonWeight * (1.0_8 - ssa)
               photonWeight = photonWeight * ssa
             end if 
   
@@ -2015,8 +2019,9 @@ end if
     
     ! Local variables
     integer               :: nXcells, nYcells, nZcells
-    real                  :: thisStep, thisCellExt, totalPath, z0, zMax
-    real,    dimension(3) :: step
+    real(8)                  :: thisStep, totalPath
+    real(8)               :: z0, zMax,thisCellExt
+    real(8),    dimension(3) :: step
     integer, dimension(3) :: SideIncrement, CellIncrement
     
     extAccumulated = 0.; totalPath = 0.
@@ -2055,7 +2060,7 @@ end if
        !   direction cosine or the distance to the boundary is very small 
        !
       thisStep = minval(step(:))
-      if (thisStep <= 0.0) then
+      if (thisStep <= 0.0_8) then
         extAccumulated = -2.0  ! Error flag
         exit accumulationLoop
       end if
@@ -2067,10 +2072,10 @@ end if
 
       if (present(extToAccumulate)) then 
         if(extAccumulated + thisStep * thisCellExt > extToAccumulate) then
-          thisStep = (extToAccumulate - extAccumulated) / thisCellExt
-          xPos = xPos + thisStep * directionCosines(1)
-          yPos = yPos + thisStep * directionCosines(2)
-          zPos = zPos + thisStep * directionCosines(3)
+          thisStep = dble(extToAccumulate - extAccumulated) / thisCellExt
+          xPos = xPos + dble(thisStep * directionCosines(1))
+          yPos = yPos + dble(thisStep * directionCosines(2))
+          zPos = zPos + dble(thisStep * directionCosines(3))
           totalPath = totalPath + thisStep
           extAccumulated = extToAccumulate
           exit accumulationLoop
@@ -2092,7 +2097,7 @@ end if
         xPos = thisIntegrator%xPosition(xIndex + SideIncrement(1)) 
         xIndex = xIndex + CellIncrement(1)
       else
-        xPos = xPos + thisStep * directionCosines(1)
+        xPos = xPos + dble(thisStep * directionCosines(1))
         if(abs(thisIntegrator%xPosition(xIndex + sideIncrement(1)) - xPos) <= 2 * spacing(xPos)) &
              xIndex = xIndex + cellIncrement(1)      !
       end if
@@ -2101,7 +2106,7 @@ end if
         yPos = thisIntegrator%yPosition(yIndex+SideIncrement(2))
         yIndex = yIndex + CellIncrement(2)
       else
-        yPos = yPos + thisStep * directionCosines(2)
+        yPos = yPos + dble(thisStep * directionCosines(2))
         if(abs(thisIntegrator%yPosition(yIndex + sideIncrement(2)) - yPos) <= 2 * spacing(yPos)) &
                 yIndex = yIndex + cellIncrement(2)
       end if
@@ -2110,7 +2115,7 @@ end if
         zPos = thisIntegrator%zPosition(zIndex+SideIncrement(3))
         zIndex = zIndex + CellIncrement(3)
       else
-        zPos = zPos + thisStep * directionCosines(3)
+        zPos = zPos + dble(thisStep * directionCosines(3))
         if(abs(thisIntegrator%zPosition(zIndex + sideIncrement(3)) - zPos) <= 2 * spacing(zPos)) &
           zIndex = zIndex + cellIncrement(3)
       end if

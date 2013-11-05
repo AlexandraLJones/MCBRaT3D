@@ -8,8 +8,8 @@ C     sphere of radius RADIUS.  The phase function times the scattering
 C     coefficient is returned as Legendre series coefficients.
       IMPLICIT NONE
       INTEGER     MAXLEG, NLEG
-      REAL        WAVELENGTH, RADIUS
-      REAL        EXTINCTION, SCATTER, LEGEN(0:*)
+      REAL        WAVELENGTH, RADIUS, LEGEN(0:*)
+      REAL*8        EXTINCTION, SCATTER
       COMPLEX     MINDEX
       INTEGER     MAXN
       PARAMETER   (MAXN=10000)
