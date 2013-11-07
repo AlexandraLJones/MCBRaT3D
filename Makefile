@@ -36,7 +36,7 @@ Libs        =
 
 # Macros are available for ifort, g95, xlf, absoft, ftn
  compiler=ftn
- debug=yes
+ debug=no
 
 ifeq (${compiler},ftn)
 #   fortran compiler on Blue Waters
@@ -47,8 +47,8 @@ ifeq (${compiler},ftn)
      F95Flags = ${Modules} 
      FFlags =
   else
-     F95Flags = -g -rm${Modules}
-     FFlags = -g -rm
+     F95Flags = -g -O fp0 -rm${Modules}
+     FFlags = -g -O fp0 -rm
   endif
 endif
 

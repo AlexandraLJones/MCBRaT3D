@@ -162,21 +162,21 @@ program monteCarloDriver
 !PRINT*, 'returned from initializeProcesses'
 
 ! temporary output file for the purposes of debugging
-  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
-  write(photon_file, '(A,I0.4)') "photon.out.",thisProc
-  write(col_file, '(A,I0.4)') "col.out.",thisProc
-  write(row_file, '(A,I0.4)') "row.out.",thisProc
-  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
-  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
-  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
+!  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
+!  write(photon_file, '(A,I0.4)') "photon.out.",thisProc
+!  write(col_file, '(A,I0.4)') "col.out.",thisProc
+!  write(row_file, '(A,I0.4)') "row.out.",thisProc
+!  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
+!  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
+!  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
 
-  open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
+!  open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
 !  open(unit=12, file=trim(level_file) , status='UNKNOWN')
 !  open(unit=13, file=trim(col_file) , status='UNKNOWN')
 !  open(unit=14, file=trim(row_file) , status='UNKNOWN')
 !  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
 !  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
-  open(unit=17, file=trim(voxel_file2) , status='UNKNOWN')
+!  open(unit=17, file=trim(voxel_file2) , status='UNKNOWN')
 
 
   ! -----------------------------------------
@@ -321,8 +321,8 @@ program monteCarloDriver
   allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 2))
   allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 2))
   allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 2))
-  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
-  voxel_tallys2(:,:,:)=0 ; voxel_tallys2_sum(:,:,:) = 0 ; voxel_tallys2_total(:,:,:) = 0
+!  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
+!  voxel_tallys2(:,:,:)=0 ; voxel_tallys2_sum(:,:,:) = 0 ; voxel_tallys2_total(:,:,:) = 0
   meanFluxUpStats(:) = 0.0  ; meanFluxDownStats(:) = 0.0  ; meanFluxAbsorbedStats(:) = 0.0
   fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
   absorbedProfilestats(:, :) = 0.0 ;  absorbedVolumeStats(:, :, :, :) = 0.0
@@ -372,7 +372,7 @@ call printStatus(status)
 !      END DO
 !    END DO
      solarFlux=emittedFlux
-     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
+!     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
 !PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 !PRINT *, 'Driver: calculated emission weighting'
@@ -455,8 +455,8 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
            absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
 
      ! Accumulate the first and second moments of each quantity over the batches 
-    voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1
-    voxel_tallys2_sum = voxel_tallys2_sum + voxel_tallys2
+!    voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1
+!    voxel_tallys2_sum = voxel_tallys2_sum + voxel_tallys2
     meanFluxUpStats(1)       = meanFluxUpStats(1)       + solarFlux*meanFluxUp
     meanFluxUpStats(2)       = meanFluxUpStats(2)       + (solarFlux*meanFluxUp)**2
     meanFluxDownStats(1)     = meanFluxDownStats(1)     + solarFlux*meanFluxDown
@@ -513,8 +513,8 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
   !
   ! Accumulate statistics from across all the processors
   !
- voxel_tallys1_total = sumAcrossProcesses(voxel_tallys1_sum)
- voxel_tallys2_total = sumAcrossProcesses(voxel_tallys2_sum)
+! voxel_tallys1_total = sumAcrossProcesses(voxel_tallys1_sum)
+! voxel_tallys2_total = sumAcrossProcesses(voxel_tallys2_sum)
 
   ! Domain-mean fluxes
   
@@ -548,13 +548,13 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
    end if
 
 !PRINT *, 'Driver: accumulated results'
-  close(11)
+!  close(11)
 !  close(12)
 !  close(13)
 !  close(14)
 !  close(15)
 !  close(16)
-  close(17)
+!  close(17)
 
   call synchronizeProcesses
   call cpu_time(cpuTime2)
@@ -606,14 +606,14 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
 
 !PRINT *, 'Driver: calculated radiative quantities'
   if(MasterProc) then ! Write a single output file. 
-    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
+!    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 
-    DO k = 1, nZ
-      DO j = 1, nY
-        write(12,"(100I12)") voxel_tallys1_total(:,j,k)
-      end do
-    end do
-    close(12)
+!    DO k = 1, nZ
+!      DO j = 1, nY
+!        write(12,"(100I12)") voxel_tallys1_total(:,j,k)
+!      end do
+!    end do
+!    close(12)
 
     if(any( (/ len_trim(outputFluxFile),      len_trim(outputAbsProfFile), &
                len_trim(outputAbsVolumeFile), len_trim(outputRadFile)      /) > 0)) then 
@@ -742,7 +742,7 @@ contains
       open (unit=2, file=outputFluxFile, status='unknown')
       write (2,'(A)') '!   I3RC Monte Carlo 3D Solar Radiative Transfer: Flux'
       write (2,'(A,A60)') '!  Property_File=', domainFileName
-      write (2,'(A,I10)')  '!  Num_Photons=', numPhotonsPerBatch * numBatches
+      write (2,'(A,I10)')  '!  Num_Photons=', INT(numPhotonsPerBatch * numBatches, KIND=8)
       write (2,'(A,L1,A,L1)') '!  PhotonTracing=', useRayTracing, &
                               '    Russian_Roulette=',useRussianRoulette
       write (2,'(A,L1,A,F5.2)') '!  Hybrid_Phase_Func_for_Radiance=',useHybridPhaseFunsForIntenCalcs, &
@@ -775,7 +775,7 @@ contains
       open (unit=2, file=outputAbsProfFile, status='unknown')
       write (2,'(A)') '!   I3RC Monte Carlo 3D Solar Radiative Transfer: Absorption Profile'
       write (2,'(A,A60)') '!  Property_File=', domainFileName
-      write (2,'(A,I10)')  '!  Num_Photons=', numPhotonsPerBatch * numBatches
+      write (2,'(A,I10)')  '!  Num_Photons=', INT(numPhotonsPerBatch * numBatches, KIND=8)
       write (2,'(A,L1,A,L1)') '!  PhotonTracing=', useRayTracing, &
                               '    Russian_Roulette=',useRussianRoulette
       write (2,'(A,L1,A,F5.2)') '!  Hybrid_Phase_Func_for_Radiance=',useHybridPhaseFunsForIntenCalcs, &
@@ -800,7 +800,7 @@ contains
       open (unit=2, file=outputAbsVolumeFile, status='unknown')
       write (2,'(A)') '!   I3RC Monte Carlo 3D Solar Radiative Transfer: 3D Absorption Field'
       write (2,'(A,A60)') '!  Property_File=', domainFileName
-      write (2,'(A,I10)')  '!  Num_Photons=', numPhotonsPerBatch * numBatches
+      write (2,'(A,I10)')  '!  Num_Photons=', INT(numPhotonsPerBatch * numBatches, KIND=8)
       write (2,'(A,L1,A,L1)') '!  PhotonTracing=', useRayTracing, &
                               '    Russian_Roulette=',useRussianRoulette
       write (2,'(A,L1,A,F5.2)') '!  Hybrid_Phase_Func_for_Radiance=',useHybridPhaseFunsForIntenCalcs, &
@@ -831,7 +831,7 @@ contains
       open (unit=2, file=outputRadFile, status='unknown')
       write (2,'(A)') '!   I3RC Monte Carlo 3D Solar Radiative Transfer: Radiance'
       write (2,'(A,A60)') '!  Property_File=', domainFileName
-      write (2,'(A,I10)')  '!  Num_Photons=', numPhotonsPerBatch * numBatches
+      write (2,'(A,I10)')  '!  Num_Photons=', INT(numPhotonsPerBatch * numBatches, KIND=8)
       write (2,'(A,L1,A,L1)') '!  PhotonTracing=', useRayTracing, &
                               '    Russian_Roulette=',useRussianRoulette
       write (2,'(A,L1,A,F5.2)') '!  Hybrid_Phase_Func_for_Radiance=',useHybridPhaseFunsForIntenCalcs, &
@@ -931,7 +931,7 @@ contains
     ncStatus( 6) = nf90_put_att(ncFileId, NF90_Global, "Domain_filename", trim(domainFileName))
     ncStatus( 7) = nf90_put_att(ncFileId, NF90_Global, "Surface_albedo", surfaceAlbedo)
     ncStatus( 8) = nf90_put_att(ncFileId, NF90_Global, "Total_number_of_photons", &
-                                                       numPhotonsPerBatch * numBatches)
+                                                       INT(numPhotonsPerBatch * numBatches, KIND=8))
     ncStatus( 9) = nf90_put_att(ncFileId, NF90_Global, "Number_of_batches", numBatches)
     ncStatus(10) = nf90_put_att(ncFileId, NF90_Global, "Solar_flux", SolarFlux)
     ncStatus(11) = nf90_put_att(ncFileId, NF90_Global, "Solar_mu", SolarMu)

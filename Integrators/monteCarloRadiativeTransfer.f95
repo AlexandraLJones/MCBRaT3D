@@ -525,9 +525,10 @@ contains
          zPos = thisIntegrator%zPosition(zIndex) + remainder*(thisIntegrator%zPosition(zIndex+1)-thisIntegrator%zPosition(zIndex))
       end if
 
-if (zPos > 0.0_8)then
-  option2(xIndex,yIndex,Zindex)=option2(xIndex,yIndex,Zindex)+1
-end if
+!if (zPos > 0.0_8)then
+!  option2(xIndex,yIndex,Zindex)=option2(xIndex,yIndex,Zindex)+1
+!end if
+
 !write(14,"(I7, 2X, 3I5)") nPhotons, xIndex, yIndex, zIndex
 !PRINT *, xIndex, yIndex, zIndex
 !if(zIndex .ge. 36)PRINT *, zIndex, zPos, thisIntegrator%zRegularlySpaced

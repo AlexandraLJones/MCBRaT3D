@@ -277,9 +277,10 @@ contains
 
 !PRINT *, RN, ii, ij, ik
 !write(16,"(I5 ,2X, E30.20)") i, voxel_weights(ii,ij,ik)-RN
- if(present(option1))then
-    option1(ii,ij,ik)=option1(ii,ij,ik)+1
- end if 
+
+ !if(present(option1))then
+ !   option1(ii,ij,ik)=option1(ii,ij,ik)+1
+ !end if 
 
             photons%zPosition(i) = ((ik-1)*(1.0_8)/nz) + dble(getRandomReal(randomNumbers)/nz) ! The first term represents the fractional position of the layer bottom in the column, such that ik=1 corresponds to a position of 0. The second term respresents the position within the layer.
             if(ik .eq. 1 .and. photons%zPosition(i) .eq. 0.0_8) photons%zPosition(i)=0.0_8+spacing(1.0_8)
@@ -418,7 +419,7 @@ contains
      lambda=lambda_u/(10.0_8**6.0_8) ! convert lambda from micrometers to meters
      b=h*c/(k*lambda)
 
-PRINT *, h, c, k, lambda, Pi, a, b
+!PRINT *, h, c, k, lambda, Pi, a, b
 !calculate arrays of depths from the position arrays in km
      dz(1:nz)=zPosition(2:nz+1)-zPosition(1:nz)
      dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
@@ -460,7 +461,7 @@ PRINT *, h, c, k, lambda, Pi, a, b
            voxel_weights(ix,iy,iz) = previous
            prev_exact=prev_exact + dble(1.0_8/(nx*ny*nz))
 !           write(11, "(6E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz) 
-            write(11, "(9E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0_8*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz), dble( ((iz-1)*nx*ny)+((iy-1)*nx)+ix  )/dble(nx*ny*nz), prev_exact,corr
+!            write(11, "(9E30.20)") atmsTemp(ix,iy,iz), atmsPlanckRad, totalAbsCoef, 4.0_8*Pi* atmsPlanckRad * totalAbsCoef*dz(iz), dz(iz), voxel_weights(ix,iy,iz), dble( ((iz-1)*nx*ny)+((iy-1)*nx)+ix  )/dble(nx*ny*nz), prev_exact,corr
          end do ! i loop
          col_weights(iy,iz)= previous
 !          write(10, "(3I5, A, E30.20, A, E30.20)" ) ix, iy, iz, 'voxel_weights= ', voxel_weights(ix-1,iy,iz), 'col_weights= ', col_weights(iy,iz)
@@ -472,11 +473,11 @@ PRINT *, h, c, k, lambda, Pi, a, b
           if (voxel_weights(nx,ny,nz) .gt. 0.0_8) then
                atmsPower = voxel_weights(nx,ny,nz)*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)/dble(nx*ny)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
                voxel_weights(:,:,:)=voxel_weights(:,:,:)/voxel_weights(nx,ny,nz)     ! normalized
-               do iz = 1, nz
-                  do iy = 1, ny
-                     write(17, "(100E35.25)") voxel_weights(:,iy,iz)
-                  end do
-               end do    
+!               do iz = 1, nz
+!                  do iy = 1, ny
+!                     write(17, "(100E35.25)") voxel_weights(:,iy,iz)
+!                  end do
+!               end do    
                col_weights(:,:)=col_weights(:,:)/col_weights(ny,nz)
                level_weights(:)=level_weights(:)/level_weights(nz)
 
@@ -492,8 +493,8 @@ PRINT *, h, c, k, lambda, Pi, a, b
         PRINT *, 'Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution'
      end if
      totalFlux=totalPower/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
-PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1)), &
-         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny), ' expected radiance=', atmsPlanckRad*(1.0_8-exp(-1.0_8*totalAbsCoef*(zPosition(nz+1)-zPosition(1))))
+!PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1)), &
+!         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny), ' expected radiance=', atmsPlanckRad*(1.0_8-exp(-1.0_8*totalAbsCoef*(zPosition(nz+1)-zPosition(1))))
      if (atmsPower .eq. 0.0_8)then
          atmsPhotons=0
      else   
