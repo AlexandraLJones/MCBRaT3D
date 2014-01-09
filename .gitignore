@@ -1,0 +1,13 @@
+*.txt
+*.o
+*.dom
+*.error
+*.output
+*.nml
+*pat
+*.out
+*.deck
+*.readme
+*.lst
+*.phasetab
+build.log

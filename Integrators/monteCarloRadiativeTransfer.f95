@@ -1715,6 +1715,10 @@ contains
     else
       xIndex = findIndex(xPos, thisIntegrator%xPosition, xIndex)
       yIndex = findIndex(yPos, thisIntegrator%yPosition, yIndex)
+      if(abs(thisIntegrator%xPosition(xIndex) - xPos) < spacing(xPos)) xIndex = xIndex + 1
+      if(abs(thisIntegrator%yPosition(yIndex) - yPos) < spacing(yPos)) yIndex = yIndex + 1
+      if(xIndex .ge. size(thisIntegrator%xPosition)) xIndex = 1
+      if(yIndex .ge. size(thisIntegrator%yPosition)) yIndex = 1
     end if
   end subroutine findXYIndicies
   !------------------------------------------------------------------------------------------
