@@ -456,8 +456,8 @@ contains
         
     ! Local variables
     real :: mu, phi
-    real(8) :: x0, y0, z0, xMax, yMax, zMax,xPos, yPos, zPos, xNew, yNew, zNew, remainder
-    real :: tauToTravel, photonWeight, scatteringAngle, tauAccumulated, ssa, maxExtinction
+    real(8) :: x0, y0, z0, xMax, yMax, zMax,xPos, yPos, zPos, xNew, yNew, zNew, remainder, ssa, maxExtinction
+    real :: tauToTravel, photonWeight, scatteringAngle, tauAccumulated
     real :: initialMu, initialPhi
     logical :: useRayTracing, useMaxCrossSection, scatterThisEvent
     integer :: xIndex, yIndex, zIndex, numZ, &
@@ -590,7 +590,7 @@ contains
           !
           call accumulateExtinctionAlongPath(thisIntegrator, directionCosines, &
                                              xPos, yPos, zPos, xIndex, yIndex, zIndex, &
-                                             tauAccumulated, tauToTravel)            
+                                             tauAccumulated, tauToTravel,photonWeight)            
           if(tauAccumulated < 0.) nBad = nBad + 1 
           if(tauAccumulated < 0.) cycle photonLoop 
         else 
@@ -793,15 +793,19 @@ contains
             !
             ! Absorption 
             !
-            ssa = thisIntegrator%ssa(xIndex, yIndex, zIndex, component)
-            if(ssa < 1.0_8) then 
-              thisIntegrator%fluxAbsorbed(xIndex, yIndex) =   &
-                thisIntegrator%fluxAbsorbed(xIndex, yIndex)             + photonWeight * (1.0_8 - ssa)
-              thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) =   &
-                thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) + photonWeight * (1.0_8 - ssa)
-              photonWeight = photonWeight * ssa
-            end if 
-  
+!	I think this is the stuff that needs to get moved into "accumulateExtinctionAlongPath" (ALJ 1/31/14)
+!	absorption needs to occur while the photon is being moved through the atmosphere so we can attribute
+!	absorption in each voxel that the photon travels thru--this is the path absorption technique
+!-----------------------------------------------------------------------------------------
+!            ssa = thisIntegrator%ssa(xIndex, yIndex, zIndex, component)
+!            if(ssa < 1.0_8) then 
+!              thisIntegrator%fluxAbsorbed(xIndex, yIndex) =   &
+!                thisIntegrator%fluxAbsorbed(xIndex, yIndex)             + photonWeight * (1.0_8 - ssa)
+!              thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) =   &
+!                thisIntegrator%volumeAbsorption(xIndex, yIndex, zIndex) + photonWeight * (1.0_8 - ssa)
+!              photonWeight = photonWeight * ssa
+!            end if 
+!----------------------------------------------------------------------------------------  
             !
             ! Compute the contribution to intensity from this scattering event if need be
             !
@@ -2005,28 +2009,30 @@ contains
   !------------------------------------------------------------------------------------------
   subroutine accumulateExtinctionAlongPath(thisIntegrator, directionCosines,         &
                                                 xPos, yPos, zPos, xIndex, yIndex, zIndex, &
-                                                extAccumulated, extToAccumulate)
+                                                extAccumulated, extToAccumulate, photonWeight)
 !  pure subroutine accumulateExtinctionAlongPath(thisIntegrator, directionCosines,         &
 !                                                xPos, yPos, zPos, xIndex, yIndex, zIndex, &
 !                                                extAccumulated, extToAccumulate)
     !
-    ! Trace through the medium in a given direction accumulating extinction 
+    ! Trace through the medium in a given direction accumulating scattering or total extinction 
     !   along the path. Tracing stops either when the boundary is reached or
     !   when the accumulated extinction reaches the (optional) value extToAccumulate.
     !   Reports the final position and optical path accumulated. 
     !
     type(integrator),   intent(in   ) :: thisIntegrator
-    real, dimension(3), intent(in   ) :: directionCosines
+    real, dimension(3), intent(in   ) :: directionCosines     ! sin(theta)cos(phi), sin(theta)sin(phi), cos(theta)
     real(8),               intent(inout) :: xPos, yPos, zPos
     integer,            intent(inout) :: xIndex, yIndex, zIndex
     real,               intent(  out) :: extAccumulated
     real, optional,     intent(in   ) :: extToAccumulate
-    
+    real, optional,     intent(inout) :: photonWeight
+
     ! Local variables
     integer               :: nXcells, nYcells, nZcells
     real(8)                  :: thisStep, totalPath
     real(8)               :: z0, zMax,thisCellExt
     real(8),    dimension(3) :: step
+    real(8),  allocatable, dimension(:,:,:) :: total_abs
     integer, dimension(3) :: SideIncrement, CellIncrement
     
     extAccumulated = 0.; totalPath = 0.
@@ -2042,6 +2048,9 @@ contains
     
     z0   = thisIntegrator%zPosition(1)
     zMax = thisIntegrator%zPosition(nZCells + 1) 
+
+    allocate(total_abs(1:nXcells,1:nYcells,1:nZcells))
+    total_abs(1:nXcells,1:nYcells,1:nZcells)=thisIntegrator%cumulativeExt(:,:,:)*(1.0_8-SUM(thisIntegrator%ssa(:,:,:,:),4))
 
     accumulationLoop: do
       !
@@ -2073,11 +2082,15 @@ contains
        ! If this cell pushes the optical path past the desired extToAccumulate,
        !  then find how large a step is needed, take it, and exit
        
-      thisCellExt = thisIntegrator%totalExt(xIndex, yIndex, zIndex)
 
-      if (present(extToAccumulate)) then 
-        if(extAccumulated + thisStep * thisCellExt > extToAccumulate) then
+      if (present(extToAccumulate)) then ! CHANGES MADE TO THIS LOGICAL BLOCK TO ACT AS A SWITCH BETWEEN CASES WHEN THE PHOTON IS MOVING THROUGH THE ATMOSPHERE AND CASES WHERE CONTRIBUTION TO RADIANCE IS BEING CALCULATED. IF 'extToAccumulate' IS PRESENT THAT MEANS WE ARE MOVING A PHOTON THROUGH THE ATMOSPHERE AND SCATTERING COEFFICIENT SHOULD BE USED. WHEN CALCULATING CONTRIBUTION TO RADIANCE TOTAL EXTINCTION COEFFICIENT SHOULD BE USED. (ALJ 1/31/14)
+	thisCellExt = thisIntegrator%totalExt(xIndex, yIndex, zIndex)*SUM(thisIntegrator%ssa(xIndex, yIndex, zIndex,:))
+        if(extAccumulated + thisStep * thisCellExt > extToAccumulate) then ! I think I may also need to accumulate flux divergence and flux absorbed here
           thisStep = dble(extToAccumulate - extAccumulated) / thisCellExt
+!	 INCREMENT FLUX ABSORBED AND VOLUME ABSORPTION HERE AND DECREMENT PHOTON WEIGHT AFTER UPDATING THIS STEP
+	  thisIntegrator%fluxAbsorbed(xIndex, yIndex)=thisIntegrator%fluxAbsorbed(xIndex, yIndex) + photonWeight
+	  thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)=thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)+photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex)))
+	  photonWeight=photonWeight+EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))
           xPos = xPos + dble(thisStep * directionCosines(1))
           yPos = yPos + dble(thisStep * directionCosines(2))
           zPos = zPos + dble(thisStep * directionCosines(3))
@@ -2085,6 +2098,12 @@ contains
           extAccumulated = extToAccumulate
           exit accumulationLoop
         end if
+!        INCREMENT FLUX ABSORBED AND VOLUME ABSORPTION HERE AND DECREMENT PHOTON WEIGHT 
+	thisIntegrator%fluxAbsorbed(xIndex, yIndex)=thisIntegrator%fluxAbsorbed(xIndex, yIndex) + photonWeight
+        thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)=thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)+photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex)))
+        photonWeight=photonWeight+EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))
+      else    ! CHOOSE THIS ROUTE IF USING THIS SUBROUTINE TO DETERMINE TRANSMITTANCE THROUGH ATMOSPHERE FOR RADIANCE CALCULATION
+	thisCellExt = thisIntegrator%totalExt(xIndex, yIndex, zIndex)
       end if
 
        ! Add this cell crossing to the accumulated optical path and distance

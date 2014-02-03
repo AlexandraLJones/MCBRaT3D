@@ -68,12 +68,13 @@ program opticalPropertiesToDomain
   character(len = 256) ::  namelistFileName = ""
   integer              :: nX, nY, nZ
   integer              :: nPhaseEntries, iostat, i, j, k, l, n
-  real                 :: deltaX, deltaY, tempTemp, x, y, z, chi
-  real,    allocatable :: zPosition(:)
+  real(8)              :: deltaX, deltaY
+  real		       :: tempTemp, x, y, z, chi
+  real(8),    allocatable :: zPosition(:)
   integer              :: maxLegCoefs
   integer, allocatable :: nLegCoef(:)
   real,    allocatable :: legendreCoefficients(:,:)
-  real,    allocatable :: extinct(:,:,:), ssa(:,:,:), temps(:,:,:)
+  real(8),    allocatable :: extinct(:,:,:), ssa(:,:,:), temps(:,:,:)
   integer, allocatable :: phaseFuncIndex(:,:,:)
   character(len=1)     :: junk
 

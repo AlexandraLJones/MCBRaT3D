@@ -44,10 +44,10 @@ ifeq (${compiler},ftn)
    F77         = ftn
   ifeq (${debug},no)
   #optimization flags
-     F95Flags = ${Modules} 
+     F95Flags = -dynamic${Modules} 
      FFlags =
   else
-     F95Flags = -g -O fp0 -rm${Modules}
+     F95Flags = -g -O fp0 -Rb -Rc -Rp -rm${Modules}
      FFlags = -g -O fp0 -rm
   endif
 endif
