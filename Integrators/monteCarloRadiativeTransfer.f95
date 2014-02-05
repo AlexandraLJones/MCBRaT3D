@@ -2050,7 +2050,7 @@ contains
     zMax = thisIntegrator%zPosition(nZCells + 1) 
 
     allocate(total_abs(1:nXcells,1:nYcells,1:nZcells))
-    total_abs(1:nXcells,1:nYcells,1:nZcells)=thisIntegrator%cumulativeExt(:,:,:)*(1.0_8-SUM(thisIntegrator%ssa(:,:,:,:),4))
+    total_abs(1:nXcells,1:nYcells,1:nZcells)=thisIntegrator%totalExt(:,:,:)*(1.0_8-SUM(thisIntegrator%ssa(:,:,:,:),4))
 
     accumulationLoop: do
       !
@@ -2088,9 +2088,9 @@ contains
         if(extAccumulated + thisStep * thisCellExt > extToAccumulate) then ! I think I may also need to accumulate flux divergence and flux absorbed here
           thisStep = dble(extToAccumulate - extAccumulated) / thisCellExt
 !	 INCREMENT FLUX ABSORBED AND VOLUME ABSORPTION HERE AND DECREMENT PHOTON WEIGHT AFTER UPDATING THIS STEP
-	  thisIntegrator%fluxAbsorbed(xIndex, yIndex)=thisIntegrator%fluxAbsorbed(xIndex, yIndex) + photonWeight
-	  thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)=thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)+photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex)))
-	  photonWeight=photonWeight+EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))
+	  thisIntegrator%fluxAbsorbed(xIndex, yIndex)=thisIntegrator%fluxAbsorbed(xIndex, yIndex) + (photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))))
+	  thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)=thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)+(photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))))
+	  photonWeight=photonWeight*EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))
           xPos = xPos + dble(thisStep * directionCosines(1))
           yPos = yPos + dble(thisStep * directionCosines(2))
           zPos = zPos + dble(thisStep * directionCosines(3))
@@ -2099,9 +2099,9 @@ contains
           exit accumulationLoop
         end if
 !        INCREMENT FLUX ABSORBED AND VOLUME ABSORPTION HERE AND DECREMENT PHOTON WEIGHT 
-	thisIntegrator%fluxAbsorbed(xIndex, yIndex)=thisIntegrator%fluxAbsorbed(xIndex, yIndex) + photonWeight
-        thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)=thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)+photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex)))
-        photonWeight=photonWeight+EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))
+	thisIntegrator%fluxAbsorbed(xIndex, yIndex)=thisIntegrator%fluxAbsorbed(xIndex, yIndex) + (photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))))
+        thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)=thisIntegrator%volumeAbsorption(xIndex,yIndex,zIndex)+(photonWeight*(1.-EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))))
+        photonWeight=photonWeight*EXP(-1.0_8 * thisStep * total_abs(xIndex,yIndex,zIndex))
       else    ! CHOOSE THIS ROUTE IF USING THIS SUBROUTINE TO DETERMINE TRANSMITTANCE THROUGH ATMOSPHERE FOR RADIANCE CALCULATION
 	thisCellExt = thisIntegrator%totalExt(xIndex, yIndex, zIndex)
       end if
