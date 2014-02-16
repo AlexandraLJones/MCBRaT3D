@@ -15,7 +15,7 @@ program cloudsdale
   character(len=256) :: LGfile,  domfile, component_string
   integer ::  ncid, varid, status, nx, ny, nz, i, pEnt,maxz=20, nxc,nyc,nzc,xs,ys,zs,xe,ye,ze, nLG
   integer :: nLegendreCoefficients = 180
-  real(8)    :: dx, dy, dz, isoT, concen, isoSSA, beta_e, beta_e86
+  real(8)    :: dx, dy, dz, Tb, Tt, concen, isoSSA, beta_e, beta_e86
   real 	 ::  tauScale, re, g, tau86 ,sigma_e, sigma_s, tau
   real, allocatable	 ::  Ql(:,:,:), p(:), T(:), LWC(:,:,:), LG(:)
   real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:), atmSSA(:), RaylExt(:), Temp(:,:,:)
@@ -44,7 +44,8 @@ program cloudsdale
   read(*,'(1I)') xs
   read(*,'(1I)') ys
   read(*,'(1I)') zs
-  read(*,'(1F)') isoT
+  read(*,'(1F)') Tb
+  read(*,'(1F)') Tt
   read(*,'(1F)') tau86
   read(*,'(1E12.0)') beta_e86
   read(*,'(1F)') dx
@@ -70,7 +71,15 @@ program cloudsdale
 
   !--Create 3D array of temps
    allocate(Temp(1:nx,1:ny,1:nz))
-   Temp(:,:,:)=isoT
+   if(Tb .eq. Tt)then
+        Temp(:,:,:)=Tb
+   else
+        Temp(:,:,1)=Tb
+        Temp(:,:,nz)=Tt
+        do i=2,nz-1
+          Temp(:,:,i)=Tb + ((i-1) * ((Tt-Tb)/(nz-1))) 
+        end do
+   end if
 
   
   !--Create Domain
@@ -90,7 +99,11 @@ program cloudsdale
   xe=xs+nxc-1
   ye=ys+nyc-1
   ze=zs+nzc-1
-  tau=tau86*beta_e/beta_e86
+  if(beta_e86 .gt. 0.0_8)then
+    tau=tau86*beta_e/beta_e86
+  else
+    tau = 0.0_8
+  end if
  PRINT *, tau86, beta_e86, beta_e, tau
   Ext(xs:xe,ys:ye,zs:ze)=tau/(nzc*dz)
  PRINT *, Ext(xs,ys,zs), tau86/(nzc*dz), nzc, dz
