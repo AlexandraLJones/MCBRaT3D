@@ -23,17 +23,18 @@ module inversePhaseFunctions
   public :: computeInversePhaseFuncTable
 contains
   !------------------------------------------------------------------------------------------
-  subroutine computeInversePhaseFuncTable(forwardTable, inverseTable, status)
+  subroutine computeInversePhaseFuncTable(forwardTable, lambdaI, inverseTable, status)
     !
     ! Compute the scattering angle as a function of the nSteps steps between 0 and 1
     !   for every entry in a phaseFunctionTable
     !
     type(phaseFunctionTable), intent(in   ) :: forwardTable
+    integer, intent(in)                     :: lambdaI
     real, dimension(:, :),    intent(  out) :: inverseTable
     type(ErrorMessage),       intent(inout) :: status
     
     ! Local variable
-    integer            :: nTableEntries, nSteps, i
+    integer            :: nTableEntries,  nSteps, i
     type(ErrorMessage) :: localStatus
     
     ! --------------------------------
@@ -41,7 +42,7 @@ contains
     if(.not. isReady_phaseFunctionTable(forwardTable)) then
       call setStateToFailure(status, "computeInversePhaseFunctionTable: Forward table isn't ready.")
     else   
-      call getInfo_phaseFunctionTable(forwardTable, nEntries = nTableEntries, status = status)
+      call getInfo_phaseFunctionTable(forwardTable, lambdaI, nEntries = nTableEntries, status = status)
       if(size(inverseTable, 2) /= nTableEntries) &
         call setStateToFailure(status, "computeInversePhaseFunctionTable: Array for inverse table has the wrong number of entries")
     end if 
@@ -52,7 +53,7 @@ contains
         ! We're safe not checking the result from localStatus because we've protected against 
         !   the two possible error conditions (table not being ready or asking for an out-of-bound element)
         !
-        call computeInversePhaseFunction(getElement(i, forwardTable, localStatus), inverseTable(:, i), status)
+        call computeInversePhaseFunction(getElement(i,lambdaI, forwardTable, localStatus), inverseTable(:, i), status)
         if(stateIsFailure(status)) then 
           call setStateToFailure(status, "computeInversePhaseFunctionTable: Can't compute inverse tables.")
           exit entryLoop

@@ -38,9 +38,9 @@ module opticalProperties
     character (len = maxNameLength)      :: name       = ""
     integer                              :: zLevelBase = 0
     logical                              :: horizontallyUniform = .false.
-    real(8),    dimension(:, :, :), pointer :: extinction             => null()
-    real(8),    dimension(:, :, :), pointer :: singleScatteringAlbedo => null()
-    integer, dimension(:, :, :), pointer :: phaseFunctionIndex     => null()
+    real(8),    dimension(:, :, :, :), pointer :: extinction             => null()
+    real(8),    dimension(:, :, :, :), pointer :: singleScatteringAlbedo => null()
+    integer, dimension(:, :, :, :), pointer :: phaseFunctionIndex     => null()
     type(phaseFunctionTable)             :: table
   end type opticalComponent
 
@@ -52,6 +52,7 @@ module opticalProperties
     real(8), pointer, dimension(:)          :: xPosition => null()
     real(8), pointer, dimension(:)          :: yPosition => null()
     real(8), pointer, dimension(:)          :: zPosition => null()
+    real(8), pointer, dimension(:)          :: lambdas => null()
     real(8), pointer, dimension(:,:,:)      :: temps => null()   
     logical                              :: xyRegularlySpaced = .false., zRegularlySpaced = .false. 
     type(opticalComponent), &
@@ -84,31 +85,33 @@ contains
   !------------------------------------------------------------------------------------------
   ! Initialization: Routine to create new domains 
   !------------------------------------------------------------------------------------------
-  function new_Domain(xPosition, yPosition, zPosition, temps, status)
-    real(8),    dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
+  function new_Domain(xPosition, yPosition, zPosition, lambdas, temps, status)
+    real(8),    dimension(:), intent(in   ) :: xPosition, yPosition, zPosition, lambdas
     real(8),    dimension(:,:,:), intent(in) :: temps
     type(ErrorMessage),    intent(inout) :: status
     type(domain)                         :: new_Domain
     
     ! Local variables
-    integer :: numX, numY, numZ
+    integer :: numX, numY, numZ, numL
 
       
     ! -------------------------
     ! Checks: always increasing, within limits; 
     !   other checks performed by addOpticalComponent
-    numX = size(xPosition); numY = size(yPosition); numZ = size(zPosition)
+    numX = size(xPosition); numY = size(yPosition); numZ = size(zPosition); numL = size(lambdas)
     if(any(xPosition(2:) - xPosition(:numX-1) <= 0.) .or. &
        any(yPosition(2:) - yPosition(:numY-1) <= 0.) .or. &
-       any(zPosition(2:) - zPosition(:numZ-1) <= 0.))     &
+       any(zPosition(2:) - zPosition(:numZ-1) <= 0.) .or. &
+       any(lambdas(2:) - lambdas(:numL-1) <= 0.)) &
       call setStateToFailure(status, "new_Domain: Positions must be increasing, unique.")
      
     ! -------------------------
      if(.not. stateIsFailure(status)) then
-       allocate(new_Domain%xPosition(numX), new_Domain%yPosition(numY), new_Domain%zPosition(numZ), new_Domain%temps(numX-1,numY-1,numZ-1))
+       allocate(new_Domain%xPosition(numX), new_Domain%yPosition(numY), new_Domain%zPosition(numZ), new_Domain%lambdas(numL),new_Domain%temps(numX-1,numY-1,numZ-1))
        new_Domain%xPosition(:) = xPosition(:)
        new_Domain%yPosition(:) = yPosition(:)
        new_Domain%zPosition(:) = zPosition(:)
+       new_Domain%lambdas(:)   = lambdas(:)
        new_Domain%temps(:,:,:) = temps(:,:,:)       
 
        ! Are the grids regularly spaced? Compare the distance between each pair 
@@ -134,8 +137,8 @@ contains
                                    zLevelBase, status)
     type(domain),                intent(inout) :: thisDomain
     character (len = *),         intent(in   ) :: componentName
-    real(8),    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
-    integer, dimension(:, :, :), intent(in   ) :: phaseFunctionIndex
+    real(8),    dimension(:, :, :,:), intent(in   ) :: extinction, singleScatteringAlbedo
+    integer, dimension(:, :, :,:), intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer, optional,           intent(in   ) :: zLevelBase
     type(ErrorMessage),          intent(inout) :: status
@@ -199,8 +202,8 @@ contains
                                    zLevelBase, status)
     type(domain),                intent(inout) :: thisDomain
     character (len = *),         intent(in   ) :: componentName
-    real(8),    dimension(:),       intent(in   ) :: extinction, singleScatteringAlbedo
-    integer, dimension(:),       intent(in   ) :: phaseFunctionIndex
+    real(8),    dimension(:,:),       intent(in   ) :: extinction, singleScatteringAlbedo
+    integer, dimension(:,:),       intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer,           optional, intent(in   ) :: zLevelBase
     type(ErrorMessage),          intent(inout) :: status
@@ -220,9 +223,9 @@ contains
     end if
 
     call addOpticalComponent3D(thisDomain, componentName,                                                 &
-                               reshape(extinction,             (/ 1, 1, size(extinction) /)),             &
-                               reshape(singleScatteringAlbedo, (/ 1, 1, size(singleScatteringAlbedo) /)), &
-                               reshape(phaseFunctionIndex,     (/ 1, 1, size(phaseFunctionIndex) /)),     &
+                               reshape(extinction,             (/ 1, 1, size(extinction,1), size(extinction,2) /)),             &
+                               reshape(singleScatteringAlbedo, (/ 1, 1, size(singleScatteringAlbedo,1), size(singleScatteringAlbedo,2) /)), &
+                               reshape(phaseFunctionIndex,     (/ 1, 1, size(phaseFunctionIndex,1), size(phaseFunctionIndex,2) /)),     &
                                phaseFunctions, zLevelBase = baseLevel, status = status)
 
   end subroutine addOpticalComponent1D
@@ -234,8 +237,8 @@ contains
     type(domain),                intent(inout) :: thisDomain
     integer,                     intent(in   ) :: componentNumber
     character (len = *),         intent(in   ) :: componentName
-    real(8),    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
-    integer, dimension(:, :, :), intent(in   ) :: phaseFunctionIndex
+    real(8),    dimension(:, :, :,:), intent(in   ) :: extinction, singleScatteringAlbedo
+    integer, dimension(:, :, :, :), intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer, optional,           intent(in   ) :: zLevelBase
     type(ErrorMessage),          intent(inout) :: status
@@ -279,8 +282,8 @@ contains
     type(domain),                intent(inout) :: thisDomain
     integer,                     intent(in   ) :: componentNumber
     character (len = *),         intent(in   ) :: componentName
-    real(8),    dimension(:),       intent(in   ) :: extinction, singleScatteringAlbedo
-    integer, dimension(:),       intent(in   ) :: phaseFunctionIndex
+    real(8),    dimension(:,:),       intent(in   ) :: extinction, singleScatteringAlbedo
+    integer, dimension(:,:),       intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: phaseFunctions
     integer,           optional, intent(in   ) :: zLevelBase
     type(ErrorMessage),          intent(inout) :: status
@@ -299,9 +302,9 @@ contains
     end if
 
     call replaceOpticalComponent3D(thisDomain, componentNumber, componentName,                            &
-                               reshape(extinction,             (/ 1, 1, size(extinction) /)),             &
-                               reshape(singleScatteringAlbedo, (/ 1, 1, size(singleScatteringAlbedo) /)), &
-                               reshape(phaseFunctionIndex,     (/ 1, 1, size(phaseFunctionIndex) /)),     &
+                               reshape(extinction,             (/ 1, 1, size(extinction,1), size(extinction,2) /)),             &
+                               reshape(singleScatteringAlbedo, (/ 1, 1, size(singleScatteringAlbedo,1), size(singleScatteringAlbedo,2) /)), &
+                               reshape(phaseFunctionIndex,     (/ 1, 1, size(phaseFunctionIndex,1), size(phaseFunctionIndex,2) /)),     &
                                phaseFunctions, zLevelBase = baseLevel, status = status)
 
   end subroutine replaceOpticalComponent1D
@@ -356,12 +359,12 @@ contains
   !------------------------------------------------------------------------------------------
   !  Getting information back from the object
   !------------------------------------------------------------------------------------------
-  subroutine getInfo_Domain(thisDomain, numX, numY, numZ,    &
-                            xPosition, yPosition, zPosition, temps, &
+  subroutine getInfo_Domain(thisDomain, numX, numY, numZ, numL,   &
+                            xPosition, yPosition, zPosition, lambdas, temps, &
                             numberOfComponents, componentNames, status) 
     type(domain),                    intent(in   ) :: thisDomain
-    integer,               optional, intent(  out) :: numX, numY, numZ
-    real(8),    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition
+    integer,               optional, intent(  out) :: numX, numY, numZ, numL
+    real(8),    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition, lambdas
     real(8), dimension(:,:,:), optional, intent( out) :: temps
     integer,               optional, intent(  out) :: numberOfComponents
     character(len = *), &
@@ -383,6 +386,7 @@ contains
       if(present(numX)) numX = size(thisDomain%xPosition) - 1
       if(present(numY)) numY = size(thisDomain%yPosition) - 1 
       if(present(numZ)) numZ = size(thisDomain%zPosition) - 1
+      if(present(numL)) numL = size(thisDomain%lambdas) - 1
       
       ! Location of boundaries in each dimension
       if(present(xPosition)) then 
@@ -404,6 +408,13 @@ contains
           call setStateToFailure(status, "getInfo_Domain: vector for z positions is wrong length.")
         else
           zPosition(:) = thisDomain%zPosition(:)
+        end if
+      end if
+      if(present(lambdas)) then
+        if(size(lambdas) /= size(thisDomain%lambdas)) then
+          call setStateToFailure(status, "getInfo_Domain: vector for lambdas is wrong length.")
+        else
+          lambdas(:) = thisDomain%lambdas(:)
         end if
       end if
       if(present(temps))then
@@ -570,7 +581,7 @@ contains
     ! Netcdf-related local variables
     integer, dimension(16) :: ncStatus
     integer                :: ncFileId, xEdgeDimID, yEdgeDimId, zEdgeDimId,  &
-                                        xGridDimId, yGridDimId, zGridDimId,  &
+                                        xGridDimId, yGridDimId, zGridDimId, numLDimID  &
                                         extinctionVarId, ssaVarId, indexVarId, ncVarId
     
     ! Checks: domain is valid, contains components(?)
@@ -588,18 +599,20 @@ contains
       ncStatus( 5) = nf90_def_dim(ncFileId, "x-Grid",  size(thisDomain%xPosition) - 1, xGridDimId) 
       ncStatus( 6) = nf90_def_dim(ncFileId, "y-Grid",  size(thisDomain%yPosition) - 1, yGridDimId) 
       ncStatus( 7) = nf90_def_dim(ncFileId, "z-Grid",  size(thisDomain%zPosition) - 1, zGridDimId)
+      ncStatus( 8) = nf90_def_dim(ncFileId, "wavelengths",  size(thisDomain%lambdas) - 1, numLDimId)
       !
       ! Domain variables
       ! 
-      ncStatus( 8) = nf90_def_var(ncFileId, "x-Edges", nf90_double, xEdgeDimId, ncVarId) 
-      ncStatus( 9) = nf90_def_var(ncFileId, "y-Edges", nf90_double, yEdgeDimId, ncVarId) 
-      ncStatus(10) = nf90_def_var(ncFileId, "z-Edges", nf90_double, zEdgeDimId, ncVarId) 
-      ncStatus(11) = nf90_def_var(ncFileId, "Temperatures", nf90_double, (/ xGridDimId, yGridDimId, zGridDimId /), ncVarId)
+      ncStatus( 9) = nf90_def_var(ncFileId, "x-Edges", nf90_double, xEdgeDimId, ncVarId) 
+      ncStatus(10) = nf90_def_var(ncFileId, "y-Edges", nf90_double, yEdgeDimId, ncVarId) 
+      ncStatus(11) = nf90_def_var(ncFileId, "z-Edges", nf90_double, zEdgeDimId, ncVarId)
+      ncStatus(12) = nf90_def_var(ncFileId, "wavelengths", nf90_double, numLDimId, ncVarId) 
+      ncStatus(13) = nf90_def_var(ncFileId, "Temperatures", nf90_double, (/ xGridDimId, yGridDimId, zGridDimId /), ncVarId)
       !
       ! Domain attributes
       !
-      ncStatus(12) = nf90_put_att(ncFileID, nf90_Global, "xyRegularlySpaced", asInt(thisDomain%xyRegularlySpaced)) 
-      ncStatus(13) = nf90_put_att(ncFileID, nf90_Global,  "zRegularlySpaced", asInt(thisDomain%zRegularlySpaced))
+      ncStatus(13) = nf90_put_att(ncFileID, nf90_Global, "xyRegularlySpaced", asInt(thisDomain%xyRegularlySpaced)) 
+      ncStatus(14) = nf90_put_att(ncFileID, nf90_Global,  "zRegularlySpaced", asInt(thisDomain%zRegularlySpaced))
       if(any(ncStatus(:) /= nf90_NoErr)) &
         call setStateToFailure(status, "write_Domain: error writing domain information") 
         
@@ -633,21 +646,21 @@ contains
             ! Variables are 1D
             !
             ncStatus( 7) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "Extinction",             nf90_double, &
-                                                       zGridDimId, extinctionVarId)
+                                                       (/zGridDimId, numLDimID/), extinctionVarId)
             ncStatus( 8) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", nf90_double, &
-                                                       zGridDimId, ssaVarId)
+                                                       (/zGridDimId, numLDimID/), ssaVarId)
             ncStatus( 9) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex",     nf90_short, &
-                                                       zGridDimId, indexVarId)
+                                                       (/zGridDimId, numLDimID/), indexVarId)
           else
             ! Variables are 3D
             !
             ncStatus( 7) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "Extinction",             nf90_double, &
-                                        (/ xGridDimId, yGridDimId, zGridDimId /) , extinctionVarId)
+                                        (/ xGridDimId, yGridDimId, zGridDimId, numLDimID /) , extinctionVarId)
             ncStatus( 8) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", nf90_double, &
-                                        (/ xGridDimId, yGridDimId, zGridDimId /) , ssaVarId)
+                                        (/ xGridDimId, yGridDimId, zGridDimId, numLDimID /) , ssaVarId)
             ! Doesn't seem like there will ever be more than 2^15 possible phase functions...
             ncStatus( 9) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex",     nf90_short, &
-                                        (/ xGridDimId, yGridDimId, zGridDimId /) , indexVarId)
+                                        (/ xGridDimId, yGridDimId, zGridDimId, numLDimID /) , indexVarId)
           end if
           if(any(ncStatus(:) /= nf90_NoErr)) &
             call setStateToFailure(status,   &
@@ -665,8 +678,10 @@ contains
       ncStatus( 5) = nf90_put_var(ncFileId, ncVarId, thisDomain%yPosition)
       ncStatus( 6) = nf90_inq_varid(ncFileId, "z-Edges", ncVarID)
       ncStatus( 7) = nf90_put_var(ncFileId, ncVarId, thisDomain%zPosition)
-      ncStatus( 8) = nf90_inq_varid(ncFileId, "Temperatures", ncVarID)
-      ncStatus( 9) = nf90_put_var(ncFileId, ncVarId, thisDomain%temps(:,:,:))
+      ncStatus( 8) = nf90_inq_varid(ncFileId, "wavelengths", ncVarID)
+      ncStatus( 9) = nf90_put_var(ncFileId, ncVarId, thisDomain%lambdas)
+      ncStatus(10) = nf90_inq_varid(ncFileId, "Temperatures", ncVarID)
+      ncStatus(11) = nf90_put_var(ncFileId, ncVarId, thisDomain%temps(:,:,:))
       if(any(ncStatus(:) /= nf90_NoErr)) then
         print *, ncStatus(1:9)
         call setStateToFailure(status, "write_Domain: error writing domain data") 
@@ -679,18 +694,18 @@ contains
           ncstatus( 3) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex",  indexVarId)
           if(thisDomain%components(i)%horizontallyUniform) then
             ncStatus( 4) = nf90_put_var(ncFileId, extinctionVarId, &
-                                        thisDomain%components(i)%extinction(1, 1, :))
+                                        thisDomain%components(i)%extinction(1, 1, :, :))
             ncStatus( 5) = nf90_put_var(ncFileId, ssaVarId,        &
-                                        thisDomain%components(i)%singleScatteringAlbedo(1, 1, :))
+                                        thisDomain%components(i)%singleScatteringAlbedo(1, 1, :, :))
             ncStatus( 6) = nf90_put_var(ncFileId, indexVarId,      &
-                                        thisDomain%components(i)%phaseFunctionIndex(1, 1, :))
+                                        thisDomain%components(i)%phaseFunctionIndex(1, 1, :, :))
           else
             ncStatus( 4) = nf90_put_var(ncFileId, extinctionVarId, &
-                                        thisDomain%components(i)%extinction(:, :, :))
+                                        thisDomain%components(i)%extinction(:, :, :, :))
             ncStatus( 5) = nf90_put_var(ncFileId, ssaVarId,        &
-                                        thisDomain%components(i)%singleScatteringAlbedo(:, :, :))
+                                        thisDomain%components(i)%singleScatteringAlbedo(:, :, :, :))
             ncStatus( 6) = nf90_put_var(ncFileId, indexVarId,      &
-                                        thisDomain%components(i)%phaseFunctionIndex(:, :, :))
+                                        thisDomain%components(i)%phaseFunctionIndex(:, :, :, :))
           end if
           call add_PhaseFunctionTable(thisDomain%components(i)%table,            &
                                       fileId = ncFileId,                         &
@@ -874,6 +889,7 @@ contains
     if(associated(thisDomain%xPosition)) deallocate(thisDomain%xPosition)
     if(associated(thisDomain%yPosition)) deallocate(thisDomain%yPosition)
     if(associated(thisDomain%zPosition)) deallocate(thisDomain%zPosition)
+    if(associated(thisDomain%lambdas)) deallocate(thisDomain%lambdas)
     if(associated(thisDomain%temps)) deallocate(thisDomain%temps)
     !  Optical components
     if(containsComponents(thisDomain)) then
@@ -910,26 +926,26 @@ contains
   function newOpticalComponent(componentName, extinction, singleScatteringAlbedo, &
                                phaseFunctionIndex, zLevelBase, phaseFunctions) result(newOne)
     character (len = *),         intent( in) :: componentName
-    real(8),    dimension(:, :, :), intent( in) :: extinction, singleScatteringAlbedo
-    integer, dimension(:, :, :), intent( in) :: phaseFunctionIndex
+    real(8),    dimension(:, :, :, :), intent( in) :: extinction, singleScatteringAlbedo
+    integer, dimension(:, :, :, :), intent( in) :: phaseFunctionIndex
     integer,           optional, intent( in) :: zLevelBase
     type(phaseFunctionTable),    intent( in) :: phaseFunctions
     type(opticalComponent)                   :: newOne
         
     ! Local variables
-    integer :: nx, ny, nz
+    integer :: nx, ny, nz, nl
     
     ! Optical components are always associated with a domain. 
     !   So all error checking (grid sizes, etc.) that might be done here is instead done
     !   in validateOpticalComponent, which knows about the grid). 
-    nx = size(extinction, 1); ny = size(extinction, 2); nz = size(extinction, 3)
+    nx = size(extinction, 1); ny = size(extinction, 2); nz = size(extinction, 3); nl = size(extinction, 4)
     newOne%name = trim(componentName)
     newOne%zLevelBase = zLevelBase
-    allocate(newOne%extinction(nx, ny, nz), newOne%singleScatteringAlbedo(nx, ny, nz), &
-             newOne%phaseFunctionIndex(nx, ny, nz))
-    newOne%extinction(:, :, :)             = extinction(:, :, :)
-    newOne%singleScatteringAlbedo(:, :, :) = singleScatteringAlbedo(:, :, :)
-    newOne%phaseFunctionIndex(:, :, :)     = phaseFunctionIndex(:, :, :)
+    allocate(newOne%extinction(nx, ny, nz, nl), newOne%singleScatteringAlbedo(nx, ny, nz, nl), &
+             newOne%phaseFunctionIndex(nx, ny, nz, nl))
+    newOne%extinction(:, :, :, :)             = extinction(:, :, :, :)
+    newOne%singleScatteringAlbedo(:, :, :, :) = singleScatteringAlbedo(:, :, :, :)
+    newOne%phaseFunctionIndex(:, :, :, :)     = phaseFunctionIndex(:, :, :, :)
     newOne%table = copy_PhaseFunctionTable(phaseFunctions)
     if(nx == 1 .and. ny == 1) newOne%horizontallyUniform = .true.
     
@@ -947,8 +963,8 @@ contains
                                       zLevelBase, status)
     type(domain),                intent(inout) :: thisDomain
     character (len = *),         intent(in   ) :: componentName
-    real(8),    dimension(:, :, :), intent(in   ) :: extinction, singleScatteringAlbedo
-    integer, dimension(:, :, :), intent(in   ) :: phaseFunctionIndex
+    real(8),    dimension(:, :, :,:), intent(in   ) :: extinction, singleScatteringAlbedo
+    integer, dimension(:, :, :,:), intent(in   ) :: phaseFunctionIndex
     type(phaseFunctionTable),    intent(in   ) :: table
     integer,                     intent(in   ) :: zLevelBase
     type(ErrorMessage),          intent(inout) :: status
@@ -959,15 +975,16 @@ contains
     
 
     ! Local variables
-    integer :: numX, numY, numZ, numPhaseFunctions
+    integer :: numX, numY, numZ, numL, numPhaseFunctions
         
     if(isValid(thisDomain)) then 
-      numX = size(extinction, 1); numY = size(extinction, 2); numZ = size(extinction, 3)
+      numX = size(extinction, 1); numY = size(extinction, 2); numZ = size(extinction, 3); numL = size(extinction, 4)
       
       ! Are the arrays all the same size? 
       if(any((/ size(singleScatteringAlbedo, 1), size(phaseFunctionIndex, 1) /) /= numX) .or. &
          any((/ size(singleScatteringAlbedo, 2), size(phaseFunctionIndex, 2) /) /= numY) .or. &
-         any((/ size(singleScatteringAlbedo, 3), size(phaseFunctionIndex, 3) /) /= numZ)) &
+         any((/ size(singleScatteringAlbedo, 3), size(phaseFunctionIndex, 3) /) /= numZ) .or. &
+         any((/ size(singleScatteringAlbedo, 4), size(phaseFunctionIndex, 4) /) /= numL)) &
         call setStateToFailure(status, "validateOpticalComponent: optical property grids must be the same size.") 
         
       ! Do the arrays conform to the grid in the domain? 
@@ -978,15 +995,15 @@ contains
         call setStateToFailure(status, "validateOpticalComponent: arrays don't conform to vertical extent of domain.")
      
       ! Resonable values for the properties
-      if(any(extinction(:, :, :) < 0.)) &
+      if(any(extinction(:, :, :, :) < 0.)) &
         call setStateToFailure(status, "validateOpticalComponent: extinction must be >= 0.")
-      if(any(singleScatteringAlbedo(:, :, :) < 0.) .or. any(singleScatteringAlbedo(:, :, :) > 1. )) &
+      if(any(singleScatteringAlbedo(:, :, :, :) < 0.) .or. any(singleScatteringAlbedo(:, :, :, :) > 1. )) &
         call setStateToFailure(status, "validateOpticalComponent: singleScatteringAlbedo must be between 0 and 1")
       
       ! Check the phase function table
       if(.not. stateIsFailure(status)) then 
         call getInfo_PhaseFunctionTable(table, nEntries = numPhaseFunctions, status = status)
-        if(any(phaseFunctionIndex(:, :, :) < 0 .or. phaseFunctionIndex(:, :, :) > numPhaseFunctions)) &
+        if(any(phaseFunctionIndex(:, :, :, :) < 0 .or. phaseFunctionIndex(:, :, :,:) > numPhaseFunctions)) &
           call setStateToFailure(status, "validateOpticalComponent: phase function index is out of bounds")
         ! Are the phase functions ready to go ? 
         if(.not. isReady_PhaseFunctionTable(table)) &

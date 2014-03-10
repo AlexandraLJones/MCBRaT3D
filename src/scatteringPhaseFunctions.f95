@@ -46,11 +46,13 @@ module scatteringPhaseFunctions
   type phaseFunctionTable
     ! This holds a series of phase functions, a real valued key into the table, 
     !   and an optional description
+    ! Editied to allow for 2 keys, effective radius and frequency/wavelength
     private 
-    type(phaseFunction), dimension(:), pointer :: phaseFunctions  => null()
-    real,                dimension(:), pointer :: key             => null()
+    type(phaseFunction), dimension(:,:), pointer :: phaseFunctions  => null()
+    real,                dimension(:), pointer :: key1             => null()
+    real,                dimension(:), pointer :: key2             => null()
     character(len = maxSingleDescriptorLength), &
-                         dimension(:), pointer :: phaseFunctionDescriptions  => null()
+                         dimension(:,:), pointer :: phaseFunctionDescriptions  => null()
     character(len = maxTableDescriptorLength)  :: description = ""
     logical                                    :: oneAngleSet = .false.
   end type phaseFunctionTable
@@ -222,29 +224,29 @@ contains
     end if
   end function newPhaseFunctionExpansion
   !------------------------------------------------------------------------------------------
-  function newPhaseFunctionTableTabulated(scatteringAngle, values, key,       &
+  function newPhaseFunctionTableTabulated(scatteringAngle, values, key1, key2,       &
                                           extinction, singleScatteringAlbedo, &
                                           phaseFunctionDescriptions, tableDescription, status) result(table)
     real, dimension(:),            intent(in   ) :: scatteringAngle
-    real, dimension(:, :),         intent(in   ) :: values
-    real, dimension(:),            intent(in   ) :: key
-    real(8), dimension(:), optional,  intent(in   ) :: extinction, singleScatteringAlbedo
+    real, dimension(:, :, :),         intent(in   ) :: values
+    real, dimension(:),            intent(in   ) :: key1, key2
+    real(8), dimension(:,:), optional,  intent(in   ) :: extinction, singleScatteringAlbedo
     character(len = *), &
-          dimension(:), optional,  intent(in   ) :: phaseFunctionDescriptions
+          dimension(:,:), optional,  intent(in   ) :: phaseFunctionDescriptions
     character(len = *), optional,  intent(in   ) :: tableDescription
     type(ErrorMessage),            intent(inout) :: status
     type(phaseFunctionTable)                     :: table
     ! ------------------------
     ! Initializing a table of phase functions given one set of scattering angles and a set
     !   of phase functions
-    ! Array values is dimensioned(nAngles, nEntries)
+    ! Array values is dimensioned(nAngles, nReEntries, nLEntries)
     
     ! Local variables
-    integer :: nAngles, nEntries, i
+    integer :: nAngles, nReEntries, nLEntries, i, j
     
     ! ------------------------
     ! Sanity checks
-    nAngles = size(scatteringAngle); nEntries = size(values, 2)
+    nAngles = size(scatteringAngle); nReEntries = size(values, 2); nLEntries = size(values, 3)
     ! Sanity checks
     !   angles in bounds, ascending, unique, have correct limits; 
     !   arrays same length; value always > 0. 
@@ -257,32 +259,32 @@ contains
       call setStateToFailure(status, "newPhaseFunctionTable: Last scattering angle must be max value")
     if(any(scatteringAngle(2:) - scatteringAngle(:nAngles-1) <= 0.)) &
       call setStateToFailure(status, "newPhaseFunctionTable: Scattering angle must be increasing, unique.")
-    if(any(values(:, :) < 0.)) &
+    if(any(values(:, :, :) < 0.)) &
       call setStateToFailure(status, "newPhaseFunctionTable: Negative phase function values supplied.")
     if(size(values, 1) /= nAngles) &
       call setStateToFailure(status,         &
             "newPhaseFunctionTable: Number of scattering angles and phase function values must match.")
-    if(size(key) /= nEntries) &
+    if(size(key1) /= nReEntries .or. size(key2) /= nLEntries) &
       call setStateToFailure(status,       &
           "newPhaseFunctionTable: Number of phase functions and key values must match.")
-    if(any(key(2:) - key(1:nEntries-1) <= 0.)) &
+    if(any(key1(2:) - key1(1:nReEntries-1) <= 0.) .or. any(key2(2:) - key2(1:nLEntries-1) <= 0.)) &
       call setStateToFailure(status,           &
           "newPhaseFunctionTable: Key values must be unique, increasing.")
     if(present(extinction)) then
-      if(size(extinction) /= nEntries ) &
+      if(size(extinction,1) /= nReEntries .or. size(extinction,2) /= nLEntries) &
         call setStateToFailure(status, "newPhaseFunctionTable: extinction must be provided for each phase function.")
-      if(any(extinction(:)             < 0.)) call setStateToFailure(status, "newPhaseFunction: negative extinction supplied.")
+      if(any(extinction(:,:)             < 0.)) call setStateToFailure(status, "newPhaseFunction: negative extinction supplied.")
     end if 
     if(present(singleScatteringAlbedo)) then 
-      if(size(singleScatteringAlbedo) /= nEntries) &
+      if(size(singleScatteringAlbedo,1) /= nReEntries .or. size(singleScatteringAlbedo,2) /= nLEntries) &
         call setStateToFailure(status, "newPhaseFunctionTable: single scattering albedo must be provided for each phase function.")
-      if(any(singleScatteringAlbedo(:) < 0. .or. singleScatteringAlbedo(:) > 1.)) &
+      if(any(singleScatteringAlbedo(:,:) < 0. .or. singleScatteringAlbedo(:,:) > 1.)) &
                                       call setStateToFailure(status, "newPhaseFunction: singleScatteringAlbedo must be > 0, <= 1.") 
     end if
     if(present(phaseFunctionDescriptions)) then
-      if(size(phaseFunctionDescriptions) /= nEntries) &
+      if(size(phaseFunctionDescriptions,1) /= nReEntries .or. size(phaseFunctionDescriptions,2) /= nLEntries) &
         call setStateToFailure(status, "newPhaseFunctionTable: number of descriptions must match number of phase functions.")
-      if(len_trim(phaseFunctionDescriptions(1)) > maxSingleDescriptorLength) &
+      if(len_trim(phaseFunctionDescriptions(1,1)) > maxSingleDescriptorLength) &
         call setStateToWarning(status, "newPhaseFunctionTable: phaseFunctionDescriptions will be trunctated.")
     end if
     if(present(tableDescription)) then
@@ -297,36 +299,43 @@ contains
       ! 
       ! Allocate the vector that holds the individual phase functions
       !
-      allocate(table%phaseFunctions(nEntries), table%key(nEntries))
+      allocate(table%phaseFunctions(nReEntries,nLEntries), table%key1(nReEntries), table%key2(nLEntries))
       !
       ! Now allocate each phase function in turn
       !   Because the scattering angles are the same for all phase functions we allocate 
       !   memory for the set only once, then have the scatteringAngle members of each 
       !   element in the array point to the first
       ! 
-      allocate(table%phaseFunctions(1)%scatteringAngle(nAngles))
-      do i = 1, nEntries
-        allocate(table%phaseFunctions(i)%value(nAngles))
+      allocate(table%phaseFunctions(1,1)%scatteringAngle(nAngles))
+      do j = 1, nLEntries
+        do i = 1, nReEntries
+          allocate(table%phaseFunctions(i,j)%value(nAngles))
+	end do
       end do
       
-      table%phaseFunctions(1)%scatteringAngle(:) = scatteringAngle(:)
-      table%phaseFunctions(1)%value(:)           = values(:, 1)
-      forall(i = 2:nEntries)
+      table%phaseFunctions(1,1)%scatteringAngle(:) = scatteringAngle(:)
+      table%phaseFunctions(1,1)%value(:)           = values(:, 1, 1)
+      forall(j = 1:nLEntries)
+        forall(i = 2:nReEntries)
         ! Phase function is normalized as in routine newPhaseFunctionTablulated
-        table%phaseFunctions(i)%value(:) = values(:, i)
-        table%phaseFunctions(i)%scatteringAngle => table%phaseFunctions(1)%scatteringAngle(:)
+          table%phaseFunctions(i,j)%value(:) = values(:, i, j)
+          table%phaseFunctions(i,j)%scatteringAngle => table%phaseFunctions(1,1)%scatteringAngle(:)
+	end forall
       end forall
       ! Normalize the phase functions
-      do i = 1, nEntries
-        table%phaseFunctions(i)%value(:) = normalizePhaseFunction(scatteringAngle(:), &
-                                                                  table%phaseFunctions(i)%value(:))
+      do j = 1, nLEntries
+        do i = 1, nReEntries
+          table%phaseFunctions(i,j)%value(:) = normalizePhaseFunction(scatteringAngle(:), &
+                                                                  table%phaseFunctions(i,j)%value(:))
+        end do
       end do
       
-      table%key(:) = key(:)
+      table%key1(:) = key1(:)
+      table%key1(:) = key2(:)
       ! Optional components
-      if(present(extinction))                table%phaseFunctions(:)%extinction             = extinction(:)
-      if(present(singleScatteringAlbedo))    table%phaseFunctions(:)%singleScatteringAlbedo = singleScatteringAlbedo(:)
-      if(present(phaseFunctionDescriptions)) table%phaseFunctions(:)%description            = phaseFunctionDescriptions(:)
+      if(present(extinction))                table%phaseFunctions(:,:)%extinction             = extinction(:,:)
+      if(present(singleScatteringAlbedo))    table%phaseFunctions(:,:)%singleScatteringAlbedo = singleScatteringAlbedo(:,:)
+      if(present(phaseFunctionDescriptions)) table%phaseFunctions(:,:)%description            = phaseFunctionDescriptions(:,:)
       if(present(tableDescription)) table%description = tableDescription
       
       table%oneAngleSet = .true. 
@@ -334,12 +343,13 @@ contains
     end if
   end function newPhaseFunctionTableTabulated
   !------------------------------------------------------------------------------------------
-  function newPhaseFunctionTableGeneral(phaseFunctions, key, phaseFunctionDescriptions, tableDescription, status) &
+  function newPhaseFunctionTableGeneral(phaseFunctions, re_key, lambda_key, phaseFunctionDescriptions, tableDescription, status) &
       result(table)
-    type(phaseFunction), dimension(:), intent(in   ) :: phaseFunctions
-    real, dimension(:),                intent(in   ) :: key
+    type(phaseFunction), dimension(:,:), intent(in   ) :: phaseFunctions
+    real, dimension(:),                intent(in   ) :: re_key
+    real, dimension(:),                intent(in   ) :: lambda_key
     character(len = *), &
-          dimension(:), optional,      intent(in   ) :: phaseFunctionDescriptions
+          dimension(:,:), optional,      intent(in   ) :: phaseFunctionDescriptions
     character(len = *), optional,      intent(in   ) :: tableDescription
     type(ErrorMessage),                intent(inout) :: status
     type(phaseFunctionTable)                         :: table
@@ -348,17 +358,18 @@ contains
     ! Array values is dimensioned(nAngles, nEntries)
     
     ! Local variables
-    integer :: nEntries, i
+    integer :: nReEntries,nLEntries, i, j
     
     ! ------------------------
     ! Sanity checks on the input data
     !
-    nEntries = size(phaseFunctions)
+    nReEntries = size(phaseFunctions,1)
+    nLEntries = size(phaseFunctions,2)
     ! Sanity checks - few are here; most were done when setting elements of the vector
-    if(size(key) /= nEntries) &
+    if(size(re_key) /= nReEntries .or. size(lambda_key) /= nLEntries ) &
       call setStateToFailure(status,       &
           "newPhaseFunctionTable: Number of phase functions and key values must match.")
-    if(any(key(2:) - key(1:nEntries-1) <= 0.)) &
+    if(any(re_key(2:) - re_key(1:nReEntries-1) <= 0.) .or. any(lambda_key(2:) - lambda_key(1:nLEntries-1) <= 0.)) &
       call setStateToFailure(status,           &
           "newPhaseFunctionTable: Key values must be unique, increasing.")
     if(present(tableDescription)) then
@@ -368,13 +379,16 @@ contains
     
     ! ------------------------
     if(.not. stateIsFailure(status)) then
-      allocate(table%phaseFunctions(nEntries), table%key(nEntries))
-     
-      do i = 1, nEntries
-        table%phaseFunctions(i) = copy_PhaseFunction(phaseFunctions(i))
+      allocate(table%phaseFunctions(nReEntries,nLEntries), table%key1(nReEntries), table%key2(nLEntries))
+
+     do j = 1, nLEntries
+      do i = 1, nReEntries
+        table%phaseFunctions(i,j) = copy_PhaseFunction(phaseFunctions(i,j))
       end do
-      table%key(:) = key(:)
-      if(present(phaseFunctionDescriptions)) table%phaseFunctions(:)%description = phaseFunctionDescriptions(:)
+     end do
+      table%key1(:) = re_key(:)
+      table%key2(:) = lambda_key(:)
+      if(present(phaseFunctionDescriptions)) table%phaseFunctions(:,:)%description = phaseFunctionDescriptions(:,:)
       if(present(tableDescription))          table%description                   = tableDescription
       table%oneAngleSet = .false. 
       call setStateToSuccess(status)
@@ -415,25 +429,27 @@ contains
 
     ! Local variables
     type(ErrorMessage)                 :: status
-    integer                            :: nAngles, nEntries, i
-    real, dimension(:, :), allocatable :: values
-    real(8), dimension(:),    allocatable :: extinction, singleScatteringAlbedo
+    integer                            :: nAngles, nLEntries, nReEntries, i,j
+    real, dimension(:, :, :), allocatable :: values
+    real(8), dimension(:,:),    allocatable :: extinction, singleScatteringAlbedo
     
     ! ------------------------
     if(original%oneAngleSet) then
-      nAngles = size(original%phaseFunctions(1)%scatteringAngle); nEntries = size(original%phaseFunctions)
-      allocate(extinction(nEntries), singleScatteringAlbedo(nEntries), values(nAngles, nEntries))
-      forall (i = 1:nEntries)
-        extinction(i) = original%phaseFunctions(i)%extinction
-        singleScatteringAlbedo(i) = original%phaseFunctions(i)%singleScatteringAlbedo
-        values(:, i) = original%phaseFunctions(i)%value(:)
+      nAngles = size(original%phaseFunctions(1,1)%scatteringAngle); nReEntries = size(original%phaseFunctions,1); nLEntries = size(original%phaseFunctions,2)
+      allocate(extinction(nReEntries,nLEntries), singleScatteringAlbedo(nReEntries,nLEntries), values(nAngles, nReEntries,nLEntries))
+     forall (j = 1:nLEntries)
+      forall (i = 1:nReEntries)
+        extinction(i,j) = original%phaseFunctions(i,j)%extinction
+        singleScatteringAlbedo(i,j) = original%phaseFunctions(i,j)%singleScatteringAlbedo
+        values(:, i,j) = original%phaseFunctions(i,j)%value(:)
       end forall
-      thisCopy = new_PhaseFunctionTable(original%phaseFunctions(1)%scatteringAngle, values(:, :), &
-                                        original%key, extinction, singleScatteringAlbedo,         &
+     end forall
+      thisCopy = new_PhaseFunctionTable(original%phaseFunctions(1,1)%scatteringAngle, values(:, :, :), &
+                                        original%key1, original%key2, extinction, singleScatteringAlbedo,         &
                                         tableDescription = original%description, status = status)
       deallocate(extinction, singleScatteringAlbedo, values)
     else 
-      thisCopy = new_PhaseFunctionTable(original%phaseFunctions, original%key, &
+      thisCopy = new_PhaseFunctionTable(original%phaseFunctions, original%key1, original%key2, &
       !                                 phaseFunctionDescriptions = original%phaseFunctionDescriptions,    &
                                         tableDescription = original%description, status = status)
     end if 
@@ -529,7 +545,7 @@ contains
   subroutine getPhaseFunctionValues_table(table, scatteringAngle, values, status)
     type(phaseFunctionTable), intent(in   ) :: table
     real, dimension(:),       intent(in   ) :: scatteringAngle
-    real, dimension(:, :),    intent(  out) :: values
+    real, dimension(:, :, :),    intent(  out) :: values
     type(ErrorMessage),       intent(inout) :: status
     ! ------------------------
     ! Return the values of the phase functions in a table given a set of scattering angles.
@@ -537,7 +553,7 @@ contains
     !
     
     ! Local variables
-    integer                               :: i, l, maxL, nValues, nStored
+    integer                               :: i, j, l, maxL, nValues, nStored
     integer, dimension(:),    allocatable :: tableIndicies, indiciesPlus1
     real,    dimension(:),    allocatable :: weights, dMu
     real,    dimension(:, :), allocatable :: legendreP
@@ -555,7 +571,7 @@ contains
     if(any(scatteringAngle(2:) - scatteringAngle(:nValues-1) <= 0.)) &
       call setStateToFailure(status, "getPhaseFunctionValues: Scattering angle must be increasing, unique.")
     if(size(scatteringAngle)                   /= size(values, 1) .or. &
-       size(table%phaseFunctions) /= size(values, 2)) &
+       size(table%phaseFunctions,1) /= size(values, 2) .or. size(table%phaseFunctions,2) /= size(values, 3)) &
       call setStateToFailure(status,         &
             "getPhaseFunctionValues: Number of scattering angles and phase function values must match.")
     
@@ -567,9 +583,11 @@ contains
         ! What's the largest number of Legendre coefficients in any of the phase functions? 
         !
         maxL = 0
-        do i = 1, size(table%phaseFunctions)
-          if(storedAsLegendre(table%phaseFunctions(i))) &
-            maxL = max(maxL, size(table%phaseFunctions(i)%legendreCoefficients))
+	do j = 1, size(table%phaseFunctions,2)
+          do i = 1, size(table%phaseFunctions,1)
+            if(storedAsLegendre(table%phaseFunctions(i,j))) &
+              maxL = max(maxL, size(table%phaseFunctions(i,j)%legendreCoefficients))
+	  end do
         end do 
         !
         ! Compute all the Legendre terms we'll ever need 
@@ -584,13 +602,13 @@ contains
         !
         ! Precompute mapping from native phase function angles to the angles requested
         !
-        nStored = size(table%phaseFunctions(1)%scatteringAngle(:))
+        nStored = size(table%phaseFunctions(1,1)%scatteringAngle(:))
         allocate(tableIndicies(nValues), weights(nValues), dMu(nValues), indiciesPlus1(nValues))
         tableIndicies(1) = findIndex(scatteringAngle(1), &
-                                     table%phaseFunctions(1)%scatteringAngle(:))
+                                     table%phaseFunctions(1,1)%scatteringAngle(:))
         do l = 2, nValues
           tableIndicies(l) = findIndex(scatteringAngle(l),                         &
-                                       table%phaseFunctions(1)%scatteringAngle(:), &
+                                       table%phaseFunctions(1,1)%scatteringAngle(:), &
                                        firstGuess = tableIndicies(l-1))
         end do
         indiciesPlus1(:) = tableIndicies(:) + 1
@@ -600,43 +618,45 @@ contains
         !   be nStored, and we don't want to refer to array elements beyond the table. 
         !
         where(tableIndicies(:) < nStored)
-          dMu(:) = cos(table%phaseFunctions(1)%scatteringAngle(indiciesPlus1(:))) - &
-                   cos(table%phaseFunctions(1)%scatteringAngle(tableIndicies(:)))
+          dMu(:) = cos(table%phaseFunctions(1,1)%scatteringAngle(indiciesPlus1(:))) - &
+                   cos(table%phaseFunctions(1,1)%scatteringAngle(tableIndicies(:)))
         elsewhere ! Weight is 0 when dAngle is large (tablesIndices >= nStored)
           dMu(:) = huge(dMu)
           indiciesPlus1(:) = tableIndicies(:) ! Don't want to try to access beyond the end of the table
         end where
         weights(:) = 1. - (cos(scatteringAngle(:)) -                                         &
-                           cos(table%phaseFunctions(1)%scatteringAngle(tableIndicies(:)))) / &
+                           cos(table%phaseFunctions(1,1)%scatteringAngle(tableIndicies(:)))) / &
                           dMu(:)
       end if
-      
-      do i = 1, size(table%phaseFunctions)
-        if(storedAsLegendre(table%phaseFunctions(i))) then
+
+      do j = 1, size(table%phaseFunctions,2)      
+        do i = 1, size(table%phaseFunctions,1)
+          if(storedAsLegendre(table%phaseFunctions(i,j))) then
           !
           ! Use previously computed Legendre polynomials
           !
-          maxL = size(table%phaseFunctions(i)%legendreCoefficients)
-          if(maxL == 0) then 
-            values(:, i) = 1/2. 
-          else
-            values(:, i) = matmul((/ 1., table%phaseFunctions(i)%legendreCoefficients(:) /), &
+            maxL = size(table%phaseFunctions(i,j)%legendreCoefficients)
+            if(maxL == 0) then 
+              values(:, i, j) = 1/2. 
+            else
+              values(:, i, j) = matmul((/ 1., table%phaseFunctions(i,j)%legendreCoefficients(:) /), &
                                   legendreP(0:maxL,:))
-          end if
-        else if(table%oneAngleSet) then 
+            end if
+          else if(table%oneAngleSet) then 
           !
           ! Use previously computed map from native angles to requested angles
           !
-          values(:, i) =       weights(:)  * table%phaseFunctions(i)%value(tableIndicies(:)) + &
-                         (1. - weights(:)) * table%phaseFunctions(i)%value(indiciesPlus1(:)) 
-        else 
+            values(:, i, j) =       weights(:)  * table%phaseFunctions(i,j)%value(tableIndicies(:)) + &
+                         (1. - weights(:)) * table%phaseFunctions(i,j)%value(indiciesPlus1(:)) 
+          else 
           !
           ! General case (phase functions stored as values at different angles sets) 
           !
-          call getPhaseFunctionValues_one(table%phaseFunctions(i), &
-                                          scatteringAngle(:), values(:, i), status)
-          if(stateIsFailure(status)) exit
-        end if 
+            call getPhaseFunctionValues_one(table%phaseFunctions(i,j), &
+                                          scatteringAngle(:), values(:, i, j), status)
+            if(stateIsFailure(status)) exit
+          end if 
+        end do
       end do 
 
       if(allocated(legendreP))     deallocate(legendreP)
@@ -747,14 +767,16 @@ contains
     ! A phase function table is ready to use if there is room for one or more phase functions
     !   and if each of those phase functions has been initialized. 
     !
-    integer :: i
+    integer :: i,j
     
     isReady_phaseFunctionTable = associated(table%phaseFunctions)
     if(isReady_phaseFunctionTable) then
-      do i = 1, size(table%phaseFunctions)
+     do j = 1, size(table%phaseFunctions,2)
+      do i = 1, size(table%phaseFunctions,1)
         isReady_phaseFunctionTable = isReady_phaseFunctionTable .and. &
-                                     isReady_phaseFunction(table%phaseFunctions(i))
+                                     isReady_phaseFunction(table%phaseFunctions(i,j))
       end do
+     end do
     end if
 
   end function isReady_phaseFunctionTable
@@ -804,14 +826,15 @@ contains
         
   end subroutine getInfo_PhaseFunction  
   !------------------------------------------------------------------------------------------
-  subroutine getInfo_PhaseFunctionTable(table, nEntries, key, extinction, singleScatteringAlbedo, &
+  subroutine getInfo_PhaseFunctionTable(table, lambdaI, nEntries, key, extinction, singleScatteringAlbedo, &
                                         phaseFunctionDescriptions, tableDescription, status)
     type(phaseFunctionTable),           intent(in   ) :: table
+    integer,                  optional, intent(in   ) :: lambdaI
     integer,                  optional, intent(  out) :: nEntries
     real,    dimension(:),    optional, intent(  out) :: key
     real(8),     dimension(:),    optional, intent(  out) ::extinction, singleScatteringAlbedo
     character(len = *), &
-              dimension(:),   optional, intent(  out) :: phaseFunctionDescriptions
+              dimension(:,:),   optional, intent(  out) :: phaseFunctionDescriptions
     character(len = *),       optional, intent(  out) :: tableDescription
     type(ErrorMessage),                 intent(inout) :: status
     
@@ -825,40 +848,40 @@ contains
     
     ! ------------------------
     if(.not. stateIsFailure(status)) then 
-      if(present(nEntries)) nEntries = size(table%key)
+      if(present(nEntries)) nEntries = size(table%key1)
       
       if(present(key)) then
-        if(size(key) /= size(table%key)) &
+        if(size(key) /= size(table%key1)) &
           call setStateToWarning(status, "getKeyInfo: supplied key length not the same as table size.") 
         key(:) = 0
-        key(:min(size(key), size(table%key))) = table%key(:min(size(key), size(table%key)))
+        key(:min(size(key), size(table%key1))) = table%key1(:min(size(key), size(table%key1)))
       end if
       
-      if(present(extinction)) then
-        if(size(extinction) /= size(table%phaseFunctions)) &
+      if(present(extinction) .and. present(lambdaI)) then
+        if(size(extinction) /= size(table%phaseFunctions,1)) &
           call setStateToWarning(status, "getKeyInfo: vector extinction isn't the same size as the table.") 
-        forall(i = 1:max(size(extinction), size(table%phaseFunctions))) &
-          extinction(i) = getExtinction(table%phaseFunctions(i))
-        extinction(size(table%phaseFunctions)+1:) = defaultExtinction 
+        forall(i = 1:max(size(extinction), size(table%phaseFunctions,1))) &
+          extinction(i) = getExtinction(table%phaseFunctions(i,lambdaI))
+        extinction(size(table%phaseFunctions,1)+1:) = defaultExtinction 
       end if
       
-      if(present(singleScatteringAlbedo)) then
-        if(size(singleScatteringAlbedo) /= size(table%phaseFunctions)) &
+      if(present(singleScatteringAlbedo) .and. present(lambdaI)) then
+        if(size(singleScatteringAlbedo) /= size(table%phaseFunctions,1)) &
           call setStateToWarning(status, "getKeyInfo: vector singleScatteringAlbedo isn't the same size as the table.") 
-        forall(i = 1:max(size(singleScatteringAlbedo), size(table%phaseFunctions))) &
-          singleScatteringAlbedo(i) = getSingleScatteringAlbedo(table%phaseFunctions(i))
-        singleScatteringAlbedo(size(table%phaseFunctions)+1:) = defaultSSA 
+        forall(i = 1:max(size(singleScatteringAlbedo), size(table%phaseFunctions,1))) &
+          singleScatteringAlbedo(i) = getSingleScatteringAlbedo(table%phaseFunctions(i,lambdaI))
+        singleScatteringAlbedo(size(table%phaseFunctions,1)+1:) = defaultSSA 
       end if
       
       if(present(phaseFunctionDescriptions)) then
         if(associated(table%phaseFunctionDescriptions)) then 
           if(size(phaseFunctionDescriptions) /= size(table%phaseFunctionDescriptions)) &
             call setStateToWarning(status, "getKeyInfo: number of phaseFunctionDescriptions not the same as table size.") 
-          phaseFunctionDescriptions(:) = ""
-          phaseFunctionDescriptions(:min(size(phaseFunctionDescriptions), size(table%phaseFunctionDescriptions))) = &
-            table%phaseFunctionDescriptions(:min(size(phaseFunctionDescriptions), size(table%phaseFunctionDescriptions)))
+          phaseFunctionDescriptions(:,:) = ""
+          phaseFunctionDescriptions(:min(size(phaseFunctionDescriptions,1), size(table%phaseFunctionDescriptions,1)),:min(size(phaseFunctionDescriptions,2), size(table%phaseFunctionDescriptions,2))) = &
+            table%phaseFunctionDescriptions(:min(size(phaseFunctionDescriptions,1), size(table%phaseFunctionDescriptions,1)),:min(size(phaseFunctionDescriptions,2), size(table%phaseFunctionDescriptions,2)))
         else 
-          phaseFunctionDescriptions(:) = ""
+          phaseFunctionDescriptions(:,:) = ""
         end if
       end if
       
@@ -869,8 +892,8 @@ contains
      
   end subroutine getInfo_PhaseFunctionTable
   !------------------------------------------------------------------------------------------
-  function getElement(n, table, status) 
-    integer,                  intent(in   ) :: n
+  function getElement(n, m, table, status) 
+    integer,                  intent(in   ) :: n, m
     type(phaseFunctionTable), intent(in   ) :: table
     type(ErrorMessage),       intent(inout) :: status
     type(phaseFunction)                     :: getElement
@@ -881,13 +904,13 @@ contains
     if(.not. associated(table%phaseFunctions)) &
       call setStateToFailure(status, "getElement: phase function table hasn't been initialized.")
     if(.not. stateIsFailure(status)) then
-      if(n < 1 .or. n > size(table%phaseFunctions)) &
+      if(n < 1 .or. n > size(table%phaseFunctions,1) .or. m < 1 .or. m > size(table%phaseFunctions,2)) &
         call setStateToFailure(status, "getElement: asking for non-existent element.")
     end if 
 
     ! ------------------------
     if(.not. stateIsFailure(status)) then
-      getElement = copy_PhaseFunction(table%phaseFunctions(n))
+      getElement = copy_PhaseFunction(table%phaseFunctions(n,m))
       call setStateToSuccess(status)
     end if 
 
@@ -941,18 +964,18 @@ contains
     
     ! Local variables
     integer, dimension(16)                :: ncStatus
-    integer                               :: ncFileId, entryDimID, keyVarId, &
+    integer                               :: ncFileId, entryDimID, entryDimID2, keyVarId, &
                                              extinctionVarId, ssaVarId
-    integer                               :: nEntries, i
-    real(8),    dimension(:),    allocatable :: extinction, singleScatteringAlbedo
+    integer                               :: nReEntries, nLEntries, i, j
+    real(8),    dimension(:,:),    allocatable :: extinction, singleScatteringAlbedo
     ! For angle-value pairs
     integer                               :: angleDimID, angleVarId, phaseFunctionVarID 
     integer                               :: nAngles
-    real,    dimension(:, :), allocatable :: phaseFunctionArray
+    real,    dimension(:, :, :), allocatable :: phaseFunctionArray
     ! For sets of Legendre coefficients
     integer                               :: coefficientDimID, coefficientVarID, &
                                              startVarId, lengthVarId
-    integer, dimension(:),    allocatable :: start, length
+    integer, dimension(:,:),    allocatable :: start, length
     real,    dimension(:),    allocatable :: legendreCoefficients
     
     ! To learn about the existing file
@@ -968,7 +991,7 @@ contains
     if(.not. isReady_phaseFunctionTable(table)) then 
       call setStateToFailure(status, "add_PhaseFunctionTable: phase function table hasn't been initialized.") 
     else if (.not.(table%oneAngleSet .or. &
-                   all(storedAsLegendre(table%phaseFunctions(:))))) then
+                   all(storedAsLegendre(table%phaseFunctions(:,:))))) then
       !
       ! We're not including a general way to write a table of phase functions. 
       !   (It seems like the two supplied here should work for most people.) 
@@ -994,63 +1017,69 @@ contains
     
     ! ------------------------
     if(.not. stateIsFailure(status)) then 
-      nEntries = size(table%phaseFunctions)
+      nReEntries = size(table%phaseFunctions,1)
+      nLEntries = size(table%phaseFunctions,2)
       
       ncStatus( :) = nf90_NoErr
       ncStatus( 1) = nf90_redef(ncFileID)
-      ncStatus( 2) = nf90_def_dim(ncFileId, trim(thisPrefix) // "phaseFunctionNumber", nEntries, entryDimId)
+      ncStatus( 2) = nf90_def_dim(ncFileId, trim(thisPrefix) // "phaseFunctionNumber", nReEntries, entryDimId)
       ncStatus( 3) = nf90_def_var(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT",       &
                                   nf90_float, entryDimId, keyVarID)
-      ncStatus( 4) = nf90_def_var(ncFileId, trim(thisPrefix) // "extinctionT",             &
-                                  nf90_double, entryDimId, extinctionVarId)
-      ncStatus( 5) = nf90_def_var(ncFileId, trim(thisPrefix) // "singleScatteringAlbedoT", &
-                                  nf90_double, entryDimId, ssaVarId)
+      ncStatus( 4) = nf90_inq_dimid(ncFileId, "wavelengths", entryDimID2)
+      ncStatus( 5) = nf90_def_var(ncFileId, trim(thisPrefix) // "extinctionT",             &
+                                  nf90_double, (/entryDimId, entryDimID2/), extinctionVarId)
+      ncStatus( 6) = nf90_def_var(ncFileId, trim(thisPrefix) // "singleScatteringAlbedoT", &
+                                  nf90_double, (/entryDimId, entryDimID2/), ssaVarId)
       if(len_trim(table%description) > 0) &
-        ncStatus( 6) = nf90_put_att(ncFileID, nf90_Global, &
+        ncStatus( 7) = nf90_put_att(ncFileID, nf90_Global, &
                                               trim(thisPrefix) // "description", trim(table%description))
      
       if(table%oneAngleSet) then
         ! Table is stored as one set of angles and phase function values at each angle.
         !   We'll write the angles and keys as vectors, and the values as a matrix
-        nAngles = size(table%phaseFunctions(1)%scatteringAngle)
+        nAngles = size(table%phaseFunctions(1,1)%scatteringAngle)
         
         ! Specific variable definitions
-        ncStatus( 7) = nf90_def_dim(ncFileId, trim(thisPrefix) // "scatteringAngle",     &
+        ncStatus( 8) = nf90_def_dim(ncFileId, trim(thisPrefix) // "scatteringAngle",     &
                                     nAngles,  angleDimID)
-        ncStatus( 8) = nf90_def_var(ncFileId, trim(thisPrefix) // "scatteringAngle",     &
+        ncStatus( 9) = nf90_def_var(ncFileId, trim(thisPrefix) // "scatteringAngle",     &
                                     nf90_float, angleDimId, angleVarID)
-        ncStatus( 9) = nf90_def_var(ncFileId, trim(thisPrefix) // "phaseFunctionValues", &
-                                    nf90_float, (/ angleDimID, entryDimID /), phaseFunctionVarID)
-        ncStatus(10) = nf90_put_att(ncFileID, nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", &
+        ncStatus(10) = nf90_def_var(ncFileId, trim(thisPrefix) // "phaseFunctionValues", &
+                                    nf90_float, (/ angleDimID, entryDimID, entryDimID2 /), phaseFunctionVarID)
+        ncStatus(11) = nf90_put_att(ncFileID, nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", &
                                     "Angle-Value")
       else 
         ! All the phase functions are stored as Legendre polynomials. We'll store the 
         !   coefficients in a single vector, keeping track of the starting position and length
         !   of each set of coefficients in two separate vectors (yes, this is redundent). 
-        allocate(start(nEntries), length(nEntries))
+        allocate(start(nReEntries,nLEntries), length(nReEntries,nLEntries))
 
         ! What is the length of each Legendre series? How many terms are there in total? 
-        do i = 1, nEntries
-          length(i) = size(table%phaseFunctions(i)%legendreCoefficients)
+	do j = 1, nLEntries
+          do i = 1, nReEntries
+            length(i,j) = size(table%phaseFunctions(i,j)%legendreCoefficients)
+	  end do
         end do
-        start(1) = 1
-        do i = 2, nEntries
-          start(i) = start(i-1) + length(i-1)
+        start(1,:) = 1
+	do j = 1, nLEntries
+          do i = 2, nReEntries
+            start(i,j) = start(i-1,j) + length(i-1,j)
+	  end do
         end do
         
         ! Specific variable definitions
         ncStatus( 6) = nf90_def_dim(ncFileId, trim(thisPrefix) // "coefficents",          &       
-                                    start(nEntries) + length(nEntries) - 1, coefficientDimID)
+                                    start(nReEntries,nLEntries) + length(nReEntries,nLEntries) - 1, coefficientDimID)
         ncStatus( 7) = nf90_def_var(ncFileId, trim(thisPrefix) // "start",                &
-                                    nf90_int,   entryDimId,  startVarId)
+                                    nf90_int,   (/entryDimId,entryDimID2/),  startVarId)
         ncStatus( 8) = nf90_def_var(ncFileId, trim(thisPrefix) // "length",               &
-                                    nf90_int,   entryDimId, lengthVarId)
+                                    nf90_int,   (/entryDimId,entryDimID2/), lengthVarId)
         ncStatus( 9) = nf90_def_var(ncFileId, trim(thisPrefix) // "legendreCoefficients", &
                                     nf90_float, coefficientDimID, coefficientVarID)
         ncStatus(10) = nf90_put_att(ncFileID, nf90_Global, &
                                               trim(thisPrefix) // "phaseFunctionStorageType", "LegendreCoefficients")
       end if
-      ncStatus(11) = nf90_EndDef(ncFileID)
+      ncStatus(12) = nf90_EndDef(ncFileID)
       
       if(any(ncStatus(:) /= nf90_noErr)) then
         do i = 1, size(ncStatus)
@@ -1063,10 +1092,10 @@ contains
     ! Write the variables
     if(.not. stateIsFailure(status)) then ! File writing 
       ! These variables are common to both formats
-      allocate(extinction(nEntries), singleScatteringAlbedo(nEntries))
-      extinction             = table%phaseFunctions(:)%extinction
-      singleScatteringAlbedo = table%phaseFunctions(:)%singleScatteringAlbedo
-      ncStatus( 1) = nf90_put_var(ncFileId,        keyVarId, table%key) 
+      allocate(extinction(nReEntries,nLEntries), singleScatteringAlbedo(nReEntries,nLEntries))
+      extinction(:,:)             = table%phaseFunctions(:,:)%extinction
+      singleScatteringAlbedo(:,:) = table%phaseFunctions(:,:)%singleScatteringAlbedo
+      ncStatus( 1) = nf90_put_var(ncFileId,        keyVarId, table%key1) 
       ncStatus( 2) = nf90_put_var(ncFileID, extinctionVarId, extinction)
       ncStatus( 3) = nf90_put_var(ncFileID,        ssaVarId, singleScatteringAlbedo)
       deallocate(extinction, singleScatteringAlbedo)
@@ -1076,22 +1105,26 @@ contains
         ! Copying the phase function values into temporary, local memory is lots 
         !   faster than writing each phase function in turn. 
         !
-        allocate(phaseFunctionArray(nAngles, nEntries))
-        do i = 1, nEntries
-          phaseFunctionArray(:, i) = table%phaseFunctions(i)%value(:)
+        allocate(phaseFunctionArray(nAngles, nReEntries, nLEntries))
+	do j = 1, nLEntries
+          do i = 1, nReEntries
+            phaseFunctionArray(:, i, j) = table%phaseFunctions(i,j)%value(:)
+	  end do
         end do
         
-        ncStatus( 4) = nf90_put_var(ncFileId,         angleVarId, table%phaseFunctions(1)%scatteringAngle) 
+        ncStatus( 4) = nf90_put_var(ncFileId,         angleVarId, table%phaseFunctions(1,1)%scatteringAngle) 
         ncStatus( 5) = nf90_put_var(ncFileId, phaseFunctionVarId, phaseFunctionArray) 
         deallocate(phaseFunctionArray)
       else 
         !
         ! Copy all the Legendre coefficients into one long array
         !
-        allocate(legendreCoefficients(start(nEntries) + length(nEntries) - 1))
-        forall( i = 1:nEntries)
-          legendreCoefficients(start(i):(start(i) + length(i) - 1)) = &
-            table%phaseFunctions(i)%legendreCoefficients(:)
+        allocate(legendreCoefficients(start(nReEntries, nLEntries) + length(nReEntries,nLEntries) - 1))
+	forall(j = 1:nLEntries)
+          forall( i = 1:nReEntries)
+            legendreCoefficients(start(i,j):(start(i,j) + length(i,j) - 1)) = &
+              table%phaseFunctions(i,j)%legendreCoefficients(:)
+	  end forall
         end forall
         
         ncStatus( 4) = nf90_put_var(ncFileId,       startVarId, start) 
@@ -1125,21 +1158,21 @@ contains
     ! Local variables
     integer, dimension(24)                     :: ncStatus
     integer                                    :: ncFileId, ncDimId, ncVarId
-    integer                                    :: nEntries, i
+    integer                                    :: nEntries, nLEntries, i, j
     character(len = 32)                        :: storageType
-    real,    dimension(:),    allocatable      :: key
-    real(8),    dimension(:),    allocatable      :: extinction, singleScatteringAlbedo
+    real,    dimension(:),    allocatable      :: key1, key2
+    real(8),    dimension(:,:),    allocatable      :: extinction, singleScatteringAlbedo
     character(len = maxTableDescriptorLength)  :: description
     ! For angle-value pairs
     integer                               :: nAngles
     real,    dimension(:),    allocatable :: scatteringAngle
-    real,    dimension(:, :), allocatable :: phaseFunctionArray
+    real,    dimension(:, :, :), allocatable :: phaseFunctionArray
     ! For sets of Legendre coefficients
     integer                               :: nTotalCoefficients
-    integer, dimension(:),    allocatable :: start, length
+    integer, dimension(:,:),    allocatable :: start, length
     real,    dimension(:),    allocatable :: legendreCoefficients
     type(phaseFunction), &
-             dimension(:),    allocatable :: phaseFunctions
+             dimension(:,:),    allocatable :: phaseFunctions
     
     character(len = 16)                   :: thisPrefix
              
@@ -1172,40 +1205,44 @@ contains
       ! What's common to all the possible file formats? 
       ncStatus( 1) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "phaseFunctionNumber", ncDimId)
       ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nEntries)
-      allocate(key(nEntries), extinction(nEntries), singleScatteringAlbedo(nEntries))
-      ncStatus( 3) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT", ncVarId)
-      ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, key)
-      ncStatus( 5) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "extinctionT", ncVarId)
-      ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, extinction)
-      ncStatus( 7) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "singleScatteringAlbedoT", ncVarId)
-      ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo)
-      ncStatus( 9) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "description", description)
-      if (ncStatus( 9) /= nf90_NoErr) then ! If a zero-length description was provided the attribute wasn't even written
+      ncStatus( 3) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "wavelengths", ncDimId)
+      ncStatus( 4) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nLEntries)
+      allocate(key1(nEntries), key2(nLEntries), extinction(nEntries,nLEntries), singleScatteringAlbedo(nEntries,nLEntries))
+      ncStatus( 5) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT", ncVarId)
+      ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, key1)
+      ncStatus( 7) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "wavelengths", ncVarId)
+      ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, key2)
+      ncStatus( 9) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "extinctionT", ncVarId)
+      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, extinction)
+      ncStatus(11) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "singleScatteringAlbedoT", ncVarId)
+      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo)
+      ncStatus(13) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "description", description)
+      if (ncStatus(13) /= nf90_NoErr) then ! If a zero-length description was provided the attribute wasn't even written
         description = ""
-        ncStatus( 9) = nf90_NoErr
+        ncStatus(13) = nf90_NoErr
       end if
       
       if(index(trim(storageType), "Angle-Value") == 1) then
-        ncStatus(10) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "scatteringAngle", ncDimId)
-        ncStatus(11) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nAngles)
-        allocate(scatteringAngle(nAngles), phaseFunctionArray(nAngles, nEntries))
+        ncStatus(14) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "scatteringAngle", ncDimId)
+        ncStatus(15) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nAngles)
+        allocate(scatteringAngle(nAngles), phaseFunctionArray(nAngles, nEntries, nLEntries))
        
-        ncStatus(12) = nf90_inq_varid(ncFileId, trim(thisPrefix) //  "scatteringAngle", ncVarId)
-        ncStatus(13) = nf90_get_var(ncFileId, ncVarId, scatteringAngle)
-        ncStatus(14) = nf90_inq_varid(ncFileId, trim(thisPrefix) //  "phaseFunctionValues", ncVarId)
-        ncStatus(15) = nf90_get_var(ncFileId, ncVarId, phaseFunctionArray)
+        ncStatus(16) = nf90_inq_varid(ncFileId, trim(thisPrefix) //  "scatteringAngle", ncVarId)
+        ncStatus(17) = nf90_get_var(ncFileId, ncVarId, scatteringAngle)
+        ncStatus(18) = nf90_inq_varid(ncFileId, trim(thisPrefix) //  "phaseFunctionValues", ncVarId)
+        ncStatus(19) = nf90_get_var(ncFileId, ncVarId, phaseFunctionArray)
       else if (index(trim(storageType), "LegendreCoefficients") == 1) then
-        ncStatus(10) = nf90_inq_dimid(ncFileId, trim(thisPrefix) //  "coefficents", ncDimId)
-        ncStatus(11) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nTotalCoefficients)
-        allocate(start(nEntries), length(nEntries), legendreCoefficients(nTotalCoefficients), &
-                 phaseFunctions(nEntries))
+        ncStatus(14) = nf90_inq_dimid(ncFileId, trim(thisPrefix) //  "coefficents", ncDimId)
+        ncStatus(15) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nTotalCoefficients)
+        allocate(start(nEntries,nLEntries), length(nEntries,nLEntries), legendreCoefficients(nTotalCoefficients), &
+                 phaseFunctions(nEntries,nLEntries))
        
-        ncStatus(12) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "start", ncVarId)
-        ncStatus(13) = nf90_get_var(ncFileId, ncVarId, start)
-        ncStatus(14) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "length", ncVarId)
-        ncStatus(15) = nf90_get_var(ncFileId, ncVarId, length)
-        ncStatus(16) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "legendreCoefficients", ncVarId)
-        ncStatus(17) = nf90_get_var(ncFileId, ncVarId, legendreCoefficients)
+        ncStatus(16) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "start", ncVarId)
+        ncStatus(17) = nf90_get_var(ncFileId, ncVarId, start)
+        ncStatus(18) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "length", ncVarId)
+        ncStatus(19) = nf90_get_var(ncFileId, ncVarId, length)
+        ncStatus(20) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "legendreCoefficients", ncVarId)
+        ncStatus(21) = nf90_get_var(ncFileId, ncVarId, legendreCoefficients)
       else
         call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " is of unknown format.")
       end if
@@ -1213,7 +1250,7 @@ contains
       !
       ! If the name was supplied we're writing a stand-alone file, so it's time to close it
       !
-      if(present(fileName)) ncStatus(18) = nf90_close(ncfileId)
+      if(present(fileName)) ncStatus(22) = nf90_close(ncfileId)
 
       !
       ! Report any netcdf errors in the status variable
@@ -1231,25 +1268,29 @@ contains
       if(.not. stateIsFailure(status)) then
         if(index(trim(storageType), "Angle-Value") == 1) then
           table = new_PhaseFunctionTable(scatteringAngle, phaseFunctionArray,     &
-                                        key, extinction, singleScatteringAlbedo, &
+                                        key1, key2, extinction, singleScatteringAlbedo, &
                                         tableDescription = description, status = status)
           deallocate(scatteringAngle, phaseFunctionArray)
         else 
-          do i = 1, nEntries
-            phaseFunctions(i) = new_PhaseFunction(legendreCoefficients(start(i):(start(i) + length(i) - 1)), &
-                                                  extinction(i), singleScatteringAlbedo(i), status = status)
+	  do j = 1, nLEntries
+            do i = 1, nEntries
+              phaseFunctions(i,j) = new_PhaseFunction(legendreCoefficients(start(i,j):(start(i,j) + length(i,j) - 1)), &
+                                                  extinction(i,j), singleScatteringAlbedo(i,j), status = status)
+	    end do
           end do
           if(.not. StateIsFailure(status)) &
-            table = new_PhaseFunctionTable(phaseFunctions, key, tableDescription = description, status = status)
+            table = new_PhaseFunctionTable(phaseFunctions, key1, key2, tableDescription = description, status = status)
          
           ! Each element in the array of phase function needs to give its memory up
-          do i = 1, nEntries
-            call finalize_PhaseFunction(phaseFunctions(i))
+	  do j = 1, nLEntries
+            do i = 1, nEntries
+              call finalize_PhaseFunction(phaseFunctions(i,j))
+	    end do
           end do
           deallocate(start, length, legendreCoefficients, phaseFunctions)
         end if  ! Which kind of phase function table
       end if
-      deallocate(key, extinction, singleScatteringAlbedo)
+      deallocate(key1, key2, extinction, singleScatteringAlbedo)
       if(.not. stateIsFailure(status)) call setStateToSuccess(status)
     end if
   end subroutine read_PhaseFunctionTable
@@ -1276,26 +1317,31 @@ contains
     !   a pristine state
     
     ! Local variables
-    integer :: i
+    integer :: i, j
     
     ! ------------------------
     if(isReady_phaseFunctionTable(table)) then
       ! First we finalize each of the phase functions we've stored
       if(table%oneAngleSet) then
-        do i = 2, size(table%phaseFunctions)
-          if(associated(table%phaseFunctions(i)%value))           deallocate(table%phaseFunctions(i)%value)
-          if(associated(table%phaseFunctions(i)%scatteringAngle)) deallocate(table%phaseFunctions(i)%scatteringAngle)
+	do j = 1, size(table%phaseFunctions,2)
+          do i = 2, size(table%phaseFunctions,1)
+            if(associated(table%phaseFunctions(i,j)%value))           deallocate(table%phaseFunctions(i,j)%value)
+            if(associated(table%phaseFunctions(i,j)%scatteringAngle)) deallocate(table%phaseFunctions(i,j)%scatteringAngle)
+	  end do
         end do
-        call finalize_PhaseFunction(table%phaseFunctions(1))
+        call finalize_PhaseFunction(table%phaseFunctions(1,1))
       else 
-        do i = 1, size(table%phaseFunctions) 
-          call finalize_PhaseFunction(table%phaseFunctions(i))
+	do j = 1, size(table%phaseFunctions,2)
+          do i = 1, size(table%phaseFunctions,1) 
+            call finalize_PhaseFunction(table%phaseFunctions(i,j))
+	  end do
         end do
       end if
       
       ! Next we delete the members of the table itself. 
       if(associated(table%phaseFunctions)) deallocate(table%phaseFunctions)
-      if(associated(table%key))            deallocate(table%key)
+      if(associated(table%key1))            deallocate(table%key1)
+      if(associated(table%key2))            deallocate(table%key2)
       if(associated(table%phaseFunctionDescriptions)) &
                                            deallocate(table%phaseFunctionDescriptions)
       table%description = ""
