@@ -10,4 +10,5 @@
 *.readme
 *.lst
 *.phasetab
+*.gz
 build.log

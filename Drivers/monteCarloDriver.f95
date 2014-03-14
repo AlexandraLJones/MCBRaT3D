@@ -62,7 +62,7 @@ program monteCarloDriver
   logical              :: angleFill = .false.
   real, dimension(3)   :: thetaFill = -1., phiFill = -1.
   real, allocatable, dimension(:) :: mus, phis
-  integer              :: nMu, nPhi
+  integer              :: nMu, nPhi, numLambda, lambdaI
   !   Monte Carlo
   integer              :: numPhotonsPerBatch = 0, numBatches = 100, &
                           iseed = 10, nPhaseIntervals = 10001
@@ -82,7 +82,7 @@ program monteCarloDriver
                           reportAbsorptionProfile = .false. 
   
   ! File names
-  character(len=256)   :: domainFileName = ""
+  character(len=256)   :: domainFileName = "", domainFileList = ""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
                           outputNetcdfFile = ""
@@ -95,8 +95,8 @@ program monteCarloDriver
   character(len=256)   :: auxhist01_radFile=""
   character(len=256)   :: auxhist01_fluxFile=""
 
-  namelist /radiativeTransfer/ solarFlux, solarMu, solarAzimuth, surfaceAlbedo, surfaceTemp, &
-                               intensityMus, intensityPhis, angleFill, thetaFill, phiFill, LW_flag, lambda
+  namelist /radiativeTransfer/ solarFlux, solarMu, solarAzimuth, surfaceTemp, &
+                               intensityMus, intensityPhis, angleFill, thetaFill, phiFill, LW_flag, numLambda
   
   namelist /monteCarlo/        numPhotonsPerBatch, numBatches, iseed, nPhaseIntervals
   
@@ -110,7 +110,7 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         domainFileName, &
+  namelist /fileNames/         domainFileList, &
                                outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
   
@@ -144,6 +144,7 @@ program monteCarloDriver
 
    ! I3RC Monte Carlo code derived type variables
   type(domain)               :: thisDomain
+  type(domain), allocatable, dimension(:) :: BBDomain
   type(ErrorMessage)         :: status
   type(randomNumberSequence) :: randoms
   type(photonStream)         :: incomingPhotons
@@ -238,20 +239,33 @@ program monteCarloDriver
   ! -----------------------------------------
   !  Read the domain file
   !
-  
+  allocate(BBDomain(numLambda))
+!!!!!!!!!! Open list of domain files, then loop over reading them into BBDomain
+  open(unit=22, file=TRIM(domainFileList), status='UNKNOWN')
+! first we need to get the dimensions needed to allocate position arrays
+  read(22,'(1A)') domainFileName
   call read_Domain(domainFileName, thisDomain, status)
+  call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, numLambda=numLambda, status = status)
+  REWIND(22)
+  allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
+
+  DO i = 1, numLambda
+     read(22,'(1A)') domainFileName
+     call read_Domain(domainFileName, thisDomain, status)
 !PRINT *, 'Driver: Read Domain'  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
-  call printStatus(status)
-  call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status = status) 
-!print *, 'got info 1'   
-  allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
-  call getInfo_Domain(thisDomain,                                   &
+     call printStatus(status)
+   
+     call getInfo_Domain(thisDomain, lambda = lambda, lambdaIndex = lambdaI,  &
                       xPosition = xPosition, yPosition = yPosition, &
                       zPosition = zPosition, numberOfComponents=numberOfComponents, status = status) 
+PRINT *, lambda, lambdaI
+     BBDomain(lambdaI)=thisDomain
 !print *, 'Driver: got domain info '
-
+  END DO
+  close(22)
+  
   ! Set up the integrator object - the integrator makes copies of the 
   !   3D distribution of optical properties, so we can release the resources
   mcIntegrator = new_Integrator(thisDomain, status = status)
@@ -260,7 +274,6 @@ program monteCarloDriver
 
    ! Set the surface albedo, table sizes, and maybe the radiance directions
   call specifyParameters (mcIntegrator,                          &
-                          surfaceAlbedo = surfaceAlbedo,         &
                           minInverseTableSize = nPhaseIntervals, &
                           LW_flag = LW_flag,                     &
                           status = status)

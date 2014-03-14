@@ -17,15 +17,18 @@ rtObjs =  $(CodeDir)/characterUtils.o $(CodeDir)/numericUtilities.o \
           $(CodeDir)/surfaceProperties.o $(IntegDir)/monteCarloRadiativeTransfer.o
  
 
-Targets = MODISreToDomain
+Targets =  BBDomain
 
 all: $(Targets)
 
-MODISreToDomain: MODISreToDomain.o $(rtObjs)
-MODISreToDomain.o: MODISreToDomain.f95 $(rtObjs)
+
+
+
+BBDomain: BBDomain.o $(rtObjs)
+BBDomain.o: BBDomain.f95 $(rtObjs)
 
 test: all
-	./MODISreToDomain
+	./BBDomain
 
 clean::
 	/bin/rm *.lst *.o $(Targets)

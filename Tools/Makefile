@@ -9,27 +9,27 @@ mieObjs =  $(CodeDir)/characterUtils.o $(CodeDir)/numericUtilities.o \
            
 optObjs = $(mieObjs) $(CodeDir)/inversePhaseFunctions.o $(CodeDir)/opticalProperties.o
 
-all: MakeMieTable PhysicalPropertiesToDomain PhysicalPropertiesToDomainNew OpticalPropertiesToDomain
+all: MakeMieTable 
 
 # Object files
 #
 MakeMieTable.o: MakeMieTable.f95  $(mieObjs)
 
-PhysicalPropertiesToDomain.o: PhysicalPropertiesToDomain.f95 $(optObjs)
 
-PhysicalPropertiesToDomainNew.o: PhysicalPropertiesToDomainNew.f95 $(optObjs)
 
-OpticalPropertiesToDomain.o: OpticalPropertiesToDomain.f95 $(optObjs)
+
+
+
 
 # Executables
 #
 MakeMieTable: MakeMieTable.o mieindsub.o RefractiveIndex-IceAndWater.o $(mieObjs)
 
-PhysicalPropertiesToDomain: PhysicalPropertiesToDomain.o $(optObjs)
 
-PhysicalPropertiesToDomainNew: PhysicalPropertiesToDomainNew.o $(optObjs)
 
-OpticalPropertiesToDomain: OpticalPropertiesToDomain.o $(optObjs)
+
+
+
 
 clean::
-	-/bin/rm *.lst *.mod *.o MakeMieTable PhysicalPropertiesToDomain PhysicalPropertiesToDomainNew OpticalPropertiesToDomain
+	-/bin/rm *.lst *.mod *.o MakeMieTable 

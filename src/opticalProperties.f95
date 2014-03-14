@@ -53,6 +53,9 @@ module opticalProperties
     real(8), pointer, dimension(:)          :: yPosition => null()
     real(8), pointer, dimension(:)          :: zPosition => null()
     real(8), pointer, dimension(:,:,:)      :: temps => null()   
+    real(8)				    :: lambda
+    integer				    :: lambdaI, nlambda
+    real(8)				    :: surfaceAlbedo
     logical                              :: xyRegularlySpaced = .false., zRegularlySpaced = .false. 
     type(opticalComponent), &
                    dimension(:), pointer :: components  => null()
@@ -84,9 +87,11 @@ contains
   !------------------------------------------------------------------------------------------
   ! Initialization: Routine to create new domains 
   !------------------------------------------------------------------------------------------
-  function new_Domain(xPosition, yPosition, zPosition, temps, status)
+  function new_Domain(xPosition, yPosition, zPosition, lambda, lambdaI, nlambda, albedo, temps, status)
     real(8),    dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
     real(8),    dimension(:,:,:), intent(in) :: temps
+    real(8), intent(in)			 :: lambda, albedo
+    integer, intent(in)			 :: lambdaI, nlambda
     type(ErrorMessage),    intent(inout) :: status
     type(domain)                         :: new_Domain
     
@@ -110,6 +115,10 @@ contains
        new_Domain%yPosition(:) = yPosition(:)
        new_Domain%zPosition(:) = zPosition(:)
        new_Domain%temps(:,:,:) = temps(:,:,:)       
+       new_Domain%lambda       = lambda
+       new_Domain%lambdaI      = lambdaI
+       new_Domain%nlambda      = nlambda
+       new_Domain%surfaceAlbedo = albedo
 
        ! Are the grids regularly spaced? Compare the distance between each pair 
        !   of array elements to the distance between the first two. 
@@ -356,14 +365,16 @@ contains
   !------------------------------------------------------------------------------------------
   !  Getting information back from the object
   !------------------------------------------------------------------------------------------
-  subroutine getInfo_Domain(thisDomain, numX, numY, numZ,    &
+  subroutine getInfo_Domain(thisDomain, numX, numY, numZ, albedo, lambda, lambdaIndex, numLambda,    &
                             xPosition, yPosition, zPosition, temps, &
                             numberOfComponents, componentNames, status) 
     type(domain),                    intent(in   ) :: thisDomain
-    integer,               optional, intent(  out) :: numX, numY, numZ
+    integer,               optional, intent(  out) :: numX, numY, numZ, lambdaIndex
+    real(8), optional, intent(out)                    :: lambda, albedo
     real(8),    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition
     real(8), dimension(:,:,:), optional, intent( out) :: temps
     integer,               optional, intent(  out) :: numberOfComponents
+    integer,		optional, intent(in)	   :: numLambda
     character(len = *), &
              dimension(:), optional, intent(  out) :: componentNames
     type(ErrorMessage),              intent(inout) :: status
@@ -378,12 +389,20 @@ contains
     if(.not. isValid(thisDomain)) then
       call setStateToFailure(status, "getInfo_Domain: domain hasn't been initialized.")
     else
+      if(present(numLambda)) then
+	if(numLambda .ne. thisDomain%nlambda) call setStateToFailure(status, "getInfo_Domain: number of wavelengths from namelist does not match number of wavelengths from domain file")
+      end if
+      if(present(lambdaIndex)) lambdaIndex = thisDomain%lambdaI
+      if(present(lambda)) lambda = thisDomain%lambda
+
       ! Number of positions in each dimension for the property arrays. It's one shorter 
       !   than the position arrays, which describe the boundaries. 
       if(present(numX)) numX = size(thisDomain%xPosition) - 1
       if(present(numY)) numY = size(thisDomain%yPosition) - 1 
       if(present(numZ)) numZ = size(thisDomain%zPosition) - 1
       
+      if(present(albedo)) albedo = thisDomain%surfaceAlbedo
+
       ! Location of boundaries in each dimension
       if(present(xPosition)) then 
         if(size(xPosition) /= size(thisDomain%xPosition)) then
@@ -568,7 +587,7 @@ contains
     logical                        :: fillsDomainInVertical
     
     ! Netcdf-related local variables
-    integer, dimension(16) :: ncStatus
+    integer, dimension(20) :: ncStatus
     integer                :: ncFileId, xEdgeDimID, yEdgeDimId, zEdgeDimId,  &
                                         xGridDimId, yGridDimId, zGridDimId,  &
                                         extinctionVarId, ssaVarId, indexVarId, ncVarId
@@ -600,6 +619,10 @@ contains
       !
       ncStatus(12) = nf90_put_att(ncFileID, nf90_Global, "xyRegularlySpaced", asInt(thisDomain%xyRegularlySpaced)) 
       ncStatus(13) = nf90_put_att(ncFileID, nf90_Global,  "zRegularlySpaced", asInt(thisDomain%zRegularlySpaced))
+      ncStatus(14) = nf90_put_att(ncFileID, nf90_Global, "lambda", thisDomain%lambda)
+      ncStatus(15) = nf90_put_att(ncFileID, nf90_Global,  "lambdaIndex", thisDomain%lambdaI)
+      ncStatus(16) = nf90_put_att(ncFileID, nf90_Global,  "numberOfLambdas", thisDomain%nlambda)
+      ncStatus(17) = nf90_put_att(ncFileID, nf90_Global, "surfaceAlbedo", thisDomain%surfaceAlbedo)
       if(any(ncStatus(:) /= nf90_NoErr)) &
         call setStateToFailure(status, "write_Domain: error writing domain information") 
         
@@ -736,8 +759,9 @@ contains
     integer, dimension(:, :, :), allocatable :: phaseFunctionIndex
     type(phaseFunctionTable)                 :: table
     character(len = maxNameLength)           :: name
-    integer                                  :: zLevelBase
+    integer                                  :: zLevelBase, lambdaI, nlambda
     logical                                  :: fillsVerticalDomain, horizontallyUniform
+    real(8)				     :: lambda, albedo
     
     ! Netcdf-related local variables
     integer, dimension(16) :: ncStatus
@@ -757,16 +781,19 @@ contains
       ncStatus( 4) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nYEdges)
       ncStatus( 5) = nf90_inq_dimid(ncFileId, "z-Edges", ncDimId) 
       ncStatus( 6) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZEdges)
+      ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-Grid", zGridDimId)
+      ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
+!PRINT *, 'n_Edges', nXEdges, nYEdges, nZEdges, nZGrid
       allocate(xEdges(nXEdges), yEdges(nYEdges), zEdges(nZEdges), temps(nXEdges-1,nYEdges-1,nZEdges-1))
-      ncStatus( 7) = nf90_inq_varid(ncFileId, "x-Edges", ncVarId)
-      ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, xEdges)
-      ncStatus( 9) = nf90_inq_varid(ncFileId, "y-Edges", ncVarId)
-      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, yEdges)
-      ncStatus(11) = nf90_inq_varid(ncFileId, "z-Edges", ncVarId)
-      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, zEdges)
-      ncStatus(13) = nf90_inq_dimId(ncFileId, "z-Grid", zGridDimId) 
-      ncStatus(14) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
-      ncStatus(15) = nf90_get_var(ncFileId, ncVarId, temps)
+      ncStatus( 9) = nf90_inq_varid(ncFileId, "x-Edges", ncVarId)
+      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, xEdges)
+      ncStatus(11) = nf90_inq_varid(ncFileId, "y-Edges", ncVarId)
+      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, yEdges)
+      ncStatus(13) = nf90_inq_varid(ncFileId, "z-Edges", ncVarId)
+      ncStatus(14) = nf90_get_var(ncFileId, ncVarId, zEdges)
+      
+      ncStatus(15) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
+      ncStatus(16) = nf90_get_var(ncFileId, ncVarId, temps)
       if(any(ncStatus(:) /= nf90_NoErr)) &
         call setStateToFailure(status, "read_Domain: " // trim(fileName) // &
                                " doesn't look an optical properties file.") 
@@ -778,12 +805,17 @@ contains
       !   The domain may have been regularly spaced when it was written to the file, but 
       !   this isn't guaranteed any more. 
       !
+      ncStatus( 1) = nf90_get_att(ncFileID, nf90_Global,  "lambda", lambda)
+      ncStatus( 2) = nf90_get_att(ncFileID, nf90_Global,  "lambdaIndex", lambdaI)
+      ncStatus( 3) = nf90_get_att(ncFileID, nf90_Global,  "numberOfLambdas", nlambda)
+      ncStatus( 4) = nf90_get_att(ncFileID, nf90_Global,  "surfaceAlbedo", albedo)
+
       call finalize_Domain(thisDomain)
-      thisDomain = new_Domain(xEdges, yEdges, zEdges, temps, status)
-      ncStatus( 1) = nf90_get_att(ncFileID, nf90_Global, "xyRegularlySpaced", oneByte) 
+      thisDomain = new_Domain(xEdges, yEdges, zEdges, lambda, lambdaI, nlambda, albedo, temps, status)
+      ncStatus( 5) = nf90_get_att(ncFileID, nf90_Global, "xyRegularlySpaced", oneByte) 
       if(asLogical(oneByte) .neqv. thisDomain%xyRegularlySpaced) &
         call setStateToWarning(status, "read_Domain: file and new domain don't agree on regularity of x-y spacing.") 
-      ncStatus( 2) = nf90_get_att(ncFileID, nf90_Global,  "zRegularlySpaced", oneByte)
+      ncStatus( 6) = nf90_get_att(ncFileID, nf90_Global,  "zRegularlySpaced", oneByte)
       if(asLogical(oneByte) .neqv. thisDomain%zRegularlySpaced) &
         call setStateToWarning(status, "read_Domain: file and new domain don't agree on regularity of z spacing.") 
       deallocate(xEdges, yEdges, zEdges, temps)
@@ -805,11 +837,14 @@ contains
         ncStatus( 5) = nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
         horizontallyUniform = (ndims == 1)
         fillsVerticalDomain = (dimIds(ndims) == zGridDimId)
+!PRINT *, dimIds, zGridDimId
         if(fillsVerticalDomain) then
           nZGrid = nZEdges - 1
+!PRINT *, 'fillsVerticalDomain=TRUE', nZgrid, nZEdges
         else
           ncStatus( 6) = nf90_inq_dimId(ncFileId, trim(makePrefix(i)) // "z-Grid", ncDimId)
           ncStatus( 7) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZGrid)
+!PRINT *, 'fillsVerticalDomain=FALSE', ncDimId, nZgrid, nZEdges
         end if
         !
         ! Read in the scalar 3D or 1D fields
@@ -831,9 +866,10 @@ contains
           ncStatus(11) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex", ncVarId)
           ncStatus(12) = nf90_get_var(ncFileId, ncVarId, phaseFunctionIndex(:, :, :))
         end if
-        if(any(ncStatus(:) /= nf90_NoErr))                                                                &
-          call setStateToFailure(status, "read_Domain: Error reading scalar fields from file " // &
-                                         trim(fileName))
+        if(any(ncStatus(:) /= nf90_NoErr)) then
+          call setStateToFailure(status, "read_Domain: Error reading scalar fields from file " // trim(fileName))
+!	  PRINT *, ncStatus(:)
+	end if
         !
         ! Read in the phase function table(s) 
         !
