@@ -249,7 +249,7 @@ program monteCarloDriver
   REWIND(22)
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
 
-  DO i = 1, numLambda
+  DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
      read(22,'(1A)') domainFileName
      call read_Domain(domainFileName, thisDomain, status)
 !PRINT *, 'Driver: Read Domain'  
@@ -260,17 +260,22 @@ program monteCarloDriver
      call getInfo_Domain(thisDomain, lambda = lambda, lambdaIndex = lambdaI,  &
                       xPosition = xPosition, yPosition = yPosition, &
                       zPosition = zPosition, numberOfComponents=numberOfComponents, status = status) 
-PRINT *, lambda, lambdaI
+!PRINT *, lambda, lambdaI
      BBDomain(lambdaI)=thisDomain
 !print *, 'Driver: got domain info '
   END DO
+  call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
+PRINT *, lambda, lambdaI, numLambda
+
   close(22)
-  
-  ! Set up the integrator object - the integrator makes copies of the 
-  !   3D distribution of optical properties, so we can release the resources
-  mcIntegrator = new_Integrator(thisDomain, status = status)
-  call printStatus(status)
-  !call finalize_Domain(thisDomain)
+!
+!  I MAY WANT TO IMPLEMENT AN EXPLICIT CHECK HERE TO MAKE SURE CERTAIN COMPONENTS OF ALL THE DOMAINS ARE CONSISTENT WITH EACHOTHER
+!
+
+  ! Set up the integrator object. It only grabs information from the domain that is consistent between all of them so I only need to pass any one domain
+  mcIntegrator = new_Integrator(thisDomain, status = status)     !
+  call printStatus(status)					 ! CAN I MOVE THIS SECTION INITIALIZING THE INTEGRATOR TO BEFORE THE LOOP RADING IN ALL THE DOMAINS BUT AFTER READING IN THE FIRST DOMAIN SO THAT I CAN JUST PARALLELIZE THE REST? 
+!  call finalize_Domain(thisDomain)                               !
 
    ! Set the surface albedo, table sizes, and maybe the radiance directions
   call specifyParameters (mcIntegrator,                          &
@@ -320,11 +325,13 @@ PRINT *, lambda, lambdaI
                          zetaMin = zetaMin,                         &
                          limitIntensityContributions =              &
                                    limitIntensityContributions,     &
+			 numComps = numberOfComponents,		    &
                          maxIntensityContribution =                 &
                                    maxIntensityContribution,        &
                          status = status)
     call printStatus(status) 
   end if
+STOP
 !PRINT *, 'Driver: Specified Parameters'
    ! Allocate and zero the arrays for radiative quantities and moments 
   allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
@@ -367,7 +374,7 @@ PRINT *, lambda, lambdaI
 
   ! Seed the random number generator.
   randoms = new_RandomNumberSequence(seed = (/ iseed, 0 /) )
-
+STOP
    ! The initial direction and position of the photons are precomputed and 
    !   stored in an "illumination" object.
 !PRINT *, 'solarFlux=', solarFlux
@@ -405,7 +412,7 @@ call printStatus(status)
 
   ! Now we compute the radiative transfer for a single photon 
   if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
-  call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status, voxel_tallys2)
+  call computeRadiativeTransfer (mcIntegrator,thisDomain, randoms, incomingPhotons, status, voxel_tallys2)
   call printStatus(status) 
   call finalize_PhotonStream (incomingPhotons)
 !PRINT *, 'Driver: succesfully tested photon initialization'
@@ -455,7 +462,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
     call printStatus(status)
 !PRINT *, 'Driver: Initialized photons for batch', batch
     ! Now we compute the radiative transfer for this batch of photons. 
-    call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status, voxel_tallys2)
+    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms, incomingPhotons, status, voxel_tallys2)
 !PRINT *, 'Driver: COmputed RT for batch', batch
      ! Get the radiative quantities:
      !   This particular integrator provides fluxes at the top and bottom 

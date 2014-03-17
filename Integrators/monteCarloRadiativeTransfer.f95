@@ -57,7 +57,6 @@ module monteCarloRadiativeTransfer
         
     ! -------------------------------------------------------------------------=                                           
     ! The atmosphere and surface 
-    real(8)                                    :: surfaceAlbedo = 0.0_8  
     logical                                 :: xyRegularlySpaced = .false., &
                                                 zRegularlySpaced = .false. 
     real(8)                                    :: deltaX = 0.0_8, deltaY = 0.0_8 , deltaZ = 0.0_8, &
@@ -65,36 +64,12 @@ module monteCarloRadiativeTransfer
     real(8),    dimension(:),          pointer :: xPosition => null() 
     real(8),    dimension(:),          pointer :: yPosition => null()
     real(8),    dimension(:),          pointer :: zPosition => null()
-    real(8),    dimension(:, :, :),    pointer :: totalExt           => null()
-    real(8),    dimension(:, :, :),    pointer :: temps              => null()
-    real(8),    dimension(:, :, :, :), pointer :: cumulativeExt      => null()
-    real(8),    dimension(:, :, :, :), pointer :: ssa                => null()
-    integer, dimension(:, :, :, :), pointer :: phaseFunctionIndex => null()
+    real(8), pointer, dimension(:,:,:)      :: temps => null()
     real                                    :: LW_flag = -1.
     ! Surface reflection BDRF
     logical                          :: useSurfaceBDRF = .false.
     type(surfaceDescription)         :: surfaceBDRF
 
-    !
-    ! We store the original forward phase function tables even though calculations
-    !   inside the module use the matrix representations below. The originals don't 
-    !   take much rooms (a few Mb at most) and this allows us to recompute them to 
-    !   arbitrary accuracy at any time. 
-    !   
-    type(phaseFunctionTable), &
-             dimension(:),    pointer :: forwardTables => null()
-    
-    ! We store tabulated phase function and inverse (cumulative) phase functions in
-    !   two-D arrays, but these arrays can be different sizes for different components. 
-    !   We define a derived type to represent each 2D array and make a vector of these 
-    !   (one matrix for each component). 
-    !
-    type(matrix), &
-          dimension(:),       pointer :: tabulatedPhaseFunctions => null()
-    type(matrix), &
-          dimension(:),       pointer :: tabulatedOrigPhaseFunctions => null()
-    type(matrix), &
-          dimension(:),       pointer :: inversePhaseFunctions => null()
     ! -------------------------------------------------------------------------=                                           
     !
     ! Direction cosines at which to compute intensity
@@ -141,19 +116,11 @@ module monteCarloRadiativeTransfer
     
   end type integrator
   !------------------------------------------------------------------------------------------
-  ! Matrix is a private type used only inside the module. 
-  !   One of the components of the public type (integrator) is of type matrix. 
-  
-  type matrix
-    integer                        :: numX = 0, numY  = 0
-    real, dimension(:, :), pointer :: values
-  end type matrix
-  !------------------------------------------------------------------------------------------
   ! What is visible? 
   !------------------------------------------------------------------------------------------
   public :: integrator
   public :: new_Integrator, copy_Integrator, isReady_Integrator, finalize_Integrator, &
-            specifyParameters, computeRadiativeTransfer, reportResults, getinfo_integrator
+            specifyParameters, computeRadiativeTransfer, reportResults !, getinfo_integrator
 contains
   !------------------------------------------------------------------------------------------
   ! Initialization: Routines to create new integrators, specifying 
@@ -212,31 +179,8 @@ contains
         new%zRegularlySpaced = .true. 
         new%deltaZ           = deltaZ
       end if
-         
-      ! 
-      ! Now we make room for the optical properties of the domain and copy 
-      !   these fields from the atmophere object. 
-      !
-      allocate(new%totalExt          (numX, numY, numZ),                &
-               new%cumulativeExt     (numX, numY, numZ, numComponents), &
-               new%ssa               (numX, numY, numZ, numComponents), &
-               new%phaseFunctionIndex(numX, numY, numZ, numComponents), &
-               new%forwardTables(numComponents))
-      call getOpticalPropertiesByComponent(atmosphere,       & 
-                   new%totalExt, new%cumulativeExt, new%ssa, &
-                   new%phaseFunctionIndex, new%forwardTables, status)
-      !
-      ! cumulativeExt(:, :, :, numComponents) should be 1. in every cell in which 
-      !   there's extinction (and 0 in empty cells). We'll chose which component 
-      !   does the scattering by comparing these elements to a random number r
-      !   and finding l such that cumulativeExt(i, j, k, l-1) <= r < cumulativeExt(i, j, k, l)
-      !   We increase cumulativeExt(:, :, :, numComponents) slightly to account for the 
-      !   edge case of r == 1. 
-      !
-      where(abs(new%cumulativeExt(:, :, :, numComponents) - 1.) <= spacing(1.)) & 
-        new%cumulativeExt(:, :, :, numComponents) = 1. + spacing(1.)
-
     end if
+
     if(stateIsFailure(status)) then
       call setStateToFailure(status, "new_Integrator: Problems reading domain.")
       new%readyToCompute = .false. 
@@ -262,8 +206,9 @@ contains
   !   fluxes. There actual work might be done in other subroutines (to reflect 
   !   algorithmic choices, say). 
   !------------------------------------------------------------------------------------------
-  subroutine computeRadiativeTransfer(thisIntegrator, randomNumbers, incomingPhotons, status, option2)
+  subroutine computeRadiativeTransfer(thisIntegrator,thisDomain, randomNumbers, incomingPhotons, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
+    type(domain),		intent(inout)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons  
     type(ErrorMessage),         intent(inout) :: status
@@ -292,7 +237,7 @@ contains
       numX = size(thisIntegrator%xPosition) - 1
       numY = size(thisIntegrator%yPosition) - 1
       numZ = size(thisIntegrator%zPosition) - 1
-      numComponents = size(thisIntegrator%cumulativeExt, 4) 
+      call getInfo_Domain(thisDomain,  numberOfComponents=numComponents, status=status)
       if(thisIntegrator%computeIntensity) & 
         numIntensityDirections = size(thisIntegrator%intensityDirections, 2)
       
@@ -329,9 +274,11 @@ contains
       ! Compute tablulated forward and inverse phase functions
       !   Forward phase functions are only needed if we're going to compute intensity
       !
-      call tabulateInversePhaseFunctions(thisIntegrator, status)
+      call tabulateInversePhaseFunctions(thisDomain, thisIntegrator%minInverseTableSize, status)
       if(thisIntegrator%computeIntensity .and. .not. stateIsFailure(status)) then
-        call tabulateForwardPhaseFunctions(thisIntegrator, status)
+        call tabulateForwardPhaseFunctions(thisDomain, thisIntegrator%minForwardTableSize, &
+                                           thisIntegrator%useHybridPhaseFunsForIntenCalcs,   &
+                                           thisIntegrator%hybridPhaseFunWidth, status)
       end if
             
       !------------------------------------------------------------------------------
@@ -339,7 +286,7 @@ contains
       ! Compute radiative transfer for this photon batch 
       !
       if(.not. stateIsFailure(status)) &
-         call computeRT(thisIntegrator, randomNumbers, incomingPhotons, numPhotonsProcessed, status, option2)
+         call computeRT(thisIntegrator, thisDomain, randomNumbers, incomingPhotons, numPhotonsProcessed, status, option2)
 
       if(thisIntegrator%computeIntensity .and. &
          thisIntegrator%limitIntensityContributions) then 
@@ -438,9 +385,10 @@ contains
     end if
   end subroutine computeRadiativeTransfer
   !------------------------------------------------------------------------------------------
-  subroutine computeRT(thisIntegrator, randomNumbers, incomingPhotons, &
+  subroutine computeRT(thisIntegrator, thisDomain, randomNumbers, incomingPhotons, &
                                 numPhotonsProcessed, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
+    type(domain),               intent(in)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons
     integer,                    intent(  out) :: numPhotonsProcessed
@@ -456,12 +404,11 @@ contains
         
     ! Local variables
     real :: mu, phi
-    real(8) :: x0, y0, z0, xMax, yMax, zMax,xPos, yPos, zPos, xNew, yNew, zNew, remainder
+    real(8) :: x0, y0, z0, xMax, yMax, zMax,xPos, yPos, zPos, xNew, yNew, zNew, remainder, albedo
     real :: tauToTravel, photonWeight, scatteringAngle, tauAccumulated, ssa, maxExtinction
     real :: initialMu, initialPhi
     logical :: useRayTracing, useMaxCrossSection, scatterThisEvent
-    integer :: xIndex, yIndex, zIndex, numZ, &
-               component, phaseFunctionIndex, nPhotons
+    integer :: xIndex, yIndex, zIndex, numX, numY, numZ, numComps, component, phaseFunctionIndex, nPhotons
     integer :: i, p, scatteringOrder 
     integer :: nBad
     real, dimension(3) :: directionCosines
@@ -469,17 +416,29 @@ contains
     ! Variables related to intensity calculations
     !
     integer            :: numIntensityDirections
-    real, dimension(:), &
-           allocatable ::  contributions
-    integer, dimension(:), &
-           allocatable :: xIndexF, yIndexF
+    real, dimension(:), allocatable ::  contributions
+    integer, dimension(:), allocatable :: xIndexF, yIndexF
+    real(8), allocatable, dimension(:,:,:) :: totalExt
+    real(8), allocatable, dimension(:,:,:,:) :: cumExt, singleScattAlbedo
+    integer, allocatable, dimension(:,:,:,:) :: phaseFuncI
+    type(matrix), allocatable, dimension(:)  :: inversePhaseFuncs
     
     ! ---------------------------------------------------------------------------------------
+     call getInfo_Domain(thisDomain, numberOfComponents=numComps, numX=numX, numY=numY, numZ=numZ, status=status)
+    allocate(totalExt(1:numX,1:numY,1:numZ))
+    allocate(cumExt(1:numX,1:numY,1:numZ,1:numComps))
+    allocate(singleScattAlbedo(1:numX,1:numY,1:numZ,1:numComps))
+    allocate(phaseFuncI(1:numX,1:numY,1:numZ,1:numComps))
+    allocate(inversePhaseFuncs(1:numComps))
+
+    call getInfo_Domain(thisDomain,albedo=albedo,                                   &
+                        totalExt=totalExt, cumExt=cumExt, ssa=singleScattAlbedo,           &
+                        phaseFuncI=phaseFuncI, inversePhaseFuncs=inversePhaseFuncs, status=status)
     option2=0
     useRayTracing = thisIntegrator%useRayTracing; useMaxCrossSection = .not. useRayTracing
     scatterThisEvent = .true. 
     if(useMaxCrossSection) &
-      maxExtinction = maxval(thisIntegrator%totalExt(:, :, :))
+      maxExtinction = maxval(totalExt(:, :, :))
     x0 = thisIntegrator%x0; xMax = thisIntegrator%xPosition(size(thisIntegrator%xPosition))
     y0 = thisIntegrator%y0; yMax = thisIntegrator%yPosition(size(thisIntegrator%yPosition))
     z0 = thisIntegrator%z0; zMax = thisIntegrator%zPosition(size(thisIntegrator%zPosition))
@@ -519,7 +478,7 @@ contains
       else
 !        zIndex = 1-(zPos-FLOOR(zPos))+((SIZE(thisIntegrator%zPosition)-1)*zPos)
 !        zPos = thisIntegrator%zPosition(zIndex) + (zPos-FLOOR(zPos))* (thisIntegrator%zPosition(zIndex+1)-thisIntegrator%zPosition(zIndex)) ! convert the zPos to one that works for an irregularly spaced grid. This line must follow and not preceed the zPos= line above.
-         numZ = SIZE(thisIntegrator%zPosition) -1
+         
          remainder = (zPos-z0)*numZ - FLOOR((zPos-z0)*numZ) !These lines added 11/4/2013 to replace the above calculations that seemed inaccuarate for irregularly spaced vertical levels
          zIndex = MIN(FLOOR((zPos-z0)*numZ)+1, numZ)
          zPos = thisIntegrator%zPosition(zIndex) + remainder*(thisIntegrator%zPosition(zIndex+1)-thisIntegrator%zPosition(zIndex))
@@ -541,14 +500,14 @@ contains
 
          if (thisIntegrator%computeIntensity)then
            if (zPos .eq. 0.0_8)then
-            call computeIntensityContribution(thisIntegrator, photonWeight, &
+            call computeIntensityContribution(thisIntegrator, thisDomain, photonWeight, &
                                                 xPos,   yPos,   zPos,         &
                                                 xIndex, yIndex, zIndex,       &
                                                 directionCosines, 0,  &
                                                randomNumbers, scatteringOrder, &
                                                 contributions, xIndexF(:), yIndexf(:))
            else 
-            call computeIntensityContribution(thisIntegrator, photonWeight, &
+            call computeIntensityContribution(thisIntegrator, thisDomain, photonWeight, &
                                                 xPos,   yPos,   zPos,         &
                                                 xIndex, yIndex, zIndex,       &
                                                 directionCosines, -1,  &
@@ -588,7 +547,7 @@ contains
           !
           ! Ray tracing  - travel until we have accumulated enough extinction
           !
-          call accumulateExtinctionAlongPath(thisIntegrator, directionCosines, &
+          call accumulateExtinctionAlongPath(thisDomain, directionCosines, &
                                              xPos, yPos, zPos, xIndex, yIndex, zIndex, &
                                              tauAccumulated, tauToTravel)            
           if(tauAccumulated < 0.) nBad = nBad + 1 
@@ -702,7 +661,7 @@ contains
                                                      initialMu, mu, initialPhi, phi)
           else
             !   Special case: Lambertian surface
-            photonWeight = photonWeight * thisIntegrator%surfaceAlbedo
+            photonWeight = photonWeight * albedo
           end if
           if(photonWeight <= tiny(photonWeight)) cycle photonLoop
           directionCosines(:) = makeDirectionCosines(mu, phi)
@@ -710,7 +669,7 @@ contains
           ! Add contribution of surface reflection to intensity
           !
           if(thisIntegrator%computeIntensity) then
-            call computeIntensityContribution(thisIntegrator, photonWeight, &
+            call computeIntensityContribution(thisIntegrator, thisDomain, photonWeight, &
                                               xPos,   yPos,   zPos,         & 
                                               xIndex, yIndex, zIndex,       &
                                               directionCosines, 0,          &
@@ -739,7 +698,7 @@ contains
           
           ! Max cross-section - test for "Physical scattering event" 
           if(useMaxCrossSection) scatterThisEvent = & 
-            getRandomReal(randomNumbers) < thisIntegrator%totalExt(xIndex, yIndex, zIndex)/maxExtinction
+            getRandomReal(randomNumbers) < totalExt(xIndex, yIndex, zIndex)/maxExtinction
 
           if(useRayTracing .or. scatterThisEvent ) then
             scatteringOrder = scatteringOrder + 1
@@ -757,7 +716,7 @@ contains
             ! We need to enforce periodicity here 
             !
       
-            if(thisIntegrator%totalExt(xIndex, yIndex, zIndex) <= 0.) then
+            if(totalExt(xIndex, yIndex, zIndex) <= 0.) then
               if(xPos - thisIntegrator%xPosition(xIndex) <= 0.0_8 .and. directionCosines(1) > 0. ) then
                 xPos = xPos - spacing(xPos) 
                 xIndex = xIndex - 1
@@ -789,11 +748,11 @@ contains
             !   and compute the new direction and weight of the photon. 
             !
             component = findIndex(getRandomReal(randomNumbers), &
-                                  (/ 0.0_8, thisIntegrator%cumulativeExt(xIndex, yIndex, zIndex, :) /))    
+                                  (/ 0.0_8, cumExt(xIndex, yIndex, zIndex, :) /))    
             !
             ! Absorption 
             !
-            ssa = thisIntegrator%ssa(xIndex, yIndex, zIndex, component)
+            ssa = singleScattAlbedo(xIndex, yIndex, zIndex, component)
             if(ssa < 1.0_8) then 
               thisIntegrator%fluxAbsorbed(xIndex, yIndex) =   &
                 thisIntegrator%fluxAbsorbed(xIndex, yIndex)             + photonWeight * (1.0_8 - ssa)
@@ -806,7 +765,7 @@ contains
             ! Compute the contribution to intensity from this scattering event if need be
             !
             if(thisIntegrator%computeIntensity) then
-              call computeIntensityContribution(thisIntegrator, photonWeight, &
+              call computeIntensityContribution(thisIntegrator, thisDomain, photonWeight, &
                                                 xPos,   yPos,   zPos,         & 
                                                 xIndex, yIndex, zIndex,       &
                                                 directionCosines, component,  &
@@ -845,9 +804,9 @@ contains
             !
             ! Scattering - look up the scattering angle
             !
-            phaseFunctionIndex = thisIntegrator%phaseFunctionIndex(xIndex, yIndex, zIndex, component)
+            phaseFunctionIndex = phaseFuncI(xIndex, yIndex, zIndex, component)
             scatteringAngle = computeScatteringAngle(getRandomReal(randomNumbers), &
-                                      thisIntegrator%inversePhaseFunctions(component)%values(:, phaseFunctionIndex)) 
+                                      inversePhaseFuncs(component)%values(:, phaseFunctionIndex)) 
             call next_direct(randomNumbers, cos(scatteringAngle), directionCosines)
           end if
         end if
@@ -1074,7 +1033,7 @@ contains
   !------------------------------------------------------------------------------------------
 
   !------------------------------------------------------------------------------------------
-  subroutine specifyParameters(thisIntegrator, surfaceAlbedo, surfaceBDRF,           &
+  subroutine specifyParameters(thisIntegrator, surfaceBDRF,           &
                                minForwardTableSize, minInverseTableSize,             &
                                intensityMus, intensityPhis, computeIntensity,        &
                                useRayTracing,  useRussianRoulette,                   &
@@ -1082,10 +1041,9 @@ contains
                                useHybridPhaseFunsForIntenCalcs, hybridPhaseFunWidth, &
                                numOrdersOrigPhaseFunIntenCalcs,                      &
                                limitIntensityContributions, maxIntensityContribution,&
-                               recScatOrd, numRecScatOrd, LW_flag,                   &
+                               recScatOrd, numRecScatOrd, LW_flag, numComps,                   &
                                status)
     type(integrator),   intent(inout) :: thisIntegrator
-    real(8),     optional, intent(in   ) :: surfaceAlbedo
     type(surfaceDescription), &
               optional, intent(in   ) :: surfaceBDRF
     integer,  optional, intent(in   ) :: minForwardTableSize, minInverseTableSize
@@ -1100,7 +1058,7 @@ contains
     logical,  optional, intent(in   ) :: limitIntensityContributions
     real,     optional, intent(in   ) :: maxIntensityContribution
     logical,  optional, intent(in   ) :: recScatOrd
-    integer,  optional, intent(in   ) :: numRecScatOrd
+    integer,  optional, intent(in   ) :: numRecScatOrd, numComps
     real,     optional, intent(in   ) :: LW_flag
     type(ErrorMessage), intent(inout) :: status
     
@@ -1120,15 +1078,6 @@ contains
     ! 
     ! Sanity checks for input variables
     !
-    if(present(surfaceBDRF) .and. present(surfaceAlbedo)) &
-      call setStateToFailure(status, "specifyParameters: only one surface specification can be provided") 
-    !
-    !   If surface albedo is supplied it should be between 0 and 1. 
-    !
-    if(present(surfaceAlbedo)) then
-      if(surfaceAlbedo > 1. .or. surfaceAlbedo < 0.) &
-        call setStateToFailure(status, "specifyParameters: surface albedo out of range.") 
-    end if
     if(present(surfaceBDRF)) then
       if(.not. isReady_surfaceDescription(surfaceBDRF)) & 
         call setStateToFailure(status, "specifyParameters: surface description isn't valid.") 
@@ -1211,10 +1160,7 @@ contains
     end if
     ! ------------------------------------------------------------------------          
     if( .not. StateIsFailure(status)) then 
-      if(present(surfaceAlbedo)) then 
-        thisIntegrator%surfaceAlbedo = surfaceAlbedo
-        thisIntegrator%useSurfaceBDRF = .false. 
-      else if(present(surfaceBDRF)) then
+        if (present(surfaceBDRF)) then
         thisIntegrator%surfaceBDRF = copy_SurfaceDescription(surfaceBDRF)
         thisIntegrator%useSurfaceBDRF = .true. 
       end if 
@@ -1259,12 +1205,12 @@ contains
         !
         ! Need to re-tabulate the phase functions
         !
-        if(associated(thisIntegrator%tabulatedPhaseFunctions)) then 
-          do i = 1, size(thisIntegrator%tabulatedPhaseFunctions)
-            call finalize_Matrix(thisIntegrator%tabulatedPhaseFunctions(i))
-            deallocate(thisIntegrator%tabulatedPhaseFunctions)
-          end do
-        end if
+!        if(associated(thisIntegrator%tabulatedPhaseFunctions)) then 
+!          do i = 1, size(thisIntegrator%tabulatedPhaseFunctions)
+!            call finalize_Matrix(thisIntegrator%tabulatedPhaseFunctions(i))
+!            deallocate(thisIntegrator%tabulatedPhaseFunctions)
+!          end do
+!        end if
       end if 
       if(present(numOrdersOrigPhaseFunIntenCalcs)) then
         if(numOrdersOrigPhaseFunIntenCalcs >= 0 ) then
@@ -1291,19 +1237,19 @@ contains
         allocate(thisIntegrator%intensityDirections(3, size(intensityMus)))
 
         if(associated(thisIntegrator%intensity))            deallocate(thisIntegrator%intensity)
-        allocate(thisIntegrator%intensity(size(thisIntegrator%totalExt, 1), &
-                                          size(thisIntegrator%totalExt, 2), &
+        allocate(thisIntegrator%intensity(size(thisIntegrator%xPosition)-1, &
+                                          size(thisIntegrator%yPosition)-1, &
                                           size(intensityMus)))
 
-        if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent) 
-        allocate(thisIntegrator%intensityByComponent(size(thisIntegrator%totalExt, 1), &
-                                                     size(thisIntegrator%totalExt, 2), &
-                                                     size(intensityMus),               &
-                                                     0:size(thisIntegrator%cumulativeExt, 4)))
+!        if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent) 
+!        allocate(thisIntegrator%intensityByComponent(size(thisIntegrator%xPosition-1), &
+!                                                     size(thisIntegrator%yPosition-1), &
+!                                                     size(intensityMus),               &
+!                                                     0:size(thisIntegrator%cumulativeExt, 4)))
         if(associated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
         if(thisIntegrator%recScatOrd) then 
-          allocate(thisIntegrator%intensityByScatOrd(size(thisIntegrator%totalExt, 1), &
-                                                     size(thisIntegrator%totalExt, 2), &
+          allocate(thisIntegrator%intensityByScatOrd(size(thisIntegrator%xPosition)-1, &
+                                                     size(thisIntegrator%yPosition)-1, &
                                                      size(intensityMus),&
                                                      0:numRecScatOrd                )   )
         endif
@@ -1331,7 +1277,7 @@ contains
       if(thisIntegrator%computeIntensity .and. thisIntegrator%limitIntensityContributions) then
         if(associated(thisIntegrator%intensityExcess))      deallocate(thisIntegrator%intensityExcess)
         allocate(thisIntegrator%intensityExcess(size(thisIntegrator%intensityDirections, 2), &
-                                                0:size(thisIntegrator%cumulativeExt, 4)))
+                                                0:numComps))
       end if
 
       !allow recScatOrd to be set to true only if numRecScatOrd is set concurrently
@@ -1344,11 +1290,11 @@ contains
           thisIntegrator%recScatOrd=.true.
           thisIntegrator%numRecScatOrd = numRecScatOrd
               
-          allocate(thisIntegrator%fluxUpByScatOrd   (size(thisIntegrator%totalExt, 1), &
-                                                     size(thisIntegrator%totalExt, 2), &
+          allocate(thisIntegrator%fluxUpByScatOrd   (size(thisIntegrator%xPosition)-1, &
+                                                     size(thisIntegrator%yPosition)-1, &
                                                      0:numRecScatOrd                )   )
-          allocate(thisIntegrator%fluxDownByScatOrd (size(thisIntegrator%totalExt, 1), &
-                                                     size(thisIntegrator%totalExt, 2), &
+          allocate(thisIntegrator%fluxDownByScatOrd (size(thisIntegrator%xPosition)-1, &
+                                                     size(thisIntegrator%yPosition)-1, &
                                                      0:numrecScatOrd                )   )
           if (thisIntegrator%computeIntensity) then
              allocate(thisIntegrator%intensityByScatOrd(size(thisIntegrator%intensity, 1), &
@@ -1405,7 +1351,7 @@ contains
     copy%readyToCompute    = original%readyToCompute
     copy%computeIntensity  = original%computeIntensity
     
-    copy%surfaceAlbedo     = original%surfaceAlbedo
+    
     if(isReady_surfaceDescription(original%surfaceBDRF)) &
       copy%surfaceBDRF     = copy_surfaceDescription(original%surfaceBDRF)
     copy%useSurfaceBDRF    = original%useSurfaceBDRF
@@ -1457,38 +1403,7 @@ contains
       copy%zPosition(:) = original%zPosition(:)
     end if
     
-    !
-    ! Extinction, ssa, phase function index (three-D and four-D arrays)
-    !
-    if(associated(original%totalExt)) then
-      allocate(copy%totalExt(size(original%totalExt, 1), &
-                             size(original%totalExt, 2), &
-                             size(original%totalExt, 3)))
-      copy%totalExt(:, :, :) = original%totalExt(:, :, :)
-    end if
-
-    if(associated(original%cumulativeExt)) then
-      allocate(copy%cumulativeExt(size(original%cumulativeExt, 1), &
-                                  size(original%cumulativeExt, 2), &
-                                  size(original%cumulativeExt, 3), &
-                                  size(original%cumulativeExt, 4)))
-      copy%cumulativeExt(:, :, :, :) = original%cumulativeExt(:, :, :, :)
-    end if
-
-    if(associated(original%ssa)) then
-      allocate(copy%ssa(size(original%ssa, 1), size(original%ssa, 2), &
-                        size(original%ssa, 3), size(original%ssa, 4)))
-      copy%ssa(:, :, :, :) = original%ssa(:, :, :, :)
-    end if
-
-    if(associated(original%phaseFunctionIndex)) then
-      allocate(copy%phaseFunctionIndex(size(original%phaseFunctionIndex, 1), &
-                                  size(original%phaseFunctionIndex, 2), &
-                                  size(original%phaseFunctionIndex, 3), &
-                                  size(original%phaseFunctionIndex, 4)))
-      copy%phaseFunctionIndex(:, :, :, :) = original%phaseFunctionIndex(:, :, :, :)
-    end if
-    
+  
     !
     ! Intensity directions
     !
@@ -1496,39 +1411,6 @@ contains
       allocate(copy%intensityDirections(size(original%intensityDirections, 1), size(original%intensityDirections, 2)))
       copy%intensityDirections(:, :)  = original%intensityDirections(:, :)
     end if 
-    !
-    ! Forward  phase function tables
-    !   Have to loop over the tables for each component
-    !
-    if(associated(original%forwardTables)) then 
-      allocate(copy%forwardTables(size(original%forwardTables)))
-      do i = 1, size(original%forwardTables)
-        copy%forwardTables(i) = copy_PhaseFunctionTable(original%forwardTables(i))
-      end do
-    end if
-    
-    !
-    ! Tabulated forward and inverse phase function tables
-    !
-    if(associated(original%tabulatedPhaseFunctions)) then 
-      allocate(copy%tabulatedPhaseFunctions(size(original%tabulatedPhaseFunctions)))
-      do i = 1, size(original%tabulatedPhaseFunctions)
-        copy%tabulatedPhaseFunctions(i) = new_Matrix(original%tabulatedPhaseFunctions(i)%values)
-      end do
-    end if
-    if(associated(original%tabulatedOrigPhaseFunctions)) then 
-      allocate(copy%tabulatedOrigPhaseFunctions(size(original%tabulatedOrigPhaseFunctions)))
-      do i = 1, size(original%tabulatedOrigPhaseFunctions)
-        copy%tabulatedOrigPhaseFunctions(i) = new_Matrix(original%tabulatedOrigPhaseFunctions(i)%values)
-      end do
-    end if
-    if(associated(original%inversePhaseFunctions)) then 
-      allocate(copy%inversePhaseFunctions(size(original%inversePhaseFunctions)))
-      do i = 1, size(original%inversePhaseFunctions)
-        copy%inversePhaseFunctions(i) = new_Matrix(original%inversePhaseFunctions(i)%values)
-      end do
-    end if
-           
     
     !
     ! Output arrays
@@ -1625,7 +1507,7 @@ contains
     thisIntegrator%minForwardTableSize = pristineI%minForwardTableSize
     thisIntegrator%minInverseTableSize = pristineI%minInverseTableSize
     
-    thisIntegrator%surfaceAlbedo =  pristineI%surfaceAlbedo
+    
     thisIntegrator%useSurfaceBDRF = pristineI%useSurfaceBDRF 
     call finalize_surfaceDescription(thisIntegrator%surfaceBDRF)
 
@@ -1635,47 +1517,9 @@ contains
     if(associated(thisIntegrator%xPosition))          deallocate(thisIntegrator%xPosition)
     if(associated(thisIntegrator%yPosition))          deallocate(thisIntegrator%yPosition)
     if(associated(thisIntegrator%zPosition))          deallocate(thisIntegrator%zPosition)
-    if(associated(thisIntegrator%totalExt))           deallocate(thisIntegrator%totalExt)
-    if(associated(thisIntegrator%cumulativeExt))      deallocate(thisIntegrator%cumulativeExt)
-    if(associated(thisIntegrator%ssa))                deallocate(thisIntegrator%ssa)
-    if(associated(thisIntegrator%phaseFunctionIndex)) deallocate(thisIntegrator%phaseFunctionIndex)
 
-    !
-    ! Forward and inverse phase functions - finalize each element in the array (i.e. 
-    !   the table for each component) to free the underlying memory, 
-    !   then deallocate the array that holds the tables
-    !
-    if(associated(thisIntegrator%forwardTables)) then 
-      do i = 1, size(thisIntegrator%forwardTables)
-        call finalize_PhaseFunctionTable(thisIntegrator%forwardTables(i))
-      end do
-      deallocate(thisIntegrator%forwardTables)
-    end if 
     
     if(associated(thisIntegrator%intensityDirections))    deallocate(thisIntegrator%intensityDirections)
-    
-    !
-    ! Tabulated forward and inverse phase functions - stored as one matrix per
-    !   component. Finalize each matrix, then the array that holds them. 
-    !
-    if(associated(thisIntegrator%tabulatedPhaseFunctions)) then 
-      do i = 1, size(thisIntegrator%tabulatedPhaseFunctions)
-        call finalize_Matrix(thisIntegrator%tabulatedPhaseFunctions(i))
-      end do 
-      deallocate(thisIntegrator%tabulatedPhaseFunctions)
-    end if
-    if(associated(thisIntegrator%tabulatedOrigPhaseFunctions)) then 
-      do i = 1, size(thisIntegrator%tabulatedOrigPhaseFunctions)
-        call finalize_Matrix(thisIntegrator%tabulatedOrigPhaseFunctions(i))
-      end do 
-      deallocate(thisIntegrator%tabulatedOrigPhaseFunctions)
-    end if
-    if(associated(thisIntegrator%inversePhaseFunctions)) then 
-      do i = 1, size(thisIntegrator%inversePhaseFunctions)
-        call finalize_Matrix(thisIntegrator%inversePhaseFunctions(i))
-      end do 
-      deallocate(thisIntegrator%inversePhaseFunctions)
-    end if
     
     !
     ! Output arrays
@@ -1702,9 +1546,9 @@ contains
     
     if(thisIntegrator%xyRegularlySpaced) then
       xIndex = min(int((xPos - thisIntegrator%x0)/thisIntegrator%deltaX) + 1, & 
-                   size(thisIntegrator%totalExt, 1))
+                   size(thisIntegrator%xPosition)-1)
       yIndex = min(int((yPos - thisIntegrator%y0)/thisIntegrator%deltaY) + 1, &
-                   size(thisIntegrator%totalExt, 2))
+                   size(thisIntegrator%yPosition)-1)
       !
       ! Insure against rounding errors
 !PRINT *, 'findXindex xPos', xPos
@@ -1728,7 +1572,7 @@ contains
     integer,          intent(out) :: zIndex
     if(thisIntegrator%zRegularlySpaced) then
       zIndex = min(int((zPos - thisIntegrator%z0)/thisIntegrator%deltaZ) + 1, &
-                   size(thisIntegrator%totalExt, 3))
+                   size(thisIntegrator%zPosition)-1)
       ! Insure against rounding errors
       if(abs(thisIntegrator%zPosition(zIndex+1) - zPos) < spacing(zPos)) zIndex = zIndex + 1
     else
@@ -1765,7 +1609,7 @@ contains
     end if 
   end function computeScatteringAngle
   !------------------------------------------------------------------------------------------
-  subroutine computeIntensityContribution(thisIntegrator, photonWeight,    &
+  subroutine computeIntensityContribution(thisIntegrator, thisDomain, photonWeight,    &
                                           xPos,   yPos,   zPos,         & 
                                           xIndex, yIndex, zIndex,       &
                                           directionCosines, component,  &
@@ -1777,6 +1621,7 @@ contains
     !   component. 
     !
     type(integrator),      intent(inout) :: thisIntegrator
+    type(domain),             intent(in ) :: thisDomain
     real(8),                  intent(in   ) :: xPos,   yPos,   zPos
     real,                  intent(in   ) :: photonWeight
     integer,               intent(in   ) ::               xIndex, yIndex, zIndex
@@ -1794,7 +1639,9 @@ contains
             :: projections, scatteringAngles, phaseFunctionVals, tausToBoundary
     integer,  dimension(size(thisIntegrator%intensityDirections, 2)) &
             :: zIndexF
-            
+    integer, allocatable, dimension(:,:,:,:) 	 :: phaseFuncI        
+    type(ErrorMessage)				 :: status
+    type(matrix), allocatable, dimension(:)	 :: tabulatedPhaseFunctions, tabulatedOrigPhaseFunctions
     !
     ! Variables for Russian Roulette as applied to intensity calculations
     !   Notation follows H. Iwabuchi, JAS 2006, Vol 63, pp 2324-2339
@@ -1802,11 +1649,17 @@ contains
     !   We omit the cancelling factors of Pi that appear in his Eqs 9 and 10
     !
     real    :: tauFree, tauMax
-    integer :: zIndexMax
+    integer :: zIndexMax, numX, numY, numZ, numComps
     real(8)    :: xTemp, yTemp, zTemp, xPosI, yPosI, zPosI
     real, dimension(size(thisIntegrator%intensityDirections, 2)) &
             :: normalizedPhaseFunc
-    
+   
+    call getInfo_Domain(thisDomain, numX=numX, numY=numY, numZ=numZ, numberOfComponents=numComps, status=status)
+    allocate(phaseFuncI(1:numX,1:numY,1:numZ,1:numComps))
+    allocate(tabulatedPhaseFunctions(1:numComps))
+    allocate(tabulatedOrigPhaseFunctions(1:numComps))
+    call getInfo_Domain(thisDomain, phaseFuncI=phaseFuncI,tabPhase=tabulatedPhaseFunctions, tabOrigPhase=tabulatedOrigPhaseFunctions, status=status)
+ 
     ! -------------------------------------
     numIntensityDirections = size(thisIntegrator%intensityDirections, 2)
     zIndexMax = size(thisIntegrator%zPosition)
@@ -1844,18 +1697,18 @@ contains
       ! Look up the phase function values in each of the scattering directions 
       !   from the tabulated phase functions
       !
-      phaseFunctionIndex = thisIntegrator%phaseFunctionIndex(xIndex, yIndex, zIndex, component)
+      phaseFunctionIndex = phaseFuncI(xIndex, yIndex, zIndex, component)
       if(thisIntegrator%useHybridPhaseFunsForIntenCalcs .and. & 
          scatteringOrder <= thisIntegrator%numOrdersOrigPhaseFunIntenCalcs) then 
         phaseFunctionVals(:) =                                                                                          &
-          lookUpPhaseFuncValsFromTable(thisIntegrator%tabulatedOrigPhaseFunctions(component)%values(:, phaseFunctionIndex), &
+          lookUpPhaseFuncValsFromTable(tabulatedOrigPhaseFunctions(component)%values(:, phaseFunctionIndex), &
                                        scatteringAngles)
       else 
         !
         ! If useHybridPhaseFunsForIntenCalcs is false then the tabulated phase functions are the orginals
         ! 
         phaseFunctionVals(:) =                                                                                          &
-          lookUpPhaseFuncValsFromTable(thisIntegrator%tabulatedPhaseFunctions(component)%values(:, phaseFunctionIndex), &
+          lookUpPhaseFuncValsFromTable(tabulatedPhaseFunctions(component)%values(:, phaseFunctionIndex), &
                                        scatteringAngles)
       end if 
       normalizedPhaseFunc(:) = phaseFunctionVals(:) / (4 * Pi * abs(thisIntegrator%intensityDirections(3, :)))
@@ -1868,7 +1721,7 @@ contains
       !
       do i = 1, numIntensityDirections
         xTemp = xPosI; yTemp = yPosI; zTemp = zPosI
-        call accumulateExtinctionAlongPath(thisIntegrator, thisIntegrator%intensityDirections(:, i), &
+        call accumulateExtinctionAlongPath(thisDomain, thisIntegrator%intensityDirections(:, i), &
                                            xTemp, yTemp, zTemp, xIndexF(i), yIndexF(i), zIndexF(i),  &
                                            tausToBoundary(i))            
       end do
@@ -1896,7 +1749,7 @@ contains
         !   Small phase function contributions (Iwabuchi Eq 13)
         ! 
         if(Pi * normalizedPhaseFunc(i) <= thisIntegrator%zetaMin) then 
-          call accumulateExtinctionAlongPath(thisIntegrator, thisIntegrator%intensityDirections(:, i), &
+          call accumulateExtinctionAlongPath(thisDomain, thisIntegrator%intensityDirections(:, i), &
                                              xTemp, yTemp, zTemp, xIndexF(i), yIndexF(i), zIndexF(i),  &
                                              tausToBoundary(i), tauFree)            
           !
@@ -1916,7 +1769,7 @@ contains
           !   (Iwabuchi Eq 14). 
           !
           tauMax = -log(thisIntegrator%zetaMin/max(tiny(normalizedPhaseFunc), Pi * normalizedPhaseFunc(i)))
-          call accumulateExtinctionAlongPath(thisIntegrator, thisIntegrator%intensityDirections(:, i), &
+          call accumulateExtinctionAlongPath(thisDomain, thisIntegrator%intensityDirections(:, i), &
                                              xTemp, yTemp, zTemp, xIndexF(i), yIndexF(i), zIndexF(i),  &
                                              tausToBoundary(i), tauMax)            
           if(zIndexF(i) >= zIndexMax .and. tausToBoundary(i) >= 0.) then 
@@ -1925,7 +1778,7 @@ contains
             ! 
             contributions(i) =  photonWeight * normalizedPhaseFunc(i) * exp(-tausToBoundary(i)) 
           else if (tausToBoundary(i) >= 0.) then 
-            call accumulateExtinctionAlongPath(thisIntegrator, thisIntegrator%intensityDirections(:, i), &
+            call accumulateExtinctionAlongPath(thisDomain, thisIntegrator%intensityDirections(:, i), &
                                                xTemp, yTemp, zTemp, xIndexF(i), yIndexF(i), zIndexF(i),  &
                                                tausToBoundary(i), tauFree)            
             !
@@ -2003,397 +1856,6 @@ contains
     
   end function lookUpPhaseFuncValsFromTable
   !------------------------------------------------------------------------------------------
-  subroutine accumulateExtinctionAlongPath(thisIntegrator, directionCosines,         &
-                                                xPos, yPos, zPos, xIndex, yIndex, zIndex, &
-                                                extAccumulated, extToAccumulate)
-!  pure subroutine accumulateExtinctionAlongPath(thisIntegrator, directionCosines,         &
-!                                                xPos, yPos, zPos, xIndex, yIndex, zIndex, &
-!                                                extAccumulated, extToAccumulate)
-    !
-    ! Trace through the medium in a given direction accumulating extinction 
-    !   along the path. Tracing stops either when the boundary is reached or
-    !   when the accumulated extinction reaches the (optional) value extToAccumulate.
-    !   Reports the final position and optical path accumulated. 
-    !
-    type(integrator),   intent(in   ) :: thisIntegrator
-    real, dimension(3), intent(in   ) :: directionCosines
-    real(8),               intent(inout) :: xPos, yPos, zPos
-    integer,            intent(inout) :: xIndex, yIndex, zIndex
-    real,               intent(  out) :: extAccumulated
-    real, optional,     intent(in   ) :: extToAccumulate
-    
-    ! Local variables
-    integer               :: nXcells, nYcells, nZcells
-    real(8)                  :: thisStep, totalPath
-    real(8)               :: z0, zMax,thisCellExt
-    real(8),    dimension(3) :: step
-    integer, dimension(3) :: SideIncrement, CellIncrement
-    
-    extAccumulated = 0.; totalPath = 0.
-
-     ! Make some useful parameters
-    nXcells = size(thisIntegrator%xPosition) - 1
-    nYcells = size(thisIntegrator%yPosition) - 1
-    nZcells = size(thisIntegrator%zPosition) - 1
-    ! Side increment is 1 where directionCosines is > 0; 0 otherwise
-    sideIncrement(:) = merge(1, 0, directionCosines(:) >= 0.) 
-    ! Cell increment is +1 where direction cosines > 0; -1 otherwise
-    CellIncrement(:) = merge(1, -1, directionCosines(:) >= 0.) 
-    
-    z0   = thisIntegrator%zPosition(1)
-    zMax = thisIntegrator%zPosition(nZCells + 1) 
-
-    accumulationLoop: do
-      !
-      ! step - how far away is the closest cell boundary along the direction of travel
-      !     
-      ! How big a step must we take to reach the next edge?  Go the right direction (+ or -) 
-      !    and find out for each dimension (but don't divide by zero).
-      !
-!if(zIndex+SideIncrement(3) .gt. 37) PRINT *, zIndex, SideIncrement(3)
-      where(abs(directionCosines) >= 2. * tiny(directionCosines))
-        step(:) = (/ thisIntegrator%xPosition(xIndex + SideIncrement(1)) - xPos,     &
-                     thisIntegrator%yPosition(yIndex + SideIncrement(2)) - yPos,     &
-                     thisIntegrator%zPosition(zIndex + SideIncrement(3)) - zPos /) / &
-                  directionCosines(:)
-      elsewhere
-        step(:) = huge(step)
-      end where
-
-       ! The step length across the cell is the smallest of the three directions
-       !   We guard against step being negative, which can happen if the 
-       !   direction cosine or the distance to the boundary is very small 
-       !
-      thisStep = minval(step(:))
-      if (thisStep <= 0.0_8) then
-        extAccumulated = -2.0  ! Error flag
-        exit accumulationLoop
-      end if
-
-       ! If this cell pushes the optical path past the desired extToAccumulate,
-       !  then find how large a step is needed, take it, and exit
-       
-      thisCellExt = thisIntegrator%totalExt(xIndex, yIndex, zIndex)
-
-      if (present(extToAccumulate)) then 
-        if(extAccumulated + thisStep * thisCellExt > extToAccumulate) then
-          thisStep = dble(extToAccumulate - extAccumulated) / thisCellExt
-          xPos = xPos + dble(thisStep * directionCosines(1))
-          yPos = yPos + dble(thisStep * directionCosines(2))
-          zPos = zPos + dble(thisStep * directionCosines(3))
-          totalPath = totalPath + thisStep
-          extAccumulated = extToAccumulate
-          exit accumulationLoop
-        end if
-      end if
-
-       ! Add this cell crossing to the accumulated optical path and distance
-       
-      extAccumulated = extAccumulated + thisStep*thisCellExt
-      totalPath = totalPath + thisStep
-
-       ! Determine which side of the cell we're going to hit first (the smallest step).
-       !   Set the position to that side of the cell and increment the cell indices to 
-       !   the next cell, which means extra code for periodic boundaries in X and Y.
-       ! If we wind up within spacing() of the coming boundary just say the position is 
-       !   in the next cell. (This slows things down but protects againt rounding errors.)
-       
-      if(step(1) <= thisStep) then
-        xPos = thisIntegrator%xPosition(xIndex + SideIncrement(1)) 
-        xIndex = xIndex + CellIncrement(1)
-      else
-        xPos = xPos + dble(thisStep * directionCosines(1))
-        if(abs(thisIntegrator%xPosition(xIndex + sideIncrement(1)) - xPos) <= 2 * spacing(xPos)) &
-             xIndex = xIndex + cellIncrement(1)      !
-      end if
-      
-      if(step(2) <= thisStep) then
-        yPos = thisIntegrator%yPosition(yIndex+SideIncrement(2))
-        yIndex = yIndex + CellIncrement(2)
-      else
-        yPos = yPos + dble(thisStep * directionCosines(2))
-        if(abs(thisIntegrator%yPosition(yIndex + sideIncrement(2)) - yPos) <= 2 * spacing(yPos)) &
-                yIndex = yIndex + cellIncrement(2)
-      end if
-
-      if(step(3) <= thisStep) then
-        zPos = thisIntegrator%zPosition(zIndex+SideIncrement(3))
-        zIndex = zIndex + CellIncrement(3)
-      else
-        zPos = zPos + dble(thisStep * directionCosines(3))
-        if(abs(thisIntegrator%zPosition(zIndex + sideIncrement(3)) - zPos) <= 2 * spacing(zPos)) &
-          zIndex = zIndex + cellIncrement(3)
-      end if
-
-      !
-      ! Enforce periodicity
-      !
-      if (xIndex <= 0) then
-        xIndex = nXcells
-        xPos = thisIntegrator%xPosition(xIndex+1) + cellIncrement(1) * 2 * spacing(xPos)
-      else if (xIndex >= nXcells+1) then
-        xIndex = 1
-        xPos = thisIntegrator%xPosition(xIndex) + cellIncrement(1) * 2 * spacing(xPos)
-      end if
-      
-      if (yIndex <= 0) then
-        yIndex = nYcells
-        yPos = thisIntegrator%yPosition(yIndex+1) + cellIncrement(1) * 2 * spacing(yPos)
-      else if (yIndex >= nYcells+1) then
-        yIndex = 1
-        yPos = thisIntegrator%yPosition(yIndex) + cellIncrement(1) * 2 * spacing(yPos)
-      end if
-
-      !
-      ! Out the top? 
-      !
-      if(zIndex > nZCells) then
-        zPos = zMax + 2 * spacing(zMax) 
-        exit accumulationLoop
-      end if 
-      
-      !
-      ! Hit the bottom? 
-      !
-      if(zIndex < 1) then
-        zPos = z0
-        exit accumulationLoop
-      end if 
-
-    end do accumulationLoop
-  end subroutine accumulateExtinctionAlongPath  
-  !------------------------------------------------------------------------------------------
-  subroutine tabulateInversePhaseFunctions(thisIntegrator, status)
-    !
-    ! Tabulate the inverse (cummulative) phase functions (i.e. scattering angle
-    !   as a function of the position in the cumulative distribution). 
-    !
-    type(integrator),  intent(inout) :: thisIntegrator
-    type(ErrorMessage),intent(inout) :: status
-    
-    ! Local variables
-    integer                            :: i, numComponents, nEntries, nSteps
-    logical                            :: computeThisTable
-    real, dimension(:, :), allocatable :: tempMatrix
-
-    numComponents = size(thisIntegrator%forwardTables)
-    if(.not. associated(thisIntegrator%inversePhaseFunctions)) &
-        allocate(thisIntegrator%inversePhaseFunctions(numComponents))
-        
-    componentLoop: do i = 1, numComponents
-      !
-      ! Does the table already exist at high enough resolution? 
-      !
-      computeThisTable = .true. 
-      if(associated(thisIntegrator%inversePhaseFunctions(i)%values)) then
-        if(thisIntegrator%inversePhaseFunctions(i)%numX >= thisIntegrator%minInverseTableSize) computeThisTable = .false.
-      end if
-        
-      if(computeThisTable) then
-        !
-        ! Compute at the minimum desired "resolution" (number of intervals bet. 0 and 1)
-        !   computeInversePhaseFuncTable expects a simple 2D array, dimensioned nSteps, nEntries
-        !   We need to copy this into our "matrix" type
-        !
-        call getInfo_phaseFunctionTable(thisIntegrator%forwardTables(i), nEntries = nEntries, status = status)
-        if(stateIsFailure(status)) exit componentLoop
-        nSteps = thisIntegrator%minInverseTableSize
-        allocate(tempMatrix(nSteps, nEntries))
-        !
-        ! Use the code in the inversePhaseFunctions module to compute the inverse table 
-        !
-        call computeInversePhaseFuncTable(thisIntegrator%forwardTables(i), tempMatrix, status)
-        if(stateIsFailure(status)) exit componentLoop
-        thisIntegrator%inversePhaseFunctions(i) = new_Matrix(tempMatrix)
-        deallocate(tempMatrix)
-      end if
-    end do componentLoop
-    
-    if(stateIsFailure(status)) then
-      call setStateToFailure(status, "tabulateInversePhaseFunctions: failed on component" // trim(intToChar(i)) )
-    else
-      call setStateToSuccess(status)
-    end if 
-  
-  end subroutine tabulateInversePhaseFunctions
-  !------------------------------------------------------------------------------------------
-  subroutine tabulateForwardPhaseFunctions(thisIntegrator, status)
-    type(integrator),  intent(inout) :: thisIntegrator
-    type(ErrorMessage),intent(inout) :: status
-    
-    ! Local variables
-    integer                            :: i, j, numComponents, nEntries, nSteps
-    logical                            :: computeThisTable
-    real, dimension(:),    allocatable :: angles
-    real, dimension(:, :), allocatable :: tempMatrix
-
-    !
-    ! We store the forward tables as matrices evenly spaced in angle to make interpolation simple.
-    !
-    numComponents = size(thisIntegrator%forwardTables)
-    if(.not. associated(thisIntegrator%tabulatedPhaseFunctions)) &
-        allocate(thisIntegrator%tabulatedPhaseFunctions(numComponents))
-    if(.not. associated(thisIntegrator%tabulatedOrigPhaseFunctions)) &
-        allocate(thisIntegrator%tabulatedOrigPhaseFunctions(numComponents))
-
-    componentLoop: do i = 1, numComponents
-      !
-      ! Does the matrix form of the table already exist high enough resolution? 
-      !   The tabulated phase functions and the original versions are always computed at the same resolution 
-      !
-      computeThisTable = .true. 
-      if(associated(thisIntegrator%tabulatedPhaseFunctions(i)%values)) then
-        if(thisIntegrator%tabulatedPhaseFunctions(i)%numX >= thisIntegrator%minForwardTableSize) computeThisTable = .false.
-      end if 
-      
-      if(computeThisTable) then 
-        !
-        ! Compute the phase function values at nSteps points equally spaced in angle from 0 to pi radians
-        !
-        nSteps = thisIntegrator%minForwardTableSize
-        call getInfo_PhaseFunctionTable(thisIntegrator%forwardTables(i), nEntries = nEntries, status = status)
-        if(stateIsFailure(status)) exit componentLoop
-        allocate(angles(nSteps), tempMatrix(nSteps, nEntries))
-        angles(:) = (/ (j, j = 0, nSteps - 1) /) / real(nSteps - 1) * Pi
-        call getPhaseFunctionValues(thisIntegrator%forwardTables(i), angles(:), tempMatrix(:, :), status)
-        
-        thisIntegrator%tabulatedOrigPhaseFunctions(i) = new_Matrix(tempMatrix)
-        
-        if(thisIntegrator%useHybridPhaseFunsForIntenCalcs) then 
-          if(thisIntegrator%hybridPhaseFunWidth > 0.)                                   &
-            tempMatrix(:, :) = computeHydridPhaseFunctions(angles(:), tempMatrix(:, :), &
-                                                           thisIntegrator%hybridPhaseFunWidth)
-        end if
-        !
-        ! Copy the tabulated phase functions into a matrix
-        !
-        thisIntegrator%tabulatedPhaseFunctions(i) = new_Matrix(tempMatrix)
-        deallocate(angles, tempMatrix)
-      end if
-    end do componentLoop
-  
-    if(stateIsFailure(status)) then
-      call setStateToFailure(status, "tabulatePhaseFunctions: failed on component" // trim(intToChar(i)) )
-    else
-      call setStateToSuccess(status)
-    end if 
-  end subroutine tabulateForwardPhaseFunctions
-  !------------------------------------------------------------------------------------------
-  pure function computeHydridPhaseFunctions(angles, values,  GaussianWidth) result(newValues)
-    real, dimension(:),    intent( in) :: angles         ! phase function angles in radians
-    real, dimension(:, :), intent( in) :: values         ! Phase  function, nEntries by nAngles
-    real,                  intent( in) :: GaussianWidth  ! In degrees
-    real, dimension(size(values, 1), size(values, 2) ) :: newValues
-    !
-    ! Creates a phase function that's a hybrid of the original and a Gaussian of
-    !   specified width. The Gaussian part replaces the forward  peak, and is
-    !   continuous with the original phase function
-
-    ! Local variables.
-    real, dimension(size(angles)) :: gaussianValues, angleCosines
-    real                          :: P0, lowDiff, upDiff, midDiff
-    integer                       :: nAngles, transitionIndex
-    integer                       :: i, lowerBound, upperBound,  midPoint, increment
-
-    nAngles = size(angles)
-    angleCosines(:) = cos(angles(:))
-    !
-    ! Gaussian phase function values - we won't need most of these
-    !   but it's easier to compute them all than keep adding
-    !
-    gaussianValues(:) = exp(-( angles(:)/(GaussianWidth * Pi/180) )**2)
-
-    ! First set the output phase function in input one in case there is no root
-    newValues(:, :) = values(:, :)
-    entryLoop: do i = 1, size(values, 2)
-
-      ! Set the lower transition bound according to width of the Gaussian
-      lowerBound = findIndex(GaussianWidth * Pi/180., angles(:)) + 1
-      if(lowerBound >= nAngles - 2) exit entryLoop 
-      ! We haven't found the position of the Gaussian width in the table
-
-      ! We want the transition angle at which the two phase functions are the same
-      !   (i.e. the difference between them is 0).
-      !
-      ! First we "hunt", expanding the range in which we're trying to bracket the value
-      !
-      lowDiff = phaseFuncDiff(angleCosines(:), values(:, i),  gaussianValues(:), lowerBound)
-      increment = 1
-      huntingLoop: do
-        upperBound = min(lowerBound + increment, nAngles - 1)
-        upDiff = phaseFuncDiff(angleCosines(:), values(:, i),  gaussianValues(:), upperBound)
-
-        if (lowerBound == nAngles - 1) cycle entryLoop  ! There's no root, so use the original phase function
-        if (lowDiff * upDiff < 0) exit huntingLoop
-
-        lowerBound = upperBound
-        lowDiff = upDiff
-        increment = increment * 2
-      end do huntingLoop
-
-      ! Bisection: figure out which half of the remaining interval holds the
-      !   root, discard the other half, and repeat
-      bisectionLoop: do
-        if (upperBound <= lowerBound + 1) exit bisectionLoop
-        midPoint = (lowerBound + upperBound)/2
-        midDiff = phaseFuncDiff(angleCosines(:), values(:, i),  gaussianValues(:), midPoint)
-        if (midDiff * upDiff < 0) then
-          lowerBound = midPoint
-          lowDiff = midDiff
-        else
-          upperBound = midPoint
-          upDiff = midDiff
-        end if
-      end do bisectionLoop
-
-      transitionIndex = lowerBound
-      P0 = computeNormalization(angleCosines(:), values(:, i),  gaussianValues(:), transitionIndex)
-      newValues(:transitionIndex,   i) = P0 * gaussianValues(:transitionIndex)
-      newValues(transitionIndex+1:, i) = values(transitionIndex+1:, i)
-    end do entryLoop
-
-  end function computeHydridPhaseFunctions
-  !------------------------------------------------------------------------------------------
-  pure function computeNormalization(angleCosines, values,  gaussianValues, transitionIndex) result(P0)
-    real, dimension(:), intent(in) :: angleCosines, values,  gaussianValues
-    integer,            intent(in) :: transitionIndex
-    real                           :: P0
-
-    integer :: nAngles
-    real    :: IntegralGaus, IntegralOrig
-
-    ! Normalization for the Gaussian part of the phase function, computed by
-    !   forcing the complete phase function to be normalized.
-    !
-    nAngles = size(angleCosines)
-    IntegralGaus = dot_product( &
-                   0.5*(gaussianValues(1:transitionIndex-1) + gaussianValues(2:transitionIndex)), &
-                   angleCosines(1:transitionIndex-1) - angleCosines(2:transitionIndex) )
-    IntegralOrig = dot_product( &
-                   0.5*(values(transitionIndex:nAngles-1) + values(transitionIndex+1:nAngles)), &
-                   angleCosines(transitionIndex:nAngles-1) - angleCosines(transitionIndex+1:nAngles) )
-    if (IntegralOrig >= 2.0) then
-      P0 = 1.0/IntegralGaus
-    else
-      P0 = (2. - IntegralOrig) / IntegralGaus
-    end if
-  end function computeNormalization
-  !------------------------------------------------------------------------------------------
-  pure function phaseFuncDiff(angleCosines, values, gaussianValues,  transitionIndex) &
-                                        result(d)
-    !
-    ! Compute the difference between the normalized Gaussian phase function and the
-    !   original phase function at the transition index. 
-    !
-    real, dimension(:), intent(in) :: angleCosines, values,  gaussianValues
-    integer,            intent(in) :: transitionIndex
-    real                           :: d
-
-    real :: P0
-
-    P0 = computeNormalization(angleCosines, values, gaussianValues,  transitionIndex)
-    d = P0 * gaussianValues(transitionIndex) - values(transitionIndex)
-  end function phaseFuncDiff
   !------------------------------------------------------------------------------------------
   pure function makeDirectionCosines(mu, phi)
     real,   intent(in) :: mu, phi
@@ -2469,31 +1931,14 @@ contains
     S(3) = S(3)*scatteringCosine - sign(b, s(3) * b)
   END SUBROUTINE NEXT_DIRECT
   !------------------------------------------------------------------------------------------
-  function new_Matrix(array) 
-    real, dimension(:, :) :: array
-    type(matrix)          :: new_Matrix
-    
-    new_Matrix%numX         = size(array, 1)
-    new_Matrix%numY         = size(array, 2)
-    allocate(new_Matrix%values(size(array, 1), size(array, 2)))
-    new_Matrix%values(:, :) = array(:, :)
-  end function new_Matrix
-  !------------------------------------------------------------------------------------------
-  subroutine finalize_Matrix(thisMatrix)
-    type(matrix), intent(out) :: thisMatrix
-    
-    thisMatrix%numX = 0; thisMatrix%numY = 0
-    if(associated(thisMatrix%values)) deallocate(thisMatrix%values)
-  end subroutine finalize_Matrix
-  !------------------------------------------------------------------------------------------
-  subroutine getInfo_Integrator(thisIntegrator, ssa, cumExt)
-    type(Integrator), intent(in)                  :: thisIntegrator
-    real(8), dimension(:,:,:,:), intent(out)         :: ssa
-    real(8), dimension(:,:,:), intent(out)           :: cumExt
-
-    ssa(:,:,:,:) = thisIntegrator%ssa(:,:,:,:)
-    cumExt(:,:,:) = thisIntegrator%totalExt(:,:,:)
-
-  end subroutine  getInfo_Integrator
+!  subroutine getInfo_Integrator(thisIntegrator, ssa, cumExt)
+!    type(Integrator), intent(in)                  :: thisIntegrator
+!    real(8), dimension(:,:,:,:), intent(out)         :: ssa
+!    real(8), dimension(:,:,:),   intent(out)           :: cumExt
+!
+!    ssa(:,:,:,:) = thisIntegrator%ssa(:,:,:,:)
+!    cumExt(:,:,:) = thisIntegrator%totalExt(:,:,:)
+!
+!  end subroutine  getInfo_Integrator
 !-------------------------------------------------------------------------------------------
 end module monteCarloRadiativeTransfer

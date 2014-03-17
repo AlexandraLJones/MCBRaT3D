@@ -16,14 +16,27 @@ module opticalProperties
   use ErrorMessages
   use scatteringPhaseFunctions
   use netcdf
+  use inversePhaseFunctions
+  use numericUtilities
+
   implicit none
   private
   
   integer, parameter :: maxNameLength = 256
-  
+  real,    parameter :: Pi = 3.14159265358979312 
   !------------------------------------------------------------------------------------------
   ! Type (object) definitions
   !------------------------------------------------------------------------------------------
+  !------------------------------------------------------------------------------------------
+  ! Matrix and it's functions are also used by the integrator 
+  !   One of the components of the public type (Domain) is of type matrix.
+
+  type matrix
+    integer                        :: numX = 0, numY  = 0
+    real, dimension(:, :), pointer :: values
+  end type matrix
+
+
   type opticalComponent
     ! Each component has a name. The optical properties may be defined for a subset of the 
     !   z levels in the domain, and may be uniform or variable  horiontally. 
@@ -59,6 +72,31 @@ module opticalProperties
     logical                              :: xyRegularlySpaced = .false., zRegularlySpaced = .false. 
     type(opticalComponent), &
                    dimension(:), pointer :: components  => null()
+    real(8),    dimension(:, :, :),    pointer :: totalExt           => null()
+    real(8),    dimension(:, :, :, :), pointer :: cumulativeExt      => null()
+    real(8),    dimension(:, :, :, :), pointer :: ssa                => null()
+    integer, dimension(:, :, :, :), pointer :: phaseFunctionIndex => null()
+    !
+    ! We store the original forward phase function tables even though calculations
+    !   inside the module use the matrix representations below. The originals don't
+    !   take much rooms (a few Mb at most) and this allows us to recompute them to
+    !   arbitrary accuracy at any time.
+    !
+    type(phaseFunctionTable), &
+             dimension(:),    pointer :: forwardTables => null()
+
+    ! We store tabulated phase function and inverse (cumulative) phase functions in
+    !   two-D arrays, but these arrays can be different sizes for different components.
+    !   We define a derived type to represent each 2D array and make a vector of these
+    !   (one matrix for each component).
+    !
+    type(matrix), &
+          dimension(:),       pointer :: tabulatedPhaseFunctions => null()
+    type(matrix), &
+          dimension(:),       pointer :: tabulatedOrigPhaseFunctions => null()
+    type(matrix), &
+          dimension(:),       pointer :: inversePhaseFunctions => null()
+    ! -------------------------------------------------------------------------=    
   end type domain
   !------------------------------------------------------------------------------------------
   ! Overloading
@@ -76,11 +114,13 @@ module opticalProperties
   !------------------------------------------------------------------------------------------
 
   ! The types...
-  public :: domain 
+  public :: domain, matrix 
   ! ... and these procedures
   public :: new_Domain, getInfo_Domain, write_Domain, read_Domain, finalize_Domain, &
             addOpticalComponent, deleteOpticalComponent, replaceOpticalComponent,   &
-            getOpticalPropertiesByComponent !,  getAverageOpticalProperties
+            getOpticalPropertiesByComponent, finalize_Matrix, new_Matrix,           &
+            accumulateExtinctionAlongPath, tabulateInversePhaseFunctions,           &
+            tabulateForwardPhaseFunctions !,  getAverageOpticalProperties
             
 
 contains
@@ -367,16 +407,22 @@ contains
   !------------------------------------------------------------------------------------------
   subroutine getInfo_Domain(thisDomain, numX, numY, numZ, albedo, lambda, lambdaIndex, numLambda,    &
                             xPosition, yPosition, zPosition, temps, &
-                            numberOfComponents, componentNames, status) 
+                            numberOfComponents, componentNames,     &
+                            totalExt, cumExt, ssa, phaseFuncI, &
+ 			    inversePhaseFuncs, tabPhase, tabOrigPhase, status)
+ 
     type(domain),                    intent(in   ) :: thisDomain
     integer,               optional, intent(  out) :: numX, numY, numZ, lambdaIndex
     real(8), optional, intent(out)                    :: lambda, albedo
     real(8),    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition
-    real(8), dimension(:,:,:), optional, intent( out) :: temps
+    real(8), dimension(:,:,:), optional, intent( out) :: temps, totalExt
     integer,               optional, intent(  out) :: numberOfComponents
     integer,		optional, intent(in)	   :: numLambda
     character(len = *), &
              dimension(:), optional, intent(  out) :: componentNames
+    real(8), dimension(:,:,:,:), optional, intent(  out) :: cumExt, ssa
+    integer, dimension(:,:,:,:), optional, intent(  out) :: phaseFuncI
+    type(matrix), dimension(:), optional, intent(out)  :: inversePhaseFuncs, tabPhase, tabOrigPhase
     type(ErrorMessage),              intent(inout) :: status
     
     ! What can you get back from the domain? The number of cells in the arrays, 
@@ -402,6 +448,60 @@ contains
       if(present(numZ)) numZ = size(thisDomain%zPosition) - 1
       
       if(present(albedo)) albedo = thisDomain%surfaceAlbedo
+
+      if(present(totalExt)) then
+	if(size(totalExt,1) .ne. size(thisDomain%xPosition)-1 .or. size(totalExt,2) .ne. size(thisDomain%yPosition)-1 .or. &
+           size(totalExt,3) .ne. size(thisDomain%zPosition)-1) then
+	  call setStateToFailure(status, "getInfo_Domain: array for totalExt is wrong dimensions.")
+	else
+	  totalExt = thisDomain%totalExt
+	end if
+      endif
+      if(present(cumExt)) then
+        if(size(cumExt,1) .ne. size(thisDomain%xPosition)-1 .or. size(cumExt,2) .ne. size(thisDomain%yPosition)-1 .or. &
+           size(cumExt,3) .ne. size(thisDomain%zPosition)-1 .or. size(cumExt,4) .ne. size(thisDomain%components)) then
+          call setStateToFailure(status, "getInfo_Domain: array for cumExt is wrong dimensions.")
+        else
+	  cumExt = thisDomain%cumulativeExt
+        end if
+      endif
+      if(present(ssa)) then
+        if(size(ssa,1) .ne. size(thisDomain%xPosition)-1 .or. size(ssa,2) .ne. size(thisDomain%yPosition)-1 .or. &
+           size(ssa,3) .ne. size(thisDomain%zPosition)-1 .or. size(ssa,4) .ne. size(thisDomain%components)) then
+          call setStateToFailure(status, "getInfo_Domain: array for ssa is wrong dimensions.")
+        else
+	  ssa = thisDomain%ssa
+        end if
+      endif
+      if(present(phaseFuncI)) then
+        if(size(phaseFuncI,1) .ne. size(thisDomain%xPosition)-1 .or. size(phaseFuncI,2) .ne. size(thisDomain%yPosition)-1 .or. &
+           size(phaseFuncI,3) .ne. size(thisDomain%zPosition)-1 .or. size(phaseFuncI,4) .ne. size(thisDomain%components)) then
+          call setStateToFailure(status, "getInfo_Domain: array for phaseFuncIndex is wrong dimensions.")
+        else
+	  phaseFuncI = thisDomain%phaseFunctionIndex
+        end if
+      endif
+      if(present(inversePhaseFuncs)) then
+        if(size(inversePhaseFuncs) .ne. size(thisDomain%components)) then
+          call setStateToFailure(status, "getInfo_Domain: array for inversePhaseFuncs is wrong dimensions.")
+        else
+	  inversePhaseFuncs = thisDomain%inversePhaseFunctions
+        end if
+      endif
+      if(present(tabPhase)) then
+        if(size(tabPhase) .ne. size(thisDomain%components)) then
+          call setStateToFailure(status, "getInfo_Domain: array for tabulatedPhaseFuncs is wrong dimensions.")
+        else
+          tabPhase = thisDomain%tabulatedPhaseFunctions
+        end if
+      endif
+      if(present(tabOrigPhase)) then
+        if(size(tabOrigPhase) .ne. size(thisDomain%components)) then
+          call setStateToFailure(status, "getInfo_Domain: array for tabulatedOriginalPhaseFuncs is wrong dimensions.")
+        else
+          tabOrigPhase = thisDomain%tabulatedOrigPhaseFunctions
+        end if
+      endif
 
       ! Location of boundaries in each dimension
       if(present(xPosition)) then 
@@ -451,18 +551,16 @@ contains
   !------------------------------------------------------------------------------------------
   ! Getting the optical properties of the domain
   !------------------------------------------------------------------------------------------
-  subroutine getOpticalPropertiesByComponent(thisDomain,                        &
-                 totalExtinction, cumulativeExtinction, singleScatteringAlbedo, &
-                 phaseFunctionIndex, phaseFunctions, status)
+  subroutine getOpticalPropertiesByComponent(thisDomain, status)
     type(domain),                    intent(in   ) :: thisDomain
-    real(8),    dimension(:, :, :),     intent(  out) :: totalExtinction
-    real(8),    dimension(:, :, :, :),  intent(  out) :: cumulativeExtinction, singleScatteringAlbedo
-    integer, dimension(:, :, :, :),  intent(  out) :: phaseFunctionIndex
-    type(phaseFunctionTable), &
-             dimension(:), optional, intent(  out) :: phaseFunctions
     type(ErrorMessage),              intent(inout) :: status
+    real(8),    allocatable, dimension(:, :, :)		 :: totalExtinction
+    real(8),    allocatable, dimension(:, :, :, :)	 :: cumulativeExtinction, singleScatteringAlbedo
+    integer, allocatable, dimension(:, :, :, :)		 :: phaseFunctionIndex
+    type(phaseFunctionTable), allocatable, dimension(:)	 :: phaseFunctions
+    
     ! 
-    ! Return the optical properties of the domain, component by component. 
+    ! Fill the optical properties of the domain, component by component. 
     !   The properties returned are defined at all points in the domain. 
     !   If the component is horizontally homogeneous the properties are expanded into 
     !   3D; if it exists only on some subset of vertical layers the properties at 
@@ -493,24 +591,11 @@ contains
       ! Checks for x, y, z, sizes
       numX = size(thisDomain%xPosition) - 1; numY = size(thisDomain%yPosition) - 1
       numZ = size(thisDomain%zPosition) - 1; numComponents = size(thisDomain%components)
-      if(any( (/ size(totalExtinction,        1), size(cumulativeExtinction, 1),          &
-                 size(singleScatteringAlbedo, 1), size(phaseFunctionIndex,   1) /) /= numX)) &
-        call setStateToFailure(status, "getOpticalPropertiesByComponent: extent of one or more arrays incorrect in x dimension.")
-      if(any( (/ size(totalExtinction,        2), size(cumulativeExtinction, 2),          &
-                 size(singleScatteringAlbedo, 2), size(phaseFunctionIndex,   2) /) /= numY)) &
-        call setStateToFailure(status, "getOpticalPropertiesByComponent: extent of one or more arrays incorrect in y dimension.")
-      if(any( (/ size(totalExtinction,        3), size(cumulativeExtinction, 3),  &
-                 size(singleScatteringAlbedo, 3), size(phaseFunctionIndex,   3) /) /= numZ)) &
-        call setStateToFailure(status, "getOpticalPropertiesByComponent: extent of one or more arrays incorrect in z dimension.")
-      !
-      ! Checks for number of components
-      if(any( (/ size(cumulativeExtinction, 4),  size(singleScatteringAlbedo, 4), &
-                 size(phaseFunctionIndex,   4) /)  /= numComponents))             &
-        call setStateToFailure(status, "getOpticalPropertiesByComponent: number of components in one or more arrays incorrect.")
-      if(present(phaseFunctions)) then
-        if(size(phaseFunctions) /= numComponents) &
-          call setStateToFailure(status, "getOpticalPropertiesByComponent: number of components in phaseFunctions array.")
-      end  if 
+      allocate(totalExtinction(numX,numY,numZ))
+      allocate(cumulativeExtinction(numX,numY,numZ,numComponents))
+      allocate(singleScatteringAlbedo(numX,numY,numZ,numComponents))
+      allocate(phaseFunctionIndex(numX,numY,numZ,numComponents))
+      allocate(phaseFunctions(numComponents))
     end if 
 
     ! -----------------------
@@ -547,7 +632,7 @@ contains
         ! We don't finalize the array element phaseFunctions(i) in case something else is pointing to the 
         !   underlying memory. Users should finalize before they pass the array in. 
         ! 
-        if(present(phaseFunctions)) phaseFunctions(i) = copy_PhaseFunctionTable(thisDomain%components(i)%table)
+         phaseFunctions(i) = copy_PhaseFunctionTable(thisDomain%components(i)%table)
         
       end do 
       !
@@ -561,6 +646,15 @@ contains
       where(spread(totalExtinction, 4, nCopies = numComponents) > tiny(totalExtinction)) &
         cumulativeExtinction(:, :, :, :) = cumulativeExtinction(:, :, :, :)  / spread(totalExtinction, 4, nCopies = numComponents)
     end if
+
+    thisDomain%totalExt = totalExtinction
+    thisDomain%cumulativeExt = cumulativeExtinction
+    thisDomain%ssa = singleScatteringAlbedo
+    thisDomain%phaseFunctionIndex = phaseFunctionIndex
+    thisDomain%forwardTables = phaseFunctions
+  
+  !!!!! CAN'T FIGURE OUT HOW TO FREE THE MEMORY ASSOCIATED WITH THISDOMAIN%COMPONENTS SINCE IT'S A POINTER 
+    
   end subroutine getOpticalPropertiesByComponent
   !------------------------------------------------------------------------------------------
 !   subroutine getAverageOpticalProperties(thisDomain, extinction, singleScatteringAlbedo, &
@@ -742,7 +836,7 @@ contains
   !------------------------------------------------------------------------------------------
   subroutine read_Domain(fileName, thisDomain, status)
     character(len = *), intent(in   ) :: fileName
-    type(domain),       intent(  out) :: thisDomain
+    type(domain), intent(  out) :: thisDomain
     type(ErrorMessage), intent(inout) :: status
     
     ! Local variables
@@ -1082,5 +1176,418 @@ contains
     asLogical = .not. (inValue == 0)
     
   end function asLogical
+  !------------------------------------------------------------------------------------------
+  function new_Matrix(array)
+    real, dimension(:, :) :: array
+    type(matrix)          :: new_Matrix
+
+    new_Matrix%numX         = size(array, 1)
+    new_Matrix%numY         = size(array, 2)
+    allocate(new_Matrix%values(size(array, 1), size(array, 2)))
+    new_Matrix%values(:, :) = array(:, :)
+  end function new_Matrix
+  !------------------------------------------------------------------------------------------
+  subroutine finalize_Matrix(thisMatrix)
+    type(matrix), intent(out) :: thisMatrix
+
+    thisMatrix%numX = 0; thisMatrix%numY = 0
+    if(associated(thisMatrix%values)) deallocate(thisMatrix%values)
+  end subroutine finalize_Matrix
+  !------------------------------------------------------------------------------------------
+  subroutine accumulateExtinctionAlongPath(thisDomain, directionCosines,         &
+                                                xPos, yPos, zPos, xIndex, yIndex, zIndex, &
+                                                extAccumulated, extToAccumulate)
+!  pure subroutine accumulateExtinctionAlongPath(thisIntegrator, directionCosines,         &
+!                                                xPos, yPos, zPos, xIndex, yIndex, zIndex, &
+!                                                extAccumulated, extToAccumulate)
+    !
+    ! Trace through the medium in a given direction accumulating extinction
+    !   along the path. Tracing stops either when the boundary is reached or
+    !   when the accumulated extinction reaches the (optional) value extToAccumulate.
+    !   Reports the final position and optical path accumulated.
+    !
+    
+    type(Domain),       intent(in   ) :: thisDomain
+    real, dimension(3), intent(in   ) :: directionCosines
+    real(8),               intent(inout) :: xPos, yPos, zPos
+    integer,            intent(inout) :: xIndex, yIndex, zIndex
+    real,               intent(  out) :: extAccumulated
+    real, optional,     intent(in   ) :: extToAccumulate
+
+    ! Local variables
+    integer               :: nXcells, nYcells, nZcells
+    real(8)                  :: thisStep, totalPath
+    real(8)               :: z0, zMax,thisCellExt
+    real(8),    dimension(3) :: step
+    integer, dimension(3) :: SideIncrement, CellIncrement
+
+    extAccumulated = 0.; totalPath = 0.
+
+     ! Make some useful parameters
+    nXcells = size(thisDomain%xPosition) - 1
+    nYcells = size(thisDomain%yPosition) - 1
+    nZcells = size(thisDomain%zPosition) - 1
+    ! Side increment is 1 where directionCosines is > 0; 0 otherwise
+    sideIncrement(:) = merge(1, 0, directionCosines(:) >= 0.)
+    ! Cell increment is +1 where direction cosines > 0; -1 otherwise
+    CellIncrement(:) = merge(1, -1, directionCosines(:) >= 0.)
+
+    z0   = thisDomain%zPosition(1)
+    zMax = thisDomain%zPosition(nZCells + 1)
+
+    accumulationLoop: do
+      !
+      ! step - how far away is the closest cell boundary along the direction of travel
+      !
+      ! How big a step must we take to reach the next edge?  Go the right direction (+ or -)
+      !    and find out for each dimension (but don't divide by zero).
+      !
+!if(zIndex+SideIncrement(3) .gt. 37) PRINT *, zIndex, SideIncrement(3)
+      where(abs(directionCosines) >= 2. * tiny(directionCosines))
+        step(:) = (/ thisDomain%xPosition(xIndex + SideIncrement(1)) - xPos,     &
+                     thisDomain%yPosition(yIndex + SideIncrement(2)) - yPos,     &
+                     thisDomain%zPosition(zIndex + SideIncrement(3)) - zPos /) / &
+                  directionCosines(:)
+      elsewhere
+        step(:) = huge(step)
+      end where
+
+       ! The step length across the cell is the smallest of the three directions
+       !   We guard against step being negative, which can happen if the
+       !   direction cosine or the distance to the boundary is very small
+       !
+      thisStep = minval(step(:))
+      if (thisStep <= 0.0_8) then
+        extAccumulated = -2.0  ! Error flag
+        exit accumulationLoop
+      end if
+
+       ! If this cell pushes the optical path past the desired extToAccumulate,
+       !  then find how large a step is needed, take it, and exit
+
+      thisCellExt = thisDomain%totalExt(xIndex, yIndex, zIndex)
+
+      if (present(extToAccumulate)) then
+        if(extAccumulated + thisStep * thisCellExt > extToAccumulate) then
+          thisStep = dble(extToAccumulate - extAccumulated) / thisCellExt
+          xPos = xPos + dble(thisStep * directionCosines(1))
+          yPos = yPos + dble(thisStep * directionCosines(2))
+          zPos = zPos + dble(thisStep * directionCosines(3))
+          totalPath = totalPath + thisStep
+          extAccumulated = extToAccumulate
+          exit accumulationLoop
+        end if
+      end if
+
+       ! Add this cell crossing to the accumulated optical path and distance
+
+      extAccumulated = extAccumulated + thisStep*thisCellExt
+      totalPath = totalPath + thisStep
+
+       ! Determine which side of the cell we're going to hit first (the smallest step).
+       !   Set the position to that side of the cell and increment the cell indices to
+       !   the next cell, which means extra code for periodic boundaries in X and Y.
+       ! If we wind up within spacing() of the coming boundary just say the position is
+       !   in the next cell. (This slows things down but protects againt rounding errors.)
+
+      if(step(1) <= thisStep) then
+        xPos = thisDomain%xPosition(xIndex + SideIncrement(1))
+        xIndex = xIndex + CellIncrement(1)
+      else
+        xPos = xPos + dble(thisStep * directionCosines(1))
+        if(abs(thisDomain%xPosition(xIndex + sideIncrement(1)) - xPos) <= 2 * spacing(xPos)) &
+             xIndex = xIndex + cellIncrement(1)      !
+      end if
+
+      if(step(2) <= thisStep) then
+        yPos = thisDomain%yPosition(yIndex+SideIncrement(2))
+        yIndex = yIndex + CellIncrement(2)
+      else
+        yPos = yPos + dble(thisStep * directionCosines(2))
+        if(abs(thisDomain%yPosition(yIndex + sideIncrement(2)) - yPos) <= 2 * spacing(yPos)) &
+                yIndex = yIndex + cellIncrement(2)
+      end if
+
+      if(step(3) <= thisStep) then
+        zPos = thisDomain%zPosition(zIndex+SideIncrement(3))
+        zIndex = zIndex + CellIncrement(3)
+      else
+        zPos = zPos + dble(thisStep * directionCosines(3))
+        if(abs(thisDomain%zPosition(zIndex + sideIncrement(3)) - zPos) <= 2 * spacing(zPos)) &
+          zIndex = zIndex + cellIncrement(3)
+      end if
+
+      !
+      ! Enforce periodicity
+      !
+      if (xIndex <= 0) then
+        xIndex = nXcells
+        xPos = thisDomain%xPosition(xIndex+1) + cellIncrement(1) * 2 * spacing(xPos)
+      else if (xIndex >= nXcells+1) then
+        xIndex = 1
+        xPos = thisDomain%xPosition(xIndex) + cellIncrement(1) * 2 * spacing(xPos)
+      end if
+
+      if (yIndex <= 0) then
+        yIndex = nYcells
+        yPos = thisDomain%yPosition(yIndex+1) + cellIncrement(1) * 2 * spacing(yPos)
+      else if (yIndex >= nYcells+1) then
+        yIndex = 1
+        yPos = thisDomain%yPosition(yIndex) + cellIncrement(1) * 2 * spacing(yPos)
+      end if
+
+      !
+      ! Out the top?
+      !
+      if(zIndex > nZCells) then
+        zPos = zMax + 2 * spacing(zMax)
+        exit accumulationLoop
+      end if
+
+      !
+      ! Hit the bottom?
+      !
+      if(zIndex < 1) then
+        zPos = z0
+        exit accumulationLoop
+      end if
+
+    end do accumulationLoop
+  end subroutine accumulateExtinctionAlongPath
+  !------------------------------------------------------------------------------------------                  
+  subroutine tabulateInversePhaseFunctions(thisDomain, tableSize, status)
+    !
+    ! Tabulate the inverse (cummulative) phase functions (i.e. scattering angle
+    !   as a function of the position in the cumulative distribution).
+    !
+    type(domain),  intent(inout) :: thisDomain
+    integer, intent(in)		:: tableSize
+    type(ErrorMessage),intent(inout) :: status
+
+    ! Local variables
+    integer                            :: i, numComponents, nEntries, nSteps
+    logical                            :: computeThisTable
+    real, dimension(:, :), allocatable :: tempMatrix
+
+    numComponents = size(thisDomain%forwardTables)
+    if(.not. associated(thisDomain%inversePhaseFunctions)) &
+        allocate(thisDomain%inversePhaseFunctions(numComponents))
+
+    componentLoop: do i = 1, numComponents
+      !
+      ! Does the table already exist at high enough resolution?
+      !
+      computeThisTable = .true.
+      if(associated(thisDomain%inversePhaseFunctions(i)%values)) then
+        if(thisDomain%inversePhaseFunctions(i)%numX >= tableSize) computeThisTable = .false.
+      end if
+
+      if(computeThisTable) then
+        !
+        ! Compute at the minimum desired "resolution" (number of intervals bet. 0 and 1)
+        !   computeInversePhaseFuncTable expects a simple 2D array, dimensioned nSteps, nEntries
+        !   We need to copy this into our "matrix" type
+        !
+        call getInfo_phaseFunctionTable(thisDomain%forwardTables(i), nEntries = nEntries, status = status)
+        if(stateIsFailure(status)) exit componentLoop
+        nSteps = tableSize
+        allocate(tempMatrix(nSteps, nEntries))
+        !
+        ! Use the code in the inversePhaseFunctions module to compute the inverse table
+        !
+        call computeInversePhaseFuncTable(thisDomain%forwardTables(i), tempMatrix, status)
+        if(stateIsFailure(status)) exit componentLoop
+        thisDomain%inversePhaseFunctions(i) = new_Matrix(tempMatrix)
+        deallocate(tempMatrix)
+      end if
+    end do componentLoop
+
+    if(stateIsFailure(status)) then
+      call setStateToFailure(status, "tabulateInversePhaseFunctions: failed on component" // trim(intToChar(i)) )
+    else
+      call setStateToSuccess(status)
+    end if
+
+  end subroutine tabulateInversePhaseFunctions
+  !------------------------------------------------------------------------------------------
+  subroutine tabulateForwardPhaseFunctions(thisDomain, tableSize, hybrid, hybridWidth, status)
+    type(Domain),  intent(inout) :: thisDomain
+    integer, intent(in)			:: tableSize
+    logical, intent(in)			:: hybrid
+    real, intent(in)			:: hybridWidth
+    type(ErrorMessage),intent(inout) :: status
+
+    ! Local variables
+    integer                            :: i, j, numComponents, nEntries, nSteps
+    logical                            :: computeThisTable
+    real, dimension(:),    allocatable :: angles
+    real, dimension(:, :), allocatable :: tempMatrix
+
+    !
+    ! We store the forward tables as matrices evenly spaced in angle to make interpolation simple.
+    !
+    numComponents = size(thisDomain%forwardTables)
+    if(.not. associated(thisDomain%tabulatedPhaseFunctions)) &
+        allocate(thisDomain%tabulatedPhaseFunctions(numComponents))
+    if(.not. associated(thisDomain%tabulatedOrigPhaseFunctions)) &
+        allocate(thisDomain%tabulatedOrigPhaseFunctions(numComponents))
+
+    componentLoop: do i = 1, numComponents
+      !
+      ! Does the matrix form of the table already exist high enough resolution?
+      !   The tabulated phase functions and the original versions are always computed at the same resolution
+      !
+      computeThisTable = .true.
+      if(associated(thisDomain%tabulatedPhaseFunctions(i)%values)) then
+        if(thisDomain%tabulatedPhaseFunctions(i)%numX >= tableSize) computeThisTable = .false.
+      end if
+
+      if(computeThisTable) then
+        !
+        ! Compute the phase function values at nSteps points equally spaced in angle from 0 to pi radians
+        !
+        nSteps = tableSize
+        call getInfo_PhaseFunctionTable(thisDomain%forwardTables(i), nEntries = nEntries, status = status)
+        if(stateIsFailure(status)) exit componentLoop
+        allocate(angles(nSteps), tempMatrix(nSteps, nEntries))
+        angles(:) = (/ (j, j = 0, nSteps - 1) /) / real(nSteps - 1) * Pi
+        call getPhaseFunctionValues(thisDomain%forwardTables(i), angles(:), tempMatrix(:, :), status)
+
+        thisDomain%tabulatedOrigPhaseFunctions(i) = new_Matrix(tempMatrix)
+
+        if(hybrid) then
+          if(hybridWidth > 0.)                                   &
+            tempMatrix(:, :) = computeHybridPhaseFunctions(angles(:), tempMatrix(:, :), hybridWidth)
+        end if
+        !
+        ! Copy the tabulated phase functions into a matrix
+        !
+        thisDomain%tabulatedPhaseFunctions(i) = new_Matrix(tempMatrix)
+        deallocate(angles, tempMatrix)
+      end if
+    end do componentLoop
+
+    if(stateIsFailure(status)) then
+      call setStateToFailure(status, "tabulatePhaseFunctions: failed on component" // trim(intToChar(i)) )
+    else
+      call setStateToSuccess(status)
+    end if
+  end subroutine tabulateForwardPhaseFunctions
+  !------------------------------------------------------------------------------------------
+  pure function computeHybridPhaseFunctions(angles, values,  GaussianWidth) result(newValues)
+    real, dimension(:),    intent( in) :: angles         ! phase function angles in radians
+    real, dimension(:, :), intent( in) :: values         ! Phase  function, nEntries by nAngles
+    real,                  intent( in) :: GaussianWidth  ! In degrees
+    real, dimension(size(values, 1), size(values, 2) ) :: newValues
+    !
+    ! Creates a phase function that's a hybrid of the original and a Gaussian of
+    !   specified width. The Gaussian part replaces the forward  peak, and is
+    !   continuous with the original phase function
+
+    ! Local variables.
+    real, dimension(size(angles)) :: gaussianValues, angleCosines
+    real                          :: P0, lowDiff, upDiff, midDiff
+    integer                       :: nAngles, transitionIndex
+    integer                       :: i, lowerBound, upperBound,  midPoint, increment
+
+    nAngles = size(angles)
+    angleCosines(:) = cos(angles(:))
+    !
+    ! Gaussian phase function values - we won't need most of these
+    !   but it's easier to compute them all than keep adding
+    !
+    gaussianValues(:) = exp(-( angles(:)/(GaussianWidth * Pi/180) )**2)
+
+    ! First set the output phase function in input one in case there is no root
+    newValues(:, :) = values(:, :)
+    entryLoop: do i = 1, size(values, 2)
+
+      ! Set the lower transition bound according to width of the Gaussian
+      lowerBound = findIndex(GaussianWidth * Pi/180., angles(:)) + 1
+      if(lowerBound >= nAngles - 2) exit entryLoop
+      ! We haven't found the position of the Gaussian width in the table
+
+      ! We want the transition angle at which the two phase functions are the same
+      !   (i.e. the difference between them is 0).
+      !
+      ! First we "hunt", expanding the range in which we're trying to bracket the value
+      !
+      lowDiff = phaseFuncDiff(angleCosines(:), values(:, i),  gaussianValues(:), lowerBound)
+      increment = 1
+      huntingLoop: do
+        upperBound = min(lowerBound + increment, nAngles - 1)
+        upDiff = phaseFuncDiff(angleCosines(:), values(:, i),  gaussianValues(:), upperBound)
+
+        if (lowerBound == nAngles - 1) cycle entryLoop  ! There's no root, so use the original phase function
+        if (lowDiff * upDiff < 0) exit huntingLoop
+
+        lowerBound = upperBound
+        lowDiff = upDiff
+        increment = increment * 2
+      end do huntingLoop
+
+      ! Bisection: figure out which half of the remaining interval holds the
+      !   root, discard the other half, and repeat
+      bisectionLoop: do
+        if (upperBound <= lowerBound + 1) exit bisectionLoop
+        midPoint = (lowerBound + upperBound)/2
+        midDiff = phaseFuncDiff(angleCosines(:), values(:, i),  gaussianValues(:), midPoint)
+        if (midDiff * upDiff < 0) then
+          lowerBound = midPoint
+          lowDiff = midDiff
+        else
+          upperBound = midPoint
+          upDiff = midDiff
+        end if
+      end do bisectionLoop
+
+      transitionIndex = lowerBound
+      P0 = computeNormalization(angleCosines(:), values(:, i),  gaussianValues(:), transitionIndex)
+      newValues(:transitionIndex,   i) = P0 * gaussianValues(:transitionIndex)
+      newValues(transitionIndex+1:, i) = values(transitionIndex+1:, i)
+    end do entryLoop
+
+  end function computeHybridPhaseFunctions
+  !------------------------------------------------------------------------------------------
+  pure function phaseFuncDiff(angleCosines, values, gaussianValues,  transitionIndex) &
+                                        result(d)
+    !
+    ! Compute the difference between the normalized Gaussian phase function and the
+    !   original phase function at the transition index.
+    !
+    real, dimension(:), intent(in) :: angleCosines, values,  gaussianValues
+    integer,            intent(in) :: transitionIndex
+    real                           :: d
+
+    real :: P0
+
+    P0 = computeNormalization(angleCosines, values, gaussianValues,  transitionIndex)
+    d = P0 * gaussianValues(transitionIndex) - values(transitionIndex)
+  end function phaseFuncDiff
+  !------------------------------------------------------------------------------------------
+  pure function computeNormalization(angleCosines, values,  gaussianValues, transitionIndex) result(P0)
+    real, dimension(:), intent(in) :: angleCosines, values,  gaussianValues
+    integer,            intent(in) :: transitionIndex
+    real                           :: P0
+
+    integer :: nAngles
+    real    :: IntegralGaus, IntegralOrig
+
+    ! Normalization for the Gaussian part of the phase function, computed by
+    !   forcing the complete phase function to be normalized.
+    !
+    nAngles = size(angleCosines)
+    IntegralGaus = dot_product( &
+                   0.5*(gaussianValues(1:transitionIndex-1) + gaussianValues(2:transitionIndex)), &
+                   angleCosines(1:transitionIndex-1) - angleCosines(2:transitionIndex) )
+    IntegralOrig = dot_product( &
+                   0.5*(values(transitionIndex:nAngles-1) + values(transitionIndex+1:nAngles)), &
+                   angleCosines(transitionIndex:nAngles-1) - angleCosines(transitionIndex+1:nAngles) )
+    if (IntegralOrig >= 2.0) then
+      P0 = 1.0/IntegralGaus
+    else
+      P0 = (2. - IntegralOrig) / IntegralGaus
+    end if
+  end function computeNormalization
   !------------------------------------------------------------------------------------------
 end module opticalProperties   
