@@ -233,8 +233,8 @@ contains
       !   We increase cumulativeExt(:, :, :, numComponents) slightly to account for the 
       !   edge case of r == 1. 
       !
-      where(abs(new%cumulativeExt(:, :, :, numComponents) - 1.) <= spacing(1.)) & 
-        new%cumulativeExt(:, :, :, numComponents) = 1. + spacing(1.)
+      where(abs(new%cumulativeExt(:, :, :, numComponents) - 1.0_8) .le. spacing(1.0_8)) & 
+        new%cumulativeExt(:, :, :, numComponents) = 1.0_8 + spacing(1.0_8)
 
     end if
     if(stateIsFailure(status)) then
@@ -1952,7 +1952,7 @@ contains
       ! Limit local estimate contribution to intensity; keep track of excess 
       !   so it can be redistributed after the fact
       !
-      where(contributions(:) > thisIntegrator%maxIntensityContribution) 
+      where(contributions(:) .gt. thisIntegrator%maxIntensityContribution) 
         thisIntegrator%intensityExcess(:, component) = &
           thisIntegrator%intensityExcess(:, component) + & 
           contributions(:) - thisIntegrator%maxIntensityContribution
@@ -2486,13 +2486,21 @@ contains
     if(associated(thisMatrix%values)) deallocate(thisMatrix%values)
   end subroutine finalize_Matrix
   !------------------------------------------------------------------------------------------
-  subroutine getInfo_Integrator(thisIntegrator, ssa, cumExt)
+  subroutine getInfo_Integrator(thisIntegrator, ssa, cumExt, ext)
     type(Integrator), intent(in)                  :: thisIntegrator
-    real(8), dimension(:,:,:,:), intent(out)         :: ssa
+    real(8), dimension(:,:,:,:), intent(out)         :: ssa, ext
     real(8), dimension(:,:,:), intent(out)           :: cumExt
+
+    integer          :: i
 
     ssa(:,:,:,:) = thisIntegrator%ssa(:,:,:,:)
     cumExt(:,:,:) = thisIntegrator%totalExt(:,:,:)
+    ext(:,:,:,1) = thisIntegrator%cumulativeExt(:,:,:,1)
+    if (SIZE(thisIntegrator%cumulativeExt,4) .gt. 1)then
+       forall (i=2:SIZE(thisIntegrator%cumulativeExt,4))
+	 ext(:,:,:,i)=thisIntegrator%cumulativeExt(:,:,:,i)-thisIntegrator%cumulativeExt(:,:,:,i-1)
+       end forall
+    end if
 
   end subroutine  getInfo_Integrator
 !-------------------------------------------------------------------------------------------
