@@ -552,7 +552,7 @@ contains
   ! Getting the optical properties of the domain
   !------------------------------------------------------------------------------------------
   subroutine getOpticalPropertiesByComponent(thisDomain, status)
-    type(domain),                    intent(in   ) :: thisDomain
+    type(domain),                    intent(inout) :: thisDomain
     type(ErrorMessage),              intent(inout) :: status
     real(8),    allocatable, dimension(:, :, :)		 :: totalExtinction
     real(8),    allocatable, dimension(:, :, :, :)	 :: cumulativeExtinction, singleScatteringAlbedo
@@ -591,11 +591,11 @@ contains
       ! Checks for x, y, z, sizes
       numX = size(thisDomain%xPosition) - 1; numY = size(thisDomain%yPosition) - 1
       numZ = size(thisDomain%zPosition) - 1; numComponents = size(thisDomain%components)
-      allocate(totalExtinction(numX,numY,numZ))
-      allocate(cumulativeExtinction(numX,numY,numZ,numComponents))
-      allocate(singleScatteringAlbedo(numX,numY,numZ,numComponents))
-      allocate(phaseFunctionIndex(numX,numY,numZ,numComponents))
-      allocate(phaseFunctions(numComponents))
+      allocate(totalExtinction(numX,numY,numZ), thisDomain%totalExt(1:numX,1:numY,1:numZ))
+      allocate(cumulativeExtinction(numX,numY,numZ,numComponents), thisDomain%cumulativeExt(1:numX,1:numY,1:numZ,1:numComponents))
+      allocate(singleScatteringAlbedo(numX,numY,numZ,numComponents), thisDomain%ssa(1:numX,1:numY,1:numZ,1:numComponents))
+      allocate(phaseFunctionIndex(numX,numY,numZ,numComponents), thisDomain%phaseFunctionIndex(1:numX,1:numY,1:numZ,1:numComponents))
+      allocate(phaseFunctions(numComponents),thisDomain%forwardTables(1:numComponents))
     end if 
 
     ! -----------------------
@@ -984,6 +984,12 @@ contains
         end if
         deallocate(extinction, singleScatteringAlbedo, phaseFunctionIndex)
       end do
+      if(.not. stateIsFailure(status))  call getOpticalPropertiesByComponent(thisDomain, status)
+!      if(.not. stateIsFailure(status)) then
+!         do i = 1, 4
+!	    call deleteOpticalComponent(thisDomain, i, status)
+!         end do
+!      end if
       if(.not. stateIsFailure(status)) call setStateToSuccess(status)
     end if
   end subroutine read_Domain

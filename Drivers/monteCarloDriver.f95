@@ -252,7 +252,7 @@ program monteCarloDriver
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
      read(22,'(1A)') domainFileName
      call read_Domain(domainFileName, thisDomain, status)
-!PRINT *, 'Driver: Read Domain'  
+PRINT *, 'Driver: Read Domain'  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
      call printStatus(status)
@@ -262,10 +262,12 @@ program monteCarloDriver
                       zPosition = zPosition, numberOfComponents=numberOfComponents, status = status) 
 !PRINT *, lambda, lambdaI
      BBDomain(lambdaI)=thisDomain
-!print *, 'Driver: got domain info '
+print *, 'Driver: got info for Domain: ', i
+      call printStatus(status)
   END DO
   call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
-PRINT *, lambda, lambdaI, numLambda
+PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
+  call printStatus(status)
 
   close(22)
 !
@@ -273,7 +275,8 @@ PRINT *, lambda, lambdaI, numLambda
 !
 
   ! Set up the integrator object. It only grabs information from the domain that is consistent between all of them so I only need to pass any one domain
-  mcIntegrator = new_Integrator(thisDomain, status = status)     !
+  mcIntegrator = new_Integrator(thisDomain, status = status)     
+PRINT *, 'initialized Integrator'
   call printStatus(status)					 ! CAN I MOVE THIS SECTION INITIALIZING THE INTEGRATOR TO BEFORE THE LOOP RADING IN ALL THE DOMAINS BUT AFTER READING IN THE FIRST DOMAIN SO THAT I CAN JUST PARALLELIZE THE REST? 
 !  call finalize_Domain(thisDomain)                               !
 
@@ -282,6 +285,7 @@ PRINT *, lambda, lambdaI, numLambda
                           minInverseTableSize = nPhaseIntervals, &
                           LW_flag = LW_flag,                     &
                           status = status)
+PRINT *, 'Specified photon source'
   call printStatus(status) 
 
   if (computeIntensity) then
@@ -289,7 +293,8 @@ PRINT *, lambda, lambdaI, numLambda
                             minForwardTableSize=nPhaseIntervals, &
                             intensityMus=intensityMus(1:numRadDir), &
                             intensityPhis=intensityPhis(1:numRadDir), &
-                            computeIntensity=computeIntensity, status=status)
+                            computeIntensity=computeIntensity,numComps=numberOfComponents, status=status)
+PRINT *, 'Specified Intensity Calcs'
     call printStatus(status) 
   endif
 
@@ -298,6 +303,7 @@ PRINT *, lambda, lambdaI, numLambda
                             recScatOrd=recScatOrd, &
                             numRecScatOrd=numRecScatOrd, & 
                             status = status)
+PRINT *, 'SPecified recScatOrder'
     call printStatus(status)
   end if 
 
@@ -308,6 +314,7 @@ PRINT *, lambda, lambdaI, numLambda
                          useRayTracing      = useRayTracing,        &
                          useRussianRoulette = useRussianRoulette,   &
                          status = status)
+PRINT *, 'Specfied ray tracing'
   call printStatus(status) 
   
   !
@@ -329,9 +336,10 @@ PRINT *, lambda, lambdaI, numLambda
                          maxIntensityContribution =                 &
                                    maxIntensityContribution,        &
                          status = status)
+PRINT *, 'Specified variance reduction'
     call printStatus(status) 
   end if
-STOP
+
 !PRINT *, 'Driver: Specified Parameters'
    ! Allocate and zero the arrays for radiative quantities and moments 
   allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
@@ -374,16 +382,17 @@ STOP
 
   ! Seed the random number generator.
   randoms = new_RandomNumberSequence(seed = (/ iseed, 0 /) )
-STOP
+
    ! The initial direction and position of the photons are precomputed and 
    !   stored in an "illumination" object.
 !PRINT *, 'solarFlux=', solarFlux
   if(LW_flag >= 0.0)then
      allocate (voxel_weights(nX,nY,nZ),col_weights(nY,nZ), level_weights(nZ), temps(1:nX,1:nY,1:nZ), cumExt(1:nX,1:nY,1:nZ), ssa(1:nX,1:nY,1:nZ,1:numberOfComponents))
-     call getInfo_Domain(thisDomain, temps=temps, status=status)
+     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, status=status)
+PRINT *, 'retrieved fields for emission weighting'
 call printStatus(status)
 !print *, 'Driver: got info Domain'
-     call getInfo_Integrator(mcIntegrator, ssa, cumExt)
+!     call getInfo_Integrator(mcIntegrator, ssa, cumExt)
 !print *, 'Driver: got info integrator'
      call emission_weighting(nX, nY, nZ, numberOfComponents, xPosition, yPosition, zPosition, lambda, numPhotonsPerBatch, atms_photons, voxel_weights, col_weights, level_weights, temps, ssa, cumExt, surfaceTemp, (1.0_8-surfaceAlbedo), emittedFlux) 
 !    DO iz= 1,nZ
@@ -394,10 +403,11 @@ call printStatus(status)
      solarFlux=emittedFlux
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
-!PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
+PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 !PRINT *, 'Driver: calculated emission weighting'
      incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights, level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
+PRINT *, 'initialized LW photon stream'
 call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
   else
@@ -405,14 +415,17 @@ call printStatus(status)
                                       numberOfPhotons = 1,   &
                                       randomNumbers = randoms, status=status)
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
+PRINT *, 'initialized SW photon stream'
+call printStatus(status)
   end if
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
-  call finalize_Domain(thisDomain)
-  call printStatus(status)
+!  call finalize_Domain(thisDomain)
+
 
   ! Now we compute the radiative transfer for a single photon 
   if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
   call computeRadiativeTransfer (mcIntegrator,thisDomain, randoms, incomingPhotons, status, voxel_tallys2)
+PRINT *, 'Computed RT for a single photon'
   call printStatus(status) 
   call finalize_PhotonStream (incomingPhotons)
 !PRINT *, 'Driver: succesfully tested photon initialization'
@@ -422,10 +435,12 @@ call printStatus(status)
   call synchronizeProcesses
 !PRINT *, "called synchronizeProcesses"
   cpuTimeSetup = sumAcrossProcesses(cpuTime1 - cpuTime0) 
-!PRINT *, "cpuTimeSetup=", cpuTimeSetup
+PRINT *, "cpuTimeSetup=", cpuTimeSetup
+STOP
   if (MasterProc) &
     print *, "Setup CPU time (secs, approx): ", int(cpuTimeSetup)
 !PRINT *, "setup completed"
+
   ! --------------------------------------------------------------------------
 
   ! The  loop over batches is for estimating the uncertainty in the flux and

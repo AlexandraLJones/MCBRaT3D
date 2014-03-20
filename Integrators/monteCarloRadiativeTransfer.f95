@@ -367,6 +367,8 @@ contains
         forall(d = 1:numIntensityDirections)
           thisIntegrator%intensity(:, :, d) =  thisIntegrator%intensity(:, :, d) / numPhotonsPerColumn(:, :)
         end forall
+!PRINT *, SIZE(thisIntegrator%intensityByComponent,1), SIZE(thisIntegrator%intensityByComponent,2), SIZE(thisIntegrator%intensityByComponent,3), SIZE(thisIntegrator%intensityByComponent,4)
+!PRINT *, SIZE(numPhotonsPerColumn,1), SIZE(numPhotonsPerColumn,2)
         forall(d = 1:numIntensityDirections, j = 1:numComponents)
           thisIntegrator%intensityByComponent(:, :, d, j) =  &
                                                thisIntegrator%intensityByComponent(:, :, d, j) / &
@@ -1241,11 +1243,11 @@ contains
                                           size(thisIntegrator%yPosition)-1, &
                                           size(intensityMus)))
 
-!        if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent) 
-!        allocate(thisIntegrator%intensityByComponent(size(thisIntegrator%xPosition-1), &
-!                                                     size(thisIntegrator%yPosition-1), &
-!                                                     size(intensityMus),               &
-!                                                     0:size(thisIntegrator%cumulativeExt, 4)))
+        if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent) 
+        allocate(thisIntegrator%intensityByComponent(size(thisIntegrator%xPosition)-1, &
+                                                     size(thisIntegrator%yPosition)-1, &
+                                                     size(intensityMus),               &
+                                                     0:numComps))
         if(associated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
         if(thisIntegrator%recScatOrd) then 
           allocate(thisIntegrator%intensityByScatOrd(size(thisIntegrator%xPosition)-1, &
