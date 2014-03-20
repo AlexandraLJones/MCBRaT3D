@@ -382,7 +382,7 @@ contains
 !---------------------------------------------------------------------------------------------
 ! Compute number of photons emmitted from domain and surface when LW illumination is used
 !---------------------------------------------------------------------------------------------
-  subroutine emission_weighting(nx, ny, nz, numComponents, xPosition, yPosition, zPosition, lambda_u, totalPhotons, atmsPhotons, voxel_weights, col_weights, level_weights, atmsTemp, ssas, cumExt,  sfcTemp, emiss, totalFlux)
+  subroutine emission_weighting(nx, ny, nz, numComponents, xPosition, yPosition, zPosition, lambda_u, totalPhotons, atmsPhotons, voxel_weights, col_weights, level_weights, atmsTemp, ssas, cumExt, ext, sfcTemp, emiss, totalFlux)
 !Computes Planck Radiance for each surface and atmosphere pixel to determine the wieghting for the distribution of photons.
 !Written by ALexandra Jones, University of Illinois, Urbana-Champaign, Fall 2011
 ! Updated Fall 2012 to remove predetermination of number of photons emitted per column
@@ -390,7 +390,7 @@ contains
 
      integer, intent(in)                               :: nx, ny, nz, numComponents, totalPhotons
      real(8), dimension(1:nx, 1:ny, 1:nz), intent(in)     :: atmsTemp, cumExt
-     real(8), dimension(1:nx,1:ny,1:nz,1:numComponents), intent(in) :: ssas
+     real(8), dimension(1:nx,1:ny,1:nz,1:numComponents), intent(in) :: ssas, ext
      real(8), dimension(1:nz+1), intent(in)               :: zPosition
      real(8), dimension(1:ny+1), intent(in)               :: yPosition
      real(8), dimension(1:nx+1), intent(in)               :: xPosition
@@ -452,7 +452,7 @@ contains
        do iy = 1, ny
          do ix = 1, nx
            atmsPlanckRad= (a/((lambda**5.0_8)*(exp(b/atmsTemp(ix,iy,iz))-1.0_8)))/(10.0_8**6.0_8) ! the 10^-6 factor converts it from Wsr^-1m^-3 to Wm^-2sr^-1micron^-1
-           totalAbsCoef=cumExt(ix,iy,iz)*(1.0_8-sum(ssas(ix,iy,iz,:)))
+           totalAbsCoef=cumExt(ix,iy,iz)-sum(ssas(ix,iy,iz,:) * ext(ix,iy,iz,:))
 
            corr_contrib = (4.0_8*Pi* atmsPlanckRad * totalAbsCoef*dz(iz))-corr     ! [Wm^-2] 
            temp_sum = previous + corr_contrib

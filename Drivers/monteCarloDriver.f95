@@ -138,7 +138,7 @@ program monteCarloDriver
   real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
   real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
   integer              :: atms_photons, N
-  real(8), allocatable    :: cumExt(:,:,:), temps(:,:,:), ssa(:,:,:,:)
+  real(8), allocatable    :: cumExt(:,:,:), temps(:,:,:), ssa(:,:,:,:), ext(:,:,:,:)
  real(8), allocatable    :: voxel_weights(:,:,:), col_weights(:,:),level_weights(:)
  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
 
@@ -388,13 +388,13 @@ PRINT *, 'Specified variance reduction'
 !PRINT *, 'solarFlux=', solarFlux
   if(LW_flag >= 0.0)then
      allocate (voxel_weights(nX,nY,nZ),col_weights(nY,nZ), level_weights(nZ), temps(1:nX,1:nY,1:nZ), cumExt(1:nX,1:nY,1:nZ), ssa(1:nX,1:nY,1:nZ,1:numberOfComponents))
-     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, status=status)
+     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
 PRINT *, 'retrieved fields for emission weighting'
 call printStatus(status)
 !print *, 'Driver: got info Domain'
 !     call getInfo_Integrator(mcIntegrator, ssa, cumExt)
 !print *, 'Driver: got info integrator'
-     call emission_weighting(nX, nY, nZ, numberOfComponents, xPosition, yPosition, zPosition, lambda, numPhotonsPerBatch, atms_photons, voxel_weights, col_weights, level_weights, temps, ssa, cumExt, surfaceTemp, (1.0_8-surfaceAlbedo), emittedFlux) 
+     call emission_weighting(nX, nY, nZ, numberOfComponents, xPosition, yPosition, zPosition, lambda, numPhotonsPerBatch, atms_photons, voxel_weights, col_weights, level_weights, temps, ssa, cumExt, ext, surfaceTemp, (1.0_8-surfaceAlbedo), emittedFlux) 
 !    DO iz= 1,nZ
 !      DO iy= 1,nY
 !          write (10, "(I5, I5, 2X, 3E30.20 )")  iy, iz, voxel_weights(nx,iy,iz), col_weights(iy,iz), level_weights(iz)

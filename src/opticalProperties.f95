@@ -408,7 +408,7 @@ contains
   subroutine getInfo_Domain(thisDomain, numX, numY, numZ, albedo, lambda, lambdaIndex, numLambda,    &
                             xPosition, yPosition, zPosition, temps, &
                             numberOfComponents, componentNames,     &
-                            totalExt, cumExt, ssa, phaseFuncI, &
+                            totalExt, cumExt, ssa, ext, phaseFuncI, &
  			    inversePhaseFuncs, tabPhase, tabOrigPhase, status)
  
     type(domain),                    intent(in   ) :: thisDomain
@@ -420,11 +420,12 @@ contains
     integer,		optional, intent(in)	   :: numLambda
     character(len = *), &
              dimension(:), optional, intent(  out) :: componentNames
-    real(8), dimension(:,:,:,:), optional, intent(  out) :: cumExt, ssa
+    real(8), dimension(:,:,:,:), optional, intent(  out) :: cumExt, ssa, ext
     integer, dimension(:,:,:,:), optional, intent(  out) :: phaseFuncI
     type(matrix), dimension(:), optional, intent(out)  :: inversePhaseFuncs, tabPhase, tabOrigPhase
     type(ErrorMessage),              intent(inout) :: status
     
+    integer                                        :: j
     ! What can you get back from the domain? The number of cells in the arrays, 
     !   and the locations of the x, y, z, boundaries (which is one bigger). 
     ! Also the number and names of the various optical components.
@@ -471,6 +472,19 @@ contains
           call setStateToFailure(status, "getInfo_Domain: array for ssa is wrong dimensions.")
         else
 	  ssa = thisDomain%ssa
+        end if
+      endif
+      if(present(ext)) then
+        if(size(ext,1) .ne. size(thisDomain%xPosition)-1 .or. size(ext,2) .ne. size(thisDomain%yPosition)-1 .or. &
+           size(ext,3) .ne. size(thisDomain%zPosition)-1 .or. size(ext,4) .ne. size(thisDomain%components)) then
+          call setStateToFailure(status, "getInfo_Domain: array for ext is wrong dimensions.")
+        else
+          ext(:,:,:,1) = thisDomain%cumulativeExt(:,:,:,1)
+	  if (size(ext,4) .gt. 1) then
+	    forall (j=2:size(ext,4))
+		ext(:,:,:,j) = thisDomain%cumulativeExt(:,:,:,j)-thisDomain%cumulativeExt(:,:,:,j-1)
+	    end forall
+	  end if
         end if
       endif
       if(present(phaseFuncI)) then
