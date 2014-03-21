@@ -387,7 +387,7 @@ PRINT *, 'Specified variance reduction'
    !   stored in an "illumination" object.
 !PRINT *, 'solarFlux=', solarFlux
   if(LW_flag >= 0.0)then
-     allocate (voxel_weights(nX,nY,nZ),col_weights(nY,nZ), level_weights(nZ), temps(1:nX,1:nY,1:nZ), cumExt(1:nX,1:nY,1:nZ), ssa(1:nX,1:nY,1:nZ,1:numberOfComponents))
+     allocate (voxel_weights(nX,nY,nZ),col_weights(nY,nZ), level_weights(nZ), temps(1:nX,1:nY,1:nZ), cumExt(1:nX,1:nY,1:nZ), ssa(1:nX,1:nY,1:nZ,1:numberOfComponents), ext(1:nX,1:nY,1:nZ,1:numberOfComponents))
      call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
 PRINT *, 'retrieved fields for emission weighting'
 call printStatus(status)

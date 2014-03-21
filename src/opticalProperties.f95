@@ -479,10 +479,10 @@ contains
            size(ext,3) .ne. size(thisDomain%zPosition)-1 .or. size(ext,4) .ne. size(thisDomain%components)) then
           call setStateToFailure(status, "getInfo_Domain: array for ext is wrong dimensions.")
         else
-          ext(:,:,:,1) = thisDomain%cumulativeExt(:,:,:,1)
+          ext(:,:,:,1) = thisDomain%totalExt(:,:,:) * thisDomain%cumulativeExt(:,:,:,1)
 	  if (size(ext,4) .gt. 1) then
 	    forall (j=2:size(ext,4))
-		ext(:,:,:,j) = thisDomain%cumulativeExt(:,:,:,j)-thisDomain%cumulativeExt(:,:,:,j-1)
+		ext(:,:,:,j) = thisDomain%totalExt(:,:,:) * (thisDomain%cumulativeExt(:,:,:,j)-thisDomain%cumulativeExt(:,:,:,j-1))
 	    end forall
 	  end if
         end if
