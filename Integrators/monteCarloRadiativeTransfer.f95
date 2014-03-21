@@ -2495,10 +2495,10 @@ contains
 
     ssa(:,:,:,:) = thisIntegrator%ssa(:,:,:,:)
     cumExt(:,:,:) = thisIntegrator%totalExt(:,:,:)
-    ext(:,:,:,1) = thisIntegrator%cumulativeExt(:,:,:,1)
+    ext(:,:,:,1) = thisIntegrator%totalExt(:,:,:) * thisIntegrator%cumulativeExt(:,:,:,1)
     if (SIZE(thisIntegrator%cumulativeExt,4) .gt. 1)then
        forall (i=2:SIZE(thisIntegrator%cumulativeExt,4))
-	 ext(:,:,:,i)=thisIntegrator%cumulativeExt(:,:,:,i)-thisIntegrator%cumulativeExt(:,:,:,i-1)
+	 ext(:,:,:,i)=thisIntegrator%totalExt(:,:,:) * (thisIntegrator%cumulativeExt(:,:,:,i)-thisIntegrator%cumulativeExt(:,:,:,i-1))
        end forall
     end if
 
