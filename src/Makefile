@@ -4,8 +4,9 @@
 include ../Makefile
 
 all_obs = characterUtils.o ErrorMessages.o RandomNumbersForMC.o numericUtilities.o \
-      scatteringPhaseFunctions.o inversePhaseFunctions.o monteCarloIllumination.o \
-      surfaceProperties.o opticalProperties.o userInterface_Unix.o ${multipleProcCode}
+      scatteringPhaseFunctions.o inversePhaseFunctions.o \
+      surfaceProperties.o opticalProperties.o userInterface_Unix.o \
+      emissionAndBroadBandWeights.o monteCarloIllumination.o ${multipleProcCode}
 
 all: ${all_obs} 
 
@@ -25,8 +26,6 @@ userInterface_Unix.o: userInterface_Unix.f95 ErrorMessages.o ${multipleProcCode}
 
 kDistribution.o: kDistribution.f95 ErrorMessages.o 
 
-monteCarloIllumination.o: monteCarloIllumination.f95 ErrorMessages.o RandomNumbersForMC.o
-
 surfaceProperties.o: surfaceProperties.f95 ErrorMessages.o numericUtilities.o
 
 scatteringPhaseFunctions.o: scatteringPhaseFunctions.f95 ErrorMessages.o numericUtilities.o characterUtils.o
@@ -36,6 +35,13 @@ opticalProperties.o: opticalProperties.f95 scatteringPhaseFunctions.o \
                      
 inversePhaseFunctions.o: inversePhaseFunctions.f95 scatteringPhaseFunctions.o \
                          numericUtilities.o ErrorMessages.o
+
+emissionAndBroadBandWeights.o: emissionAndBroadBandWeights.f95 ErrorMessages.o \
+                               RandomNumbersForMC.o numericUtilities.o \
+                               opticalProperties.o
+
+monteCarloIllumination.o: monteCarloIllumination.f95 ErrorMessages.o RandomNumbersForMC.o \
+                          emissionAndBroadBandWeights.o
 
 clean::
 	-/bin/rm *.lst *.mod *.o

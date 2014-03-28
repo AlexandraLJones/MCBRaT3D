@@ -158,6 +158,7 @@ contains
        new_Domain%lambda       = lambda
        new_Domain%lambdaI      = lambdaI
        new_Domain%nlambda      = nlambda
+PRINT *, 'domain file lambda= ', new_Domain%nlambda, nlambda
        new_Domain%surfaceAlbedo = albedo
 
        ! Are the grids regularly spaced? Compare the distance between each pair 
@@ -405,8 +406,9 @@ contains
   !------------------------------------------------------------------------------------------
   !  Getting information back from the object
   !------------------------------------------------------------------------------------------
-  subroutine getInfo_Domain(thisDomain, numX, numY, numZ, albedo, lambda, lambdaIndex, numLambda,    &
-                            xPosition, yPosition, zPosition, temps, &
+  subroutine getInfo_Domain(thisDomain, numX, numY, numZ, albedo,   &
+                            lambda, lambdaIndex, namelistNumLambda,         &
+                            domainNumLambda, xPosition, yPosition, zPosition, temps, &
                             numberOfComponents, componentNames,     &
                             totalExt, cumExt, ssa, ext, phaseFuncI, &
  			    inversePhaseFuncs, tabPhase, tabOrigPhase, status)
@@ -417,7 +419,8 @@ contains
     real(8),    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition
     real(8), dimension(:,:,:), optional, intent( out) :: temps, totalExt
     integer,               optional, intent(  out) :: numberOfComponents
-    integer,		optional, intent(in)	   :: numLambda
+    integer,		optional, intent(in)	   :: namelistNumLambda
+    integer,            optional, intent(out)       :: domainNumLambda
     character(len = *), &
              dimension(:), optional, intent(  out) :: componentNames
     real(8), dimension(:,:,:,:), optional, intent(  out) :: cumExt, ssa, ext
@@ -436,9 +439,12 @@ contains
     if(.not. isValid(thisDomain)) then
       call setStateToFailure(status, "getInfo_Domain: domain hasn't been initialized.")
     else
-      if(present(numLambda)) then
-	if(numLambda .ne. thisDomain%nlambda) call setStateToFailure(status, "getInfo_Domain: number of wavelengths from namelist does not match number of wavelengths from domain file")
+      if(present(namelistNumLambda)) then
+	PRINT *, 'namelistNumLambda= ', namelistNumLambda, 'thisDomain%nlambda= ', thisDomain%nlambda
+	if(namelistNumLambda .ne. thisDomain%nlambda) call setStateToFailure(status, &
+		"getInfo_Domain: number of wavelengths from namelist does not match number of wavelengths from domain file")
       end if
+      if(present(domainNumLambda)) domainNumLambda = thisDomain%nlambda
       if(present(lambdaIndex)) lambdaIndex = thisDomain%lambdaI
       if(present(lambda)) lambda = thisDomain%lambda
 

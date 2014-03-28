@@ -8,7 +8,8 @@ rtObjs =  $(CodeDir)/characterUtils.o $(CodeDir)/numericUtilities.o \
           $(CodeDir)/$(multipleProcCode) $(CodeDir)/scatteringPhaseFunctions.o \
           $(CodeDir)/inversePhaseFunctions.o $(CodeDir)/opticalProperties.o \
           $(CodeDir)/RandomNumbersForMC.o $(CodeDir)/monteCarloIllumination.o \
-          $(CodeDir)/surfaceProperties.o $(IntegDir)/monteCarloRadiativeTransfer.o
+          $(CodeDir)/surfaceProperties.o $(IntegDir)/monteCarloRadiativeTransfer.o \
+          $(CodeDir)/emissionAndBroadBandWeights.o
 
 Targets = monteCarloDriver 
 

@@ -46,6 +46,7 @@ program monteCarloDriver
   use monteCarloRadiativeTransfer
   use UserInterface
   use surfaceProperties
+  use emissionAndBBWeights
 
   implicit none
  
@@ -137,10 +138,9 @@ program monteCarloDriver
   real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
   real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
   real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
-  integer              :: atms_photons, N
-  real(8), allocatable    :: cumExt(:,:,:), temps(:,:,:), ssa(:,:,:,:), ext(:,:,:,:)
- real(8), allocatable    :: voxel_weights(:,:,:), col_weights(:,:),level_weights(:)
- integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
+  integer              ::  N, atms_photons
+  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
+  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
 
    ! I3RC Monte Carlo code derived type variables
   type(domain)               :: thisDomain
@@ -149,6 +149,7 @@ program monteCarloDriver
   type(randomNumberSequence) :: randoms
   type(photonStream)         :: incomingPhotons
   type(integrator)           :: mcIntegrator
+  type(Weights)              :: theseWeights
 
   ! Variables related to splitting up the job across processors
   integer            :: thisProc            ! ID OF CURRENT PROCESSOR; default 0
@@ -240,12 +241,13 @@ program monteCarloDriver
   !  Read the domain file
   !
   allocate(BBDomain(numLambda))
+PRINT *, 'namelist numLambda= ', numLambda
 !!!!!!!!!! Open list of domain files, then loop over reading them into BBDomain
   open(unit=22, file=TRIM(domainFileList), status='UNKNOWN')
 ! first we need to get the dimensions needed to allocate position arrays
   read(22,'(1A)') domainFileName
   call read_Domain(domainFileName, thisDomain, status)
-  call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, numLambda=numLambda, status = status)
+  call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
   REWIND(22)
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
 
@@ -387,30 +389,40 @@ PRINT *, 'Specified variance reduction'
    !   stored in an "illumination" object.
 !PRINT *, 'solarFlux=', solarFlux
   if(LW_flag >= 0.0)then
-     allocate (voxel_weights(nX,nY,nZ),col_weights(nY,nZ), level_weights(nZ), temps(1:nX,1:nY,1:nZ), cumExt(1:nX,1:nY,1:nZ), ssa(1:nX,1:nY,1:nZ,1:numberOfComponents), ext(1:nX,1:nY,1:nZ,1:numberOfComponents))
-     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
-PRINT *, 'retrieved fields for emission weighting'
+     theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=numLambda, status=status)
+PRINT *, 'initialized weights'
 call printStatus(status)
-!print *, 'Driver: got info Domain'
-!     call getInfo_Integrator(mcIntegrator, ssa, cumExt)
-!print *, 'Driver: got info integrator'
-     call emission_weighting(nX, nY, nZ, numberOfComponents, xPosition, yPosition, zPosition, lambda, numPhotonsPerBatch, atms_photons, voxel_weights, col_weights, level_weights, temps, ssa, cumExt, ext, surfaceTemp, (1.0_8-surfaceAlbedo), emittedFlux) 
+     allocate (voxel_weights(nX,nY,nZ,numLambda),col_weights(nY,nZ,numLambda), level_weights(nZ,numLambda))
+!     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
+!PRINT *, 'retrieved fields for emission weighting'
+!call printStatus(status)
+
+     call emission_weighting(thisDomain, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons,voxel_weights, col_weights=col_weights, level_weights=level_weights, totalFlux=emittedFlux, status=status) 
+PRINT *, 'returned from emission_weighting'
 !    DO iz= 1,nZ
 !      DO iy= 1,nY
-!          write (10, "(I5, I5, 2X, 3E30.20 )")  iy, iz, voxel_weights(nx,iy,iz), col_weights(iy,iz), level_weights(iz)
+!	DO ix=1,nz
+!          PRINT*,   voxel_weights(ix,iy,iz,:)
+!	END DO
+!	PRINT *,  col_weights(iy,iz,:)
 !      END DO
+!      PRINT *, level_weights(iz,:)
 !    END DO
      solarFlux=emittedFlux
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
 PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
+call printStatus(status)
 !PRINT *, 'Driver: calculated emission weighting'
-     incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights, level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
+     incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1), level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 PRINT *, 'initialized LW photon stream'
 call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
   else
+     theseWeights=new_Weights(numLambda=numLambda, status=status)
+PRINT *, 'initialized weights'
+call printStatus(status)
      incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
                                       numberOfPhotons = 1,   &
                                       randomNumbers = randoms, status=status)
@@ -464,8 +476,8 @@ STOP
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
     if(LW_flag >= 0.0)then
-       incomingPhotons = new_PhotonStream (numberOfPhotons=numPhotonsPerBatch, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights,&
-level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status, option1=voxel_tallys1)  
+       incomingPhotons = new_PhotonStream (numberOfPhotons=numPhotonsPerBatch, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1),&
+level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status, option1=voxel_tallys1)  
 !DO phtn=1,numPhotonsPerBatch
 !   PRINT *, incomingPhotons%xPosition(phtn), incomingPhotons%yPosition(phtn), incomingPhotons%zPosition(phtn)
 !ENDDO      
