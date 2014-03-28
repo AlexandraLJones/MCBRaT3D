@@ -12,9 +12,8 @@ module emissionAndBBWeights
   type weights
     private
     real(8)                                  :: spectrIntgrFlux = 0.0_8
-    real(8)                                  :: spectrIntgrFractAtmsPower = 0.0_8
-    real(8), dimension(:), pointer            :: atmsPowerCDF  => null()
-    real(8), dimension(:), pointer            :: sfcPowerCDF  => null()
+    real(8), dimension(:), pointer            :: fracAtmsPower  => null()
+    real(8), dimension(:), pointer            :: totalPowerCDF  => null()
 
     real(8), dimension(:,:), pointer          :: levelWeights => null()
     real(8), dimension(:,:,:), pointer        :: colWeights => null()
@@ -39,9 +38,9 @@ module emissionAndBBWeights
     type(ErrorMessage), intent(inout) :: status
     type(Weights)                      :: theseWeights
 
-    allocate(theseWeights%atmsPowerCDF(1:numLambda), theseWeights%sfcPowerCDF(1:numLambda))
-    theseWeights%atmsPowerCDF = 0.0_8
-    theseWeights%sfcPowerCDF  = 0.0_8
+    allocate(theseWeights%fracAtmsPower(1:numLambda), theseWeights%totalPowerCDF(1:numLambda))
+    theseWeights%fracAtmsPower = 0.0_8
+    theseWeights%totalPowerCDF  = 0.0_8
 
     if(present(numX) .or. present(numY) .or. present(numZ))then
       if(present(numX) .and. present(numY) .and. present(numZ))then
@@ -75,7 +74,7 @@ module emissionAndBBWeights
      !Local variables
      integer                                           :: ix, iy, iz, ilambda, nx, ny, nz, nlambda, nComps !, last
      real(8)                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda, lambda_u, albedo, emiss
-     real(8)                                          :: previous, corr_contrib,corr,temp_sum, prev_exact
+     real(8)                                          :: previous, corr_contrib,corr,temp_sum, prev_exact, tempPower
      real(8), allocatable, dimension(:)                             :: dx, dy, dz
      real(8), allocatable, dimension(:)                             :: xPosition, yPosition, zPosition
      real(8), allocatable, dimension(:,:,:)                         :: cumExt, atmsTemp
@@ -106,6 +105,8 @@ module emissionAndBBWeights
      dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
      dx(1:nx)=xPosition(2:nx+1)-xPosition(1:nx)
 
+     tempPower = 0.0_8
+     
      DO ilambda = 1, nlambda
         call getInfo_Domain(thisDomain, lambda=lambda_u, lambdaIndex=ilambda, &
                             albedo=albedo, ssa=ssas, ext=ext, totalExt=cumExt, status=status)
@@ -118,13 +119,13 @@ module emissionAndBBWeights
 
 !first compute atms planck radiances then combine algorithms from mcarWld_fMC_srcDist and mcarWld_fMC_srcProf to determine the  weights of each voxel taking into consideration the ones that would be emitted from the surface instead.
      if (emiss .eq. 0.0_8 .or. sfcTemp .eq. 0.0_8)then
-        theseWeights%sfcPowerCDF(ilambda)=0.0_8
+        sfcPower=0.0_8
      else
         sfcPlanckRad=(a/((lambda**5.0_8)*(exp(b/sfcTemp)-1.0_8)))/(10.0_8**6.0_8)
-        theseWeights%sfcPowerCDF(ilambda)= Pi*emiss*sfcPlanckRad*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)     ! [W] factor of 1000^2 needed to convert area from km to m
+        sfcPower = Pi*emiss*sfcPlanckRad*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)     ! [W] factor of 1000^2 needed to convert area from km to m
      end if
 
-     theseWeights%atmsPowerCDF(ilambda)=0.0_8
+     atmsPower = 0.0_8
      previous=0.0_8
      corr_contrib=0.0_8
      temp_sum=0.0_8
@@ -155,7 +156,7 @@ module emissionAndBBWeights
      end do     ! k loop
     end if
           if (theseWeights%voxelWeights(nx,ny,nz,ilambda) .gt. 0.0_8) then
-               theseWeights%atmsPowerCDF(ilambda) = theseWeights%voxelWeights(nx,ny,nz,ilambda)*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)/dble(nx*ny)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
+               atmsPower = theseWeights%voxelWeights(nx,ny,nz,ilambda)*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)/dble(nx*ny)  ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and dy from km to m
                theseWeights%voxelWeights(:,:,:,ilambda)=theseWeights%voxelWeights(:,:,:,ilambda)/theseWeights%voxelWeights(nx,ny,nz,ilambda)     ! normalized
 !               do iz = 1, nz
 !                  do iy = 1, ny
@@ -171,35 +172,30 @@ module emissionAndBBWeights
                theseWeights%voxelWeights(nx,ny,nz,ilambda)=1.0_8     ! need this to be 1 for algorithm used to select emitting voxel
 !               col_weights(ny,nz)=1.0_8                              I THINK I DON'T NEED THESE
 !               level_weights(nz)=1.0_8                               LINES B/C OF POINTERS
+		theseWeights%fracAtmsPower(ilambda) = atmsPower/(atmsPower + sfcPower)
           end if
-
+	  theseWeights%totalPowerCDF(ilambda) = tempPower + atmsPower + sfcPower
+	  tempPower = theseWeights%totalPowerCDF(ilambda)
 !PRINT *, 'level_weights= ', level_weights, 'col_weights= ', col_weights
      END DO
-
+    
      voxel_weights = theseWeights%voxelWeights
      col_weights = theseWeights%colWeights
      level_weights = theseWeights%levelWeights
 
-     atmsPower=SUM(theseWeights%atmsPowerCDF)
-     sfcPower=SUM(theseWeights%sfcPowerCDF)
-     totalPower=atmsPower + sfcPower
-     if (totalPower .eq. 0.0_8)then
+     if (theseWeights%totalPowerCDF(nlambda) .eq. 0.0_8)then
         CALL setStateToFailure(status, 'emission_weighting: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
-     end if
-     totalFlux=totalPower/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
-     theseWeights%spectrIntgrFlux = totalFlux     
+     else
+       totalFlux=theseWeights%totalPowerCDF(nlambda)/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
+       theseWeights%spectrIntgrFlux = totalFlux     
 
 !PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1)), &
 !         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny), ' expected radiance=', atmsPlanckRad*(1.0_8-exp(-1.0_8*totalAbsCoef*(zPosition(nz+1)-zPosition(1))))
-     if (atmsPower .eq. 0.0_8)then
-         atmsPhotons=0
-     else
-        theseWeights%spectrIntgrFractAtmsPower = atmsPower / totalPower
-!	PRINT *, theseWeights%spectrIntgrFractAtmsPower, atmsPower, totalPower
-!	PRINT *, theseWeights%spectrIntgrFlux
-!	PRINT *, theseWeights%atmsPowerCDF
-!	PRINT *, theseWeights%sfcPowerCDF
-        atmsPhotons=ceiling(totalPhotons * theseWeights%spectrIntgrFractAtmsPower)
+
+       atmsPhotons=ceiling(SUM(totalPhotons * theseWeights%fracAtmsPower(:)))
+       theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(nlambda)
+PRINT *, theseWeights%fracAtmsPower
+PRINT *, theseWeights%totalPowerCDF
      end if
    end subroutine emission_weighting
 
