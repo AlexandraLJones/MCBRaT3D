@@ -28,7 +28,7 @@ module emissionAndBBWeights
 
   public :: weights
 
-  public :: new_Weights, emission_weighting!, getInfo_weights, xxxxx
+  public :: new_Weights, emission_weighting, getFrequencyDistr, getInfo_weights !, xxxxx
 
   contains
 
@@ -54,6 +54,60 @@ module emissionAndBBWeights
     end if
    end function new_Weights
 
+   subroutine getInfo_Weights(theseWeights, iLambda, numX, numY, numZ, fracAtmsPower, levelWeights, colWeights, voxelWeights, status)
+     implicit none
+
+     type(Weights), intent(in)                           :: theseWeights
+     integer, optional, intent(in)                       :: iLambda
+     integer, optional, intent(out)                      :: numX, numY, numZ
+     real(8), optional, intent(out)                      :: fracAtmsPower
+     real(8), optional, dimension(:),intent(out)         :: levelWeights
+     real(8), optional, dimension(:,:),intent(out)       :: colWeights
+     real(8), optional, dimension(:,:,:),intent(out)     :: voxelWeights
+     type(ErrorMessage), intent(inout)                   :: status
+
+     if(present(numX)) numX = size(theseWeights%voxelWeights,1)
+     if(present(numY)) numY = size(theseWeights%voxelWeights,2)
+     if(present(numZ)) numZ = size(theseWeights%voxelWeights,2)
+
+     if(present(fracAtmsPower))then
+	if(present(iLambda))then
+	  fracAtmsPower = theseWeights%fracAtmsPower(iLambda)
+	else
+	  call setStateToFailure(status, "getInfo_Weights: need to specify iLambda for fracAtmsPower.")
+	end if
+     end if
+
+     if (present(levelWeights) .and. present(iLambda))then
+	if(size(levelWeights) .ne. size(theseWeights%voxelWeights,1)) then
+	  call setStateToFailure(status, "getInfo_Weights: array for levelWeights is wrong dimensions.")
+	else
+	  levelWeights = theseWeights%levelWeights(:,ilambda)
+	end if
+     else
+	call setStateToFailure(status, "getInfo_Weights: must supply iLambda for levelWeights.")
+     end if
+     if (present(colWeights) .and. present(iLambda))then
+        if(size(colWeights,1) .ne. size(theseWeights%voxelWeights,1) .or. size(colWeights,2) .ne. size(theseWeights%voxelWeights,2)) then
+          call setStateToFailure(status, "getInfo_Weights: array for colWeights is wrong dimensions.")
+        else
+          colWeights = theseWeights%colWeights(:,:,iLambda)
+        end if
+     else
+	call setStateToFailure(status, "getInfo_Weights: must supply iLambda for colWeights.")
+     end if
+     if (present(voxelWeights) .and. present(iLambda))then
+        if(size(voxelWeights,1) .ne. size(theseWeights%voxelWeights,1) .or. size(voxelWeights,2) .ne. size(theseWeights%voxelWeights,2) .or. size(voxelWeights,3) .ne. size(theseWeights%voxelWeights,3)) then
+          call setStateToFailure(status, "getInfo_Weights: array for voxelWeights is wrong dimensions.")
+        else
+          voxelWeights = theseWeights%voxelWeights(:,:,:,iLambda)
+        end if
+     else
+	call setStateToFailure(status, "getInfo_Weights: must supply iLambda for voxelWeights.")
+     end if
+
+   end subroutine getInfo_Weights
+!---------------------------------------------------------------------------------------------------
    subroutine emission_weighting(thisDomain, theseWeights, sfcTemp, totalPhotons, atmsPhotons, voxel_weights, col_weights, level_weights, totalFlux, status)
 !Computes Planck Radiance for each surface and atmosphere pixel to determine the wieghting for the distribution of photons.
 !Written by ALexandra Jones, University of Illinois, Urbana-Champaign, Fall 2011
@@ -198,5 +252,30 @@ PRINT *, theseWeights%fracAtmsPower
 PRINT *, theseWeights%totalPowerCDF
      end if
    end subroutine emission_weighting
+
+   subroutine getFrequencyDistr(theseWeights, totalPhotons, randomNumbers, distribution)
+     implicit none
+
+     type(Weights), intent(in)                     :: theseWeights
+     integer, intent(in)                           :: totalPhotons
+     type(randomNumberSequence), intent(inout)     :: randomNumbers
+     integer, allocatable, dimension(:), intent(out)            :: distribution
+
+     integer                                       :: numLambda, i, n
+     real                                          :: RN
+
+
+     numLambda = size(theseWeights%totalPowerCDF)
+     allocate(distribution(1:numLambda))
+     distribution = 0.0_8
+
+     DO n = 1, totalPhotons
+	RN = getRandomReal(randomNumbers)
+	i = findCDFIndex(RN, theseWeights%totalPowerCDF)
+	distribution(i) = distribution(i)+1
+     END DO
+   end subroutine getFrequencyDistr
+
+
 
 end module emissionAndBBWeights

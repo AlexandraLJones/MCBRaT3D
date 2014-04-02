@@ -16,7 +16,7 @@ module numericUtilities
   end interface
 
   public :: computeLobattoTerms, computeGaussLegendreTerms, &
-            computeLegendrePolynomials, findIndex
+            computeLegendrePolynomials, findIndex, findCDFIndex
 
 contains
   !------------------------------------------------------------------------------------------
@@ -309,7 +309,39 @@ contains
 
     findIndexMixed = lowerBound
   end function findIndexMixed
+  !-----------------------------------------------------------------------------------------
+  pure function findCDFIndex(value, table)
+    real,               intent( in) :: value
+    real(8), dimension(:), intent( in) :: table
+    integer                         :: findCDFIndex
+    !
+    ! Find the index i into the table such that table(i-1) < value <= table(i)
+    !   This is modeled after routine "hunt" from Numerical Recipes, 2nd ed.,
+    !   pg 112. Here we know that the values in the table are always increasing,
+    !   that every value should be spanned by the table entries, and the firstGuess
+    !   always makes sense.
 
+    ! Local variables
+    integer :: lowerBound, upperBound, midPoint
+    integer :: increment
+
+    lowerBound = 0
+    upperBound = size(table)
+
+    ! Bisection: figure out which half of the interval holds the
+    !   desired value, discard the other half, and repeat
+    bisectionLoop: do
+      if(lowerBound .eq. size(table) .or. upperBound .le. lowerBound+1 ) exit bisectionLoop
+      midPoint = (lowerBound + upperBound)/2
+      if(value > table(midPoint)) then
+        lowerBound = midPoint
+      else
+        upperBound = midPoint
+      end if
+    end do bisectionLoop
+
+    findCDFIndex = upperBound
+  end function findCDFIndex
   !------------------------------------------------------------------------------------------
   pure function findIndexReal(value, table, firstGuess)
     real,               intent( in) :: value

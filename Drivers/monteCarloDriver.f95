@@ -140,7 +140,7 @@ program monteCarloDriver
   real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
   integer              ::  N, atms_photons
   real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
-  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
+  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:), freqDistr(:)
 
    ! I3RC Monte Carlo code derived type variables
   type(domain)               :: thisDomain
@@ -148,6 +148,7 @@ program monteCarloDriver
   type(ErrorMessage)         :: status
   type(randomNumberSequence) :: randoms
   type(photonStream)         :: incomingPhotons
+  type(photonStream), allocatable, dimension(:) :: incomingBBPhotons
   type(integrator)           :: mcIntegrator
   type(Weights)              :: theseWeights
 
@@ -165,7 +166,7 @@ program monteCarloDriver
 
 ! temporary output file for the purposes of debugging
 !  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
-!  write(photon_file, '(A,I0.4)') "photon.out.",thisProc
+  write(photon_file, '(A,I0.4)') "photon.out.",thisProc
 !  write(col_file, '(A,I0.4)') "col.out.",thisProc
 !  write(row_file, '(A,I0.4)') "row.out.",thisProc
 !  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
@@ -351,7 +352,7 @@ PRINT *, 'Specified variance reduction'
   allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 2))
   allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 2))
   allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 2))
-!  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
+  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
 !  voxel_tallys2(:,:,:)=0 ; voxel_tallys2_sum(:,:,:) = 0 ; voxel_tallys2_total(:,:,:) = 0
   meanFluxUpStats(:) = 0.0  ; meanFluxDownStats(:) = 0.0  ; meanFluxAbsorbedStats(:) = 0.0
   fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
@@ -384,7 +385,7 @@ PRINT *, 'Specified variance reduction'
 
   ! Seed the random number generator.
   randoms = new_RandomNumberSequence(seed = (/ iseed, 0 /) )
-
+  allocate (freqDistr(1:numLambda), incomingBBPhotons(1:numLambda))
    ! The initial direction and position of the photons are precomputed and 
    !   stored in an "illumination" object.
 !PRINT *, 'solarFlux=', solarFlux
@@ -414,6 +415,21 @@ PRINT *, 'returned from emission_weighting'
 PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 call printStatus(status)
 !PRINT *, 'Driver: calculated emission weighting'
+     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms, freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
+PRINT*, freqDistr
+     DO i = 1, numLambda
+        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms, status=status, option1=voxel_tallys1)
+	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
+     END DO
+PRINT *, 'initialized BB phtoon stream'
+call printStatus(status)
+    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
+    DO k = 1, nZ
+      DO j = 1, nY
+        write(12,"(3I12)") voxel_tallys1_sum(:,j,k)
+      end do
+    end do
+    close(12)
      incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1), level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 PRINT *, 'initialized LW photon stream'
@@ -423,16 +439,19 @@ call printStatus(status)
      theseWeights=new_Weights(numLambda=numLambda, status=status)
 PRINT *, 'initialized weights'
 call printStatus(status)
-     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
-                                      numberOfPhotons = 1,   &
+     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms, freqDistr)
+     DO i = 1, numLambda
+       incomingBBPhotons(i) = new_PhotonStream (solarMu, solarAzimuth, &
+                                      numberOfPhotons = freqDistr(i),   &
                                       randomNumbers = randoms, status=status)
+     END DO
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 PRINT *, 'initialized SW photon stream'
 call printStatus(status)
   end if
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
 !  call finalize_Domain(thisDomain)
-
+STOP
 
   ! Now we compute the radiative transfer for a single photon 
   if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'

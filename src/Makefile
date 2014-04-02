@@ -41,7 +41,7 @@ emissionAndBroadBandWeights.o: emissionAndBroadBandWeights.f95 ErrorMessages.o \
                                opticalProperties.o
 
 monteCarloIllumination.o: monteCarloIllumination.f95 ErrorMessages.o RandomNumbersForMC.o \
-                          emissionAndBroadBandWeights.o
+                          numericUtilities.o emissionAndBroadBandWeights.o
 
 clean::
 	-/bin/rm *.lst *.mod *.o
