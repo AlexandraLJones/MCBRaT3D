@@ -17,15 +17,21 @@ rtObjs =  $(CodeDir)/characterUtils.o $(CodeDir)/numericUtilities.o \
           $(CodeDir)/surfaceProperties.o $(IntegDir)/monteCarloRadiativeTransfer.o
  
 
-Targets = MODISreToDomain
+Targets = MODISreToDomain write_lambertianSFC
 
 all: $(Targets)
 
 MODISreToDomain: MODISreToDomain.o $(rtObjs)
 MODISreToDomain.o: MODISreToDomain.f95 $(rtObjs)
 
+#write_lambertianSFC: write_lambertianSFC.o $(CodeDir)/ErrorMessages.o $(CodeDir)/userInterface_Unix.o  $(CodeDir)/surfaceProperties.o $(CodeDir)/numericUtilities.o
+#write_lambertianSFC.o: write_lambertianSFC.f95 $(CodeDir)/ErrorMessages.o $(CodeDir)/userInterface_Unix.o  $(CodeDir)/surfaceProperties.o $(CodeDir)/numericUtilities.o
+write_lambertianSFC: write_lambertianSFC.o $(rtObjs)
+write_lambertianSFC.o: write_lambertianSFC.f95 $(rtObjs)
+
 test: all
 	./MODISreToDomain
+	./write_lambertianSFC
 
 clean::
 	/bin/rm *.lst *.o $(Targets)

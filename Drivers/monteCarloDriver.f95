@@ -53,7 +53,7 @@ program monteCarloDriver
 
   ! Input parameters
   !   Radiative transfer 
-  real(8)                 :: solarFlux = 1., surfaceAlbedo = 0.
+  real(8)                 :: solarFlux = 1.
   real                 :: solarMu = 1., solarAzimuth = 0.,  LW_flag = -1. 
   real(8)                 :: lambda = 6.0, surfaceTemp = 300.0       ! added by Alexandra Jones Fall 2011. lambda in microns and surface temp in K
   integer, parameter   :: maxNumRad = 648 !18mus*36phis , oldVal:72
@@ -76,12 +76,17 @@ program monteCarloDriver
   real                 :: zetaMin = 0.3 
   logical              :: limitIntensityContributions = .false.
   real                 :: maxIntensityContribution    = 77.
-  
+ 
+  ! surface description related variables
+  real(8) :: surfaceAlbedo = 0.
+  logical :: homogenousSurface = .true.
+ 
   ! Control over output
   logical              :: reportVolumeAbsorption = .false., &
                           reportAbsorptionProfile = .false. 
   
   ! File names
+  character(len=256)   :: surfaceFileName = ""
   character(len=256)   :: domainFileName = ""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
@@ -96,7 +101,8 @@ program monteCarloDriver
   character(len=256)   :: auxhist01_fluxFile=""
 
   namelist /radiativeTransfer/ solarFlux, solarMu, solarAzimuth, surfaceAlbedo, surfaceTemp, &
-                               intensityMus, intensityPhis, angleFill, thetaFill, phiFill, LW_flag, lambda
+                               intensityMus, intensityPhis, angleFill, thetaFill, phiFill,   &
+                               LW_flag, lambda, homogenousSurface
   
   namelist /monteCarlo/        numPhotonsPerBatch, numBatches, iseed, nPhaseIntervals
   
@@ -110,7 +116,7 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         domainFileName, &
+  namelist /fileNames/         domainFileName, surfaceFileName,  &
                                outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
   
@@ -119,6 +125,7 @@ program monteCarloDriver
   character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
   integer              :: nX, nY, nZ, phtn
   integer              :: i, j, k, batch, ix, iy, iz
+  integer              :: nsfcX, nsfcY
   integer              :: numRadDir
   integer              :: numberOfComponents
   logical              :: computeIntensity
@@ -127,6 +134,7 @@ program monteCarloDriver
   real(8)                 :: emittedFlux
   real                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:)
+  real(8), allocatable    :: surfaceX(:), surfaceY(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :)
   real, allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :)
   real, allocatable    :: absorbedProfile(:), absorbedProfileStats(:, :)
@@ -148,7 +156,7 @@ program monteCarloDriver
   type(randomNumberSequence) :: randoms
   type(photonStream)         :: incomingPhotons
   type(integrator)           :: mcIntegrator
-
+  type(surfaceDescription)   :: surface
   ! Variables related to splitting up the job across processors
   integer            :: thisProc            ! ID OF CURRENT PROCESSOR; default 0
   integer            :: numProcs            ! TOTAL NUMBER OF PROCESSORS USED; default 1
@@ -258,9 +266,49 @@ program monteCarloDriver
   call printStatus(status)
   !call finalize_Domain(thisDomain)
 
+  !Read in surface object, if necessary. Then assign correct
+  ! parameters to integrator object
+    !Set surface as heterogenous if file is provided
+  if (len_trim(surfaceFileName)>0) homogenousSurface=.false.
+   ! if surface is homogenous, assign value
+  if(homogenousSurface) then
+  PRINT *, "Specifying homogeous lambertian surface"
+    call specifyParameters(mcIntegrator,                &
+                           surfaceAlbedo=surfaceAlbedo, &
+                           status=status)
+  else !heterogenous surface
+    !fail if set to heterogenous but file was not provided
+    if(.not.len_trim(surfacefileName)>0) then
+      call setStateToFailure(status, "Namelist: homogenousSurface set to false but no surface file provided")
+      PRINT *, "Namelit Error: Error defining surface properties. homogenousSurface set to false but no surface file provided"
+    else
+      PRINT *, "Reading surface description from file "//trim(surfaceFileName)
+      call read_SurfaceDescription(surfaceFileName, surface, status)
+      call printStatus(status)
+      call getInfo_SurfaceDescription(surface,                &
+                                      numX=nsfcX, numY=nsfcY, &
+                                      status=status)
+      allocate(surfaceX(nsfcX+1), surfaceY(nsfcY+1))
+      call getInfo_SurfaceDescription(surface,                                &
+                                      xPosition=surfaceX, yPosition=surfaceY, &
+                                      status=status)
+
+      !cause warning if the domain and surface do not align
+      if((nx==nsfcX.and.any(xPosition.ne.surfaceX) .or.nx.ne.nsfcX )  .or. &
+         (ny==nsfcY.and.any(yPosition.ne.surfaceY) .or.ny.ne.nsfcY ))      then
+         call setStateToWarning(status, "Warning: Domain and surface grids do not allign. Both are periodic, but independent")
+         PRINT *, "Warning!: Domain and surface grids have different dimensions. Is this on purpose?"
+      end if
+      deallocate(surfaceX, surfaceY)
+      call printStatus(status)
+      call finalize_surfaceDescription(surface)
+    end if
+  end if
+  if(.not. stateIsFailure(status)) &
+    PRINT *, "Successfully defined surface"
+
    ! Set the surface albedo, table sizes, and maybe the radiance directions
   call specifyParameters (mcIntegrator,                          &
-                          surfaceAlbedo = surfaceAlbedo,         &
                           minInverseTableSize = nPhaseIntervals, &
                           LW_flag = LW_flag,                     &
                           status = status)
@@ -626,7 +674,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
                               useRayTracing, useRussianRoulette,                    &
                               useHybridPhaseFunsForIntenCalcs, hybridPhaseFunWidth, &
                               solarFlux, solarMu, solarAzimuth, surfaceAlbedo,      &
-                              xPosition, yPosition, zPosition,                      &
+                              surfaceFileName, xPosition, yPosition, zPosition,     &
                               outputFluxFile, meanFluxUpStats, meanFluxDownStats,   &
                               meanFluxAbsorbedStats,                                &
                               fluxUpStats, fluxDownStats, fluxAbsorbedStats,        &
@@ -640,7 +688,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
       if(computeIntensity .and. .not. recScatOrd) then 
         call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
                                  solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
+                                 surfaceFileName, xPosition, yPosition, zPosition,&
                                  outputNetcdfFile,                                &
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats,       &
@@ -648,7 +696,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
       elseif(computeIntensity .and. recScatOrd) then
         call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
                                  solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
+                                 surfaceFileName, xPosition, yPosition, zPosition,  &
                                  outputNetcdfFile,                                &
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats,       &
@@ -659,7 +707,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
       elseif(.not. computeIntensity .and. recScatOrd) then
         call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
                                  solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
+                                 surfaceFileName, xPosition, yPosition, zPosition, &
                                  outputNetcdfFile,                                &
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats,       &
@@ -669,7 +717,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
       else
         call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
                                  solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
+                                 surfaceFileName, xPosition, yPosition, zPosition,&
                                  outputNetcdfFile,                                &
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats)
@@ -698,7 +746,7 @@ contains
                           useRayTracing, useRussianRoulette,                    &
                           useHybridPhaseFunsForIntenCalcs, hybridPhaseFunWidth, &
                           solarFlux, solarMu, solarAzimuth, surfaceAlbedo,      &
-                          xPosition, yPosition, zPosition,                      &
+                          surfaceFileName, xPosition, yPosition, zPosition,     &
                           outputFluxFile, meanFluxUpStats, meanFluxDownStats,   &
                           meanFluxAbsorbedStats,                                &
                           fluxUpStats, fluxDownStats, fluxAbsorbedStats,        &
@@ -715,8 +763,9 @@ contains
     logical,            intent(in) :: useRayTracing, useRussianRoulette, useHybridPhaseFunsForIntenCalcs
     real,               intent(in) :: hybridPhaseFunWidth
     real,               intent(in) ::  solarMu, solarAzimuth
-    real(8),    intent(in) :: solarFlux,surfaceAlbedo
+    real(8),    intent(in) :: solarFlux,  surfaceAlbedo
     real(8), dimension(:), intent(in) :: xPosition, yPosition, zPosition
+    character(len = *),       intent(in) :: surfaceFileName
     ! Flux variables
     character(len = *),       intent(in) :: outputFluxFile
     real, dimension(:),       intent(in) :: meanFluxUpStats, meanFluxDownStats, meanFluxAbsorbedStats
@@ -754,7 +803,11 @@ contains
                                 '   Gaussian_Phase_Func_Width_deg=',hybridPhaseFunWidth
       write (2,'(A,E13.6,A,F10.7,A,F7.3)') '!  Solar_Flux=', SolarFlux, &
                           '   Solar_Mu=', SolarMu, '   Solar_Phi=', SolarAzimuth
-      write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      if(homogenousSurface) then
+        write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      else
+	write (2, '(A)') '!  Surface Description file= '//trim(surfaceFileName)
+      end if
       write (2,'(A)')  '!  Output_Type= Pixel Flux'
       write (2,'(A,F7.3,A,F7.3)') '!  Upwelling_Level=', zPosition(nZ+1), &
                                   '   Downwelling_level=', zPosition(1)
@@ -787,7 +840,11 @@ contains
                                 '   Gaussian_Phase_Func_Width_deg=',hybridPhaseFunWidth
       write (2,'(A,E13.6,A,F10.7,A,F7.3)') '!  Solar_Flux=', SolarFlux, &
                           '   Solar_Mu=', SolarMu, '   Solar_Phi=', SolarAzimuth
-      write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      if(homogenousSurface) then
+        write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      else
+        write (2,'(A)') '!  Surface Description file= '//trim(surfaceFileName)
+      end if
       write (2,'(A)')  '!  Output_Type= Absorption Profile'
       write (2,'(A)') '!   Z    Absorbed_Flux (flux/km) '
       write (2,'(A)') '!          Mean     StdErr '
@@ -812,7 +869,11 @@ contains
                                 '   Gaussian_Phase_Func_Width_deg=',hybridPhaseFunWidth
       write (2,'(A,E13.6,A,F10.7,A,F7.3)') '!  Solar_Flux=', SolarFlux, &
                           '   Solar_Mu=', SolarMu, '   Solar_Phi=', SolarAzimuth
-      write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      if(homogenousSurface) then
+        write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      else
+        write (2,'(A)') '!  Surface Description file= '//trim(surfaceFileName)
+      end if
       write (2,'(A)')  '!  Output_Type= Volume Absorption '
       write (2,'(A)') '!    X       Y        Z       Absorbed_Flux (flux/km)'
       write (2,'(A)') '!                               Mean     StdErr '
@@ -847,7 +908,11 @@ contains
                                 '   max_intensity_contribution=',maxIntensityContribution
       write (2,'(A,E13.6,A,F10.7,A,F7.3)') '!  Solar_Flux=', SolarFlux, &
                         '   Solar_Mu=', SolarMu, '   Solar_Phi=', SolarAzimuth
-      write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      if(homogenousSurface) then
+        write (2,'(A,F7.4)') '!  Lambertian_Surface_Albedo=',surfaceAlbedo
+      else
+        write (2,'(A)') '!  Surface Description file= '//trim(surfaceFileName)
+      end if
       write (2,'(A)')  '!  Output_Type= Pixel Radiance'
       write (2,'(A,F7.3,3(A,I4))') '!  RADIANCE AT Z=',  zPosition(nZ+1), &
               '   NXO=',nX, '   NYO=',nY, '   NDIR=',numRadDir
@@ -870,7 +935,7 @@ contains
 ! -------------------------------------------------------------------------------
   subroutine writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
                                  solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
+                                 surfaceFileName, xPosition, yPosition, zPosition,&
                                  outputFileName,                                  &
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats,       &
@@ -890,6 +955,7 @@ contains
     integer,            intent(in) :: numPhotonsPerBatch, numBatches
     real,               intent(in) ::  solarMu, solarAzimuth
     real(8),               intent(in) :: solarFlux, surfaceAlbedo
+    character(len = *), intent(in) :: surfaceFileName
     ! The position variables mark the edges of the cells - we'll report the 
     !   results at the midpoints. 
     real(8), dimension(:), intent(in) :: xPosition, yPosition, zPosition
@@ -934,53 +1000,60 @@ contains
     ncStatus( 5) = nf90_put_att(ncFileId, NF90_Global, "description", &
                                                        "Output from I3RC Community Monte Carlo Model")
     ncStatus( 6) = nf90_put_att(ncFileId, NF90_Global, "Domain_filename", trim(domainFileName))
-    ncStatus( 7) = nf90_put_att(ncFileId, NF90_Global, "Surface_albedo", surfaceAlbedo)
-    ncStatus( 8) = nf90_put_att(ncFileId, NF90_Global, "Total_number_of_photons", &
-                                                       INT(numPhotonsPerBatch * numBatches, KIND=8))
-    ncStatus( 9) = nf90_put_att(ncFileId, NF90_Global, "Number_of_batches", numBatches)
-    ncStatus(10) = nf90_put_att(ncFileId, NF90_Global, "Solar_flux", SolarFlux)
-    ncStatus(11) = nf90_put_att(ncFileId, NF90_Global, "Solar_mu", SolarMu)
-    ncStatus(12) = nf90_put_att(ncFileId, NF90_Global, "Solar_phi", SolarAzimuth)
+    if( homogenousSurface) then
+      ncStatus( 7) = nf90_put_att(ncFileId, NF90_Global, "Homogenous_surface", 1)
+      ncStatus( 8) = nf90_put_att(ncFileId, NF90_Global, "Surface_albedo", surfaceAlbedo)
+    else
+      ncStatus( 7) = nf90_put_att(ncFileId, NF90_Global, "Homogenous_surface", 0)
+      ncStatus( 8) = nf90_put_att(ncFileId, NF90_Global, "SurfaceDescription_filename", surfaceFileName)
+    end if
 
-    ncStatus(13) = nf90_put_att(ncFileId, NF90_Global, "Random_number_seed", iseed)
-    ncStatus(14) = nf90_put_att(ncFileId, NF90_Global, "Phase_function_table_sizes", &
+    ncStatus( 9) = nf90_put_att(ncFileId, NF90_Global, "Total_number_of_photons", &
+                                                       INT(numPhotonsPerBatch * numBatches, KIND=8))
+    ncStatus(10) = nf90_put_att(ncFileId, NF90_Global, "Number_of_batches", numBatches)
+    ncStatus(11) = nf90_put_att(ncFileId, NF90_Global, "Solar_flux", SolarFlux)
+    ncStatus(12) = nf90_put_att(ncFileId, NF90_Global, "Solar_mu", SolarMu)
+    ncStatus(13) = nf90_put_att(ncFileId, NF90_Global, "Solar_phi", SolarAzimuth)
+
+    ncStatus(14) = nf90_put_att(ncFileId, NF90_Global, "Random_number_seed", iseed)
+    ncStatus(15) = nf90_put_att(ncFileId, NF90_Global, "Phase_function_table_sizes", &
                                                        nPhaseIntervals)
     if(useRayTracing) then
-      ncStatus(15) = nf90_put_att(ncFileId, NF90_Global, "Algorithm", "Ray_tracing")
+      ncStatus(16) = nf90_put_att(ncFileId, NF90_Global, "Algorithm", "Ray_tracing")
     else
-      ncStatus(15) = nf90_put_att(ncFileId, NF90_Global, "Algorithm", "Max_cross_section")
+      ncStatus(16) = nf90_put_att(ncFileId, NF90_Global, "Algorithm", "Max_cross_section")
     end if
 
     if(useHybridPhaseFunsForIntenCalcs) then 
-      ncStatus(16) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_hyrbid_phase_functions", 1)
-      ncStatus(17) = nf90_put_att(ncFileId, NF90_Global, "Hybrid_phase_function_width", &
+      ncStatus(17) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_hyrbid_phase_functions", 1)
+      ncStatus(18) = nf90_put_att(ncFileId, NF90_Global, "Hybrid_phase_function_width", &
                                                           hybridPhaseFunWidth)
     else
-      ncStatus(16) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_hyrbid_phase_functions", 0)
-      ncStatus(17) = nf90_put_att(ncFileId, NF90_Global, "Hybrid_phase_function_width", 0.)
+      ncStatus(17) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_hyrbid_phase_functions", 0)
+      ncStatus(18) = nf90_put_att(ncFileId, NF90_Global, "Hybrid_phase_function_width", 0.)
     end if 
 
     if(useRussianRouletteForIntensity) then 
-      ncStatus(18) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_Russian_roulette", 1)
-      ncStatus(19) = nf90_put_att(ncFileId, NF90_Global, "Intensity_Russian_roulette_zeta_min",  zetaMin)
+      ncStatus(19) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_Russian_roulette", 1)
+      ncStatus(20) = nf90_put_att(ncFileId, NF90_Global, "Intensity_Russian_roulette_zeta_min",  zetaMin)
     else
-      ncStatus(18) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_Russian_roulette", 0)
-      ncStatus(19) = nf90_put_att(ncFileId, NF90_Global, "Intensity_Russian_roulette_zeta_min", 0.)
+      ncStatus(19) = nf90_put_att(ncFileId, NF90_Global, "Intensity_uses_Russian_roulette", 0)
+      ncStatus(20) = nf90_put_att(ncFileId, NF90_Global, "Intensity_Russian_roulette_zeta_min", 0.)
     end if 
     
     if(limitIntensityContributions) then 
-      ncStatus(18) = nf90_put_att(ncFileId, NF90_Global, "limited_intensity_contributions", 1)
-      ncStatus(19) = nf90_put_att(ncFileId, NF90_Global, "max_intensity_contribution",  maxIntensityContribution)
+      ncStatus(21) = nf90_put_att(ncFileId, NF90_Global, "limited_intensity_contributions", 1)
+      ncStatus(22) = nf90_put_att(ncFileId, NF90_Global, "max_intensity_contribution",  maxIntensityContribution)
     else
-      ncStatus(18) = nf90_put_att(ncFileId, NF90_Global, "limited_intensity_contributions", 0)
-      ncStatus(19) = nf90_put_att(ncFileId, NF90_Global, "max_intensity_contribution", 0.)
+      ncStatus(21) = nf90_put_att(ncFileId, NF90_Global, "limited_intensity_contributions", 0)
+      ncStatus(22) = nf90_put_att(ncFileId, NF90_Global, "max_intensity_contribution", 0.)
     end if 
-    ncStatus(20) = nf90_put_att(ncFileId, NF90_Global, "Cpu_time_total", CpuTimeTotal)
-    ncStatus(21) = nf90_put_att(ncFileId, NF90_Global, "Cpu_time_setup", CpuTimeSetup)
-    ncStatus(22) = nf90_put_att(ncFileId, NF90_Global, "Number_of_processors_used", numProcs)
+    ncStatus(23) = nf90_put_att(ncFileId, NF90_Global, "Cpu_time_total", CpuTimeTotal)
+    ncStatus(24) = nf90_put_att(ncFileId, NF90_Global, "Cpu_time_setup", CpuTimeSetup)
+    ncStatus(25) = nf90_put_att(ncFileId, NF90_Global, "Number_of_processors_used", numProcs)
     
     if(recScatOrd) then
-    ncStatus(23) = nf90_put_att(ncFileId, NF90_GLOBAL, "Highest_recorded_scattering_order", numRecScatOrd)
+    ncStatus(26) = nf90_put_att(ncFileId, NF90_GLOBAL, "Highest_recorded_scattering_order", numRecScatOrd)
     end if
 
     if(any(ncStatus(:) /= nf90_NoErr)) print *, "Attributes ", ncStatus(:19)
