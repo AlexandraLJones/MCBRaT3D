@@ -8,45 +8,15 @@ program ParticleFileToDomain
  ! $URL: http://i3rc-monte-carlo-model.googlecode.com/svn/trunk/Tools/PhysicalPropertiesToDomain.f95 $
  !  Modified by Alexandra Jones UIUC Fall 2011 to crreate a 3D temperature field from the vertical temperature distribution
 !
- ! Reads an ASCII file describing the three-dimensional distribution
- !   of clouds and/or aerosols and writes the description to a
+ ! Reads a netCDF file containing mass contents and number concentrations (if provided)
+ !   must also contain a temperature field (1D or 3D) and the vertical and horizontal 
+ ! (or at least dx, dy) dimensions and writes the description to a
  !   "domain" object from the I3RC community model. Profiles of 
  !   molecular absoprtion can be added and Rayleigh scattering can 
  !   be included. 
- ! 
+ ! input mass should be in g/(m^3)  
+! 
  ! Input parameters are specified with a namelist.
- !
- ! The input file of particle properties (mass content and effective
- ! radius) may be specified in three different ways:
- !   1) One parameter LWC file.  Header:
- !        1                [format type]
- !        nX nY nZ         [number of X, Y, Z grid cells]
- !        deltaX deltaY    [X and Y grid cell size in km]
- !        Zlevels(1:nZ+1)  [increasing heights of cell boundaries in km]
- !        Temps(1:nZ+1)    [temperatures of boundaries (K)]
- !      One line per grid cell with:  iX iY iZ  LWC 
- !         iX,iY,iZ are indices from 1 to nX,nY,nZ, and
- !         LWC is cloud liquid water content (g/m^3).
- !         The effective radius is obtained from LWC using
- !           Reff = 100* (LWC*0.75*1.3889/(3.14159*DropNumConc))**(1/3)
- !   2) Two parameter LWC file.  Same header as 1 parameter LWC file,
- !      but with "2" starting the first line. 
- !      One line per grid cell with:  iX iY iZ  LWC Reff
- !         Reff is the effective radius (micron).
- !   3) Multicomponent particle properties file. Header:
- !        3                [format type]  
- !        nX nY nZ         [number of X, Y, Z grid cells]
- !        deltaX deltaY    [X and Y grid spacing in km]   
- !        Zlevels(1:nZ+1)  [increasing heights of cell boundaries in km]
- !        Temps(1:nZ+1)    [temperatures of boundaries (K)]
- !      One line per grid cell with:  
- !        iX iY iZ  Numcomp Type1 Mass1 Reff1 ... TypeN MassN ReffN
- !      Numcomp is the number of particle components in this cell, 
- !      Type? are the type numbers of the components, 
- !      Mass? are the mass contents [g/m^3] of the components, and 
- !      Reff? are the effective radii [microns] of the components.  
- !      The type number refers to the scattering table number 
- !      (in the range 1 to number of scattering tables input).
  !
  ! The scattering properties for each component are specified in
  ! files containing I3RC Monte Carlo phase function table objects
@@ -80,13 +50,14 @@ program ParticleFileToDomain
   use scatteringPhaseFunctions
   use opticalProperties
   use UserInterface
+  use netcdf
   
   implicit none
 
    ! Input parameters
   character(len=256)   :: NamelistFileName = ""
   character(len=256)   :: ParticleFileName = ""
-  integer              :: numScatTables
+  integer              :: numScatTables=0
   integer, parameter   :: maxNumComps=5
   character(len=256)   :: ScatTableFiles(maxNumComps) = ""
   character(len=256)   :: MolecAbsFileName = ""
@@ -108,21 +79,21 @@ program ParticleFileToDomain
   namelist /physicalProperties/  DropNumConc, RayleighWavelength
   
    ! Local variables
-  integer              :: nX, nY, nZp, nZt
+  integer              :: nX, nY, nZp, nZt, Pfile_type, Tdim
   integer              :: i, j, k, n, iscat, ix, iy, iz, il
   integer              :: maxNretab, izLevelBase
   real(8)                 :: deltaX, deltaY, x, y, z
-  real                 :: f
-  real(8), allocatable    :: Zpar(:), TempPar(:)
+  real                  :: f
+  real(8), allocatable    :: Zpar(:), TempPar(:), xEdges(:), yEdges(:), zEdges(:)
   integer, allocatable :: nComp(:,:,:), ptype(:,:,:,:)
-  real, allocatable    :: MassCont(:,:,:,:), Reff(:,:,:,:)
+  real, allocatable    :: MassCont(:,:,:,:), Reff(:,:,:,:), Pres(:,:,:)
   integer, allocatable :: Nretab(:)
   real, allocatable    :: ReffTable(:,:)
-  real(8), allocatable    :: ExtinctTable(:,:), ssaTable(:,:), temps(:,:,:)
+  real(8), allocatable    ::  ExtinctTable(:,:), ssaTable(:,:), temps(:,:,:), tempsOut(:,:,:)
   real(8), allocatable    :: Zlevels(:), Temp(:)
-  real(8), allocatable    :: GasExt(:), RaylExt(:)
-  real(8), allocatable    :: ssaProf(:)
-  integer, allocatable :: phaseIndex(:)
+  real(8), allocatable    :: GasExt(:), RaylExt(:,:,:)
+  real(8), allocatable    :: ssaProf(:,:,:), ssaProfGas(:)
+  integer, allocatable :: phaseIndex(:,:,:), phaseIndexGas(:)
   real                 :: LegendreCoefs(2)
   real(8),    allocatable :: extinct(:,:,:,:), ssa(:,:,:,:)
   integer, allocatable :: phaseFuncIndex(:,:,:,:)
@@ -153,8 +124,7 @@ program ParticleFileToDomain
   !
   if(len_trim(ParticleFileName) == 0)   stop "Must specify particle file name." 
   if(len_trim(outputFileName) == 0) stop "Must specify output file name." 
-  if(all(len_trim(ScatTableFiles) == 0)) &
-    stop "Must specify as many scattering tables as there are components"
+ ! if(all(len_trim(ScatTableFiles) == 0))    stop "Must specify as many scattering tables as there are components"
 
   if(DropNumConc < 0) stop "DropNumConc must be positive" 
   if(RayleighWavelength < 0) stop "RayleighWavelength must be non-negative." 
@@ -166,27 +136,42 @@ program ParticleFileToDomain
   numScatTables = count(len_trim(ScatTableFiles) > 0)
   if(numScatTables == maxNumComps) &
     print *, "Read only the first ", maxNumComps, " scattering tables." 
-  if(len_trim(outputFileName) == 0) stop "Must specify output file." 
+   
 
   ! Read in the particle properties file
-  call read_particle_file_size (ParticleFileName, nX, nY, nZp)
-  allocate (Zpar(nZp+1), TempPar(nZp+1))
-  allocate (nComp(nX,nY,nZp), ptype(numScatTables,nX,nY,nZp))
-  allocate (MassCont(numScatTables,nX,nY,nZp), Reff(numScatTables,nX,nY,nZp))
-  call read_particle_file (ParticleFileName, nX, nY, nZp, numScatTables, &
-                           DropNumConc,  deltaX, deltaY, Zpar, TempPar, & 
-                           nComp, ptype, MassCont, Reff)
+ 
+  call read_particle_file_size (ParticleFileName, nX, nY, nZt, Pfile_type, Tdim)
+  allocate (zEdges(nZt+1), xEdges(nX+1), yEdges(nY+1), temps(nx, nY, nzt), Pres(nx, nY, nzt))
+  allocate (nComp(nx,nY,nzt), ptype(numScatTables,nx,nY,nzt))
+  allocate (MassCont(numScatTables,nx,nY,nzt), Reff(numScatTables,nx,nY,nzt))
 
-   ! Combine the particle levels and extra levels
-  nZt = nZp + numOtherLevels
-  allocate (Zlevels(nZt+1), Temp(nZt+1))
-  call organize_levels (nZp, Zpar, TempPar, &
-                        numOtherLevels,     &
-                        OtherHeights(:numOtherLevels), OtherTemps(:numOtherLevels), &
-                        nZt, Zlevels, Temp, izLevelBase)
-  deallocate(ZPar,TempPar)
-  allocate (temps(nX,nY,nZt))
-  call create_temp_field (nZt, nX, nY, Temp, temps)
+  if (Tdim .eq. 1) then
+   allocate(Temp(nZt))
+   call read_particle_file1DT (ParticleFileName, Pfile_type, nX, nY, nZt, numScatTables, &
+                           DropNumConc,  xEdges, yEdges, zEdges, Temp, Pres, &
+                           nComp, ptype, MassCont, Reff)
+   call create_temp_field (nZt, nX, nY, Temp, temps)
+  else if (Tdim .eq. 3)then
+   call read_particle_file3DT (ParticleFileName, Pfile_type, nX, nY, nZt, numScatTables, &
+                           DropNumConc,  xEdges, yEdges, zEdges, temps, Pres, &
+                           nComp, ptype, MassCont, Reff)
+  else
+   PRINT *, "Check dimensions of temperature field. must be either 1 or 3 but is: ", Tdim
+  end if
+
+if(any(temps(:,:,:) .lt. 0.0_8)) PRINT *, "temperatures negative"
+
+  zEdges(nZt+1) = zEdges(nZt)+zEdges(2)
+  yEdges(nY+1) = yEdges(nY)+yEdges(2)
+  xEdges(nX+1) = xEdges(nX)+xEdges(2)
+
+ ! convert from m to km
+ PRINT *, "converting from meters to km"
+ zEdges = zEdges/1000.0_8
+ yEdges = yEdges/1000.0_8
+ xEdges = xEdges/1000.0_8
+! mass should stay in grams/(meter cubed) !
+!MassCont = MassCont/(1000.0**3)
 
    ! Read the molecular absorption extinction file if there is one
   allocate (GasExt(nZt))
@@ -195,18 +180,20 @@ program ParticleFileToDomain
     call read_molec_abs_file (MolecAbsFileName, nZt, Zlevels, GasExt)
 
    ! Calculate the molecular Rayleigh scattering extinction profile
-  allocate (RaylExt(nZt))
-  RaylExt(:) = 0
+  allocate (RaylExt(nx,ny,nZt))
+  RaylExt = 0
   if(RayleighWavelength > 0.) &
-    call rayleigh_extinct (nzt, Zlevels, Temp, RayleighWavelength, RaylExt)
+    call rayleigh_extinct (nx, ny, nzt, temps, Pres, RayleighWavelength, RaylExt)
 
 
   ! -----------------------------------------
   !  Read in the scattering tables
   !
+ if(any(len_trim(ScatTableFiles) > 0))then
   allocate (phaseFuncTables(numScatTables), Nretab(numScatTables))
    ! Read the scattering tables and get the number of entries in each table
   do i = 1, numScatTables
+PRINT *, ScatTableFiles(i)
     call read_PhaseFunctionTable(fileName = ScatTableFiles(i), &
                                  table = phaseFuncTables(i),   &
                                  status = status) 
@@ -238,14 +225,19 @@ program ParticleFileToDomain
   !  to index into the scattering tables to calculate the extinction, 
   !  single scattering albedo, and phase function index fields.
   !  
-  allocate (extinct(nX,nY,nZp,numScatTables))
-  allocate (ssa(nX,nY,nZp,numScatTables))
-  allocate (phaseFuncIndex(nX,nY,nZp,numScatTables))
+  allocate (extinct(nX,nY,nZt,numScatTables))
+  allocate (ssa(nX,nY,nZt,numScatTables))
+  allocate (phaseFuncIndex(nX,nY,nZt,numScatTables))
 
   extinct(:,:,:,:) = 0.0
   ssa(:,:,:,:) = 0.0
   phaseFuncIndex(:,:,:,:) = 1
-  do iz = 1, nZp
+PRINT *, "max/min of ptype: ", maxval(ptype), minval(ptype)
+PRINT *, "max/min of ncomp: ", maxval(ncomp), minval(ncomp)
+PRINT *, "extinct dimension sizes, 1-4: ", size(extinct,1), size(extinct,2), size(extinct,3), size(extinct,4)
+PRINT *, "numscatTables= ", numScatTables
+
+  do iz = 1, nZt
    do iy = 1, nY
     do ix = 1, nX
       do k = 1, nComp(ix,iy,iz)
@@ -262,6 +254,10 @@ program ParticleFileToDomain
           extinct(ix,iy,iz,iscat) = MassCont(k,ix,iy,iz) * &  
                                     ((1-f)*ExtinctTable(il,iscat) + f*ExtinctTable(il+1,iscat))
           ssa(ix,iy,iz,iscat) = (1-f)*ssaTable(il,iscat) + f*ssaTable(il+1,iscat)
+	  if(ssa(ix,iy,iz,iscat) .lt. 0.0 .or. ssa(ix,iy,iz,iscat) .gt. 1.0)then
+PRINT *, "ix, iy, iz, iscat, ssa", ix, iy, iz, iscat, ssa(ix,iy,iz,iscat)
+STOP
+	  end if
           ! Chose the closest phase function
           if (f < 0.5) then
             phaseFuncIndex(ix,iy,iz,iscat) = il
@@ -284,6 +280,7 @@ program ParticleFileToDomain
 
   deallocate (MassCont, Reff, ptype, Ncomp)
   deallocate (Nretab, ReffTable, ExtinctTable, ssaTable)
+ end if
 
   ! -----------------------------------------
   ! Package the optical properties in a domain object
@@ -291,9 +288,7 @@ program ParticleFileToDomain
   !
   ! Create the domain
   !
-  thisDomain = new_Domain (deltaX * (/ (i, i = 0, nX) /), &
-                           deltaY * (/ (i, i = 0, nY) /), &
-                           Zlevels(1:nZt+1),temps, status)
+  thisDomain = new_Domain (xEdges, yEdges, zEdges,temps, status)
   call printStatus(status)
 
 
@@ -303,41 +298,46 @@ program ParticleFileToDomain
     call addOpticalComponent (thisDomain, "Particle type " // trim(IntToChar(i)), &
                               extinct(:,:,:,i), &
                               ssa(:,:,:,i), phaseFuncIndex(:,:,:,i), &
-                              phaseFuncTables(i), zLevelBase=izLevelBase, &
+                              phaseFuncTables(i),  &
                               status = status)
-
+PRINT *, "returned from adding optical component"
     call printStatus(status)
     call finalize_PhaseFunctionTable (phaseFuncTables(i))
   end do
-  deallocate (extinct, ssa, phaseFuncIndex, phaseFuncTables)
-PRINT *, "deallocated ext, ssa, phasei, phaset"
+  if (ALLOCATED (extinct)) deallocate (extinct)
+  if (ALLOCATED (ssa)) deallocate ( ssa) 
+  if (ALLOCATED (phaseFuncIndex)) deallocate (phaseFuncIndex)
+  if (ALLOCATED (phaseFuncTables)) deallocate ( phaseFuncTables)
+
    ! Add the Rayleigh scattering optical properties
-  allocate (ssaProf(nZt), phaseIndex(nZt))
-  if (any(RaylExt(:) > 0.0)) then
+  
+  if (any(RaylExt(:,:,:) > 0.0)) then
+    allocate (ssaProf(nx,ny,nZt), phaseIndex(nx,ny,nZt))
     print *, "Adding Rayleigh scattering"
-    ssaProf(:) = 1.0_8
-    phaseIndex(:) = 1
+    ssaProf = 1.0
+    phaseIndex = 1
     LegendreCoefs(1:2) = (/ 0.0, 0.5 /) / (/ 2.*1. + 1., 2.*2. + 1. /)
     PhaseFuncs(1) = new_PhaseFunction (LegendreCoefs(1:2), status=status)
     call printStatus(status)
     OnePhaseFuncTable = new_PhaseFunctionTable (PhaseFuncs(1:1), key=(/ 0.0 /),&
                                                 tableDescription = "Rayleigh scattering", &
                                                 status=status)
+PRINT *, "returned from adding Rayleigh"
     call printStatus(status)
     call finalize_phaseFunction (phaseFuncObject)
     call addOpticalComponent (thisDomain, 'Rayleigh scattering', &
-                              RaylExt(:), ssaProf(:), phaseIndex(:), &
+                              RaylExt(:,:,:), ssaProf(:,:,:), phaseIndex(:,:,:), &
                               OnePhaseFuncTable, status = status)
     call printStatus(status)
     call finalize_PhaseFunctionTable (OnePhaseFuncTable)
   endif
-  deallocate(RaylExt)
 
    ! Add the molecular absorption optical properties
   if (any(GasExt(:) > 0.0)) then
+    allocate (ssaProfGas(nZt), phaseIndexGas(nZt))
     print *, "Adding molecular absorption" 
-    ssaProf(:) = 0.0
-    phaseIndex(:) = 1
+    ssaProfGas(:) = 0.0
+    phaseIndexGas(:) = 1
     LegendreCoefs(1:1) = 0.0
     PhaseFuncs(2) = new_PhaseFunction (LegendreCoefs(1:1), status=status)
     call printStatus(status)
@@ -346,70 +346,100 @@ PRINT *, "deallocated ext, ssa, phasei, phaset"
                                                 status=status)
     call printStatus(status)
     call finalize_phaseFunction (phaseFuncObject)
-PRINT *, "about to add molec abs"
     call addOpticalComponent (thisDomain, 'Molecular absorption', &
-                              GasExt(:), ssaProf(:), phaseIndex(:), &
+                              GasExt(:), ssaProfGas(:), phaseIndexGas(:), &
                               OnePhaseFuncTable, status = status)
-PRINT *, "added molec abs"
+PRINT *, "returned from adding gasExt"
     call printStatus(status)
-PRINT *," printes status"
     call finalize_PhaseFunctionTable (OnePhaseFuncTable)
-PRINT *, "finalized Phase Table"
   endif
-PRINT *, "exited if statement"
-  deallocate (ssaProf, phaseIndex,GasExt)
-PRINT *, "deallocated 1"
-!  deallocate (RaylExt, GasExt, Zpar, TempPar)
-!PRINT *, "deallocated 2"  
+  if(allocated(ssaProf)) deallocate (ssaProf)
+  if(allocated(phaseIndex)) deallocate (phaseIndex)
+  if(allocated(RaylExt)) deallocate(RaylExt)
+  if(allocated(GasExt)) deallocate(GasExt)
+  if(allocated(Zpar)) deallocate(Zpar)
+  if(allocated(TempPar)) deallocate(TempPar)
+  
   !
   ! Write the domain to a file
   !
-PRINT *, "about to write to domain"
   call write_Domain(thisDomain, outputFileName, status)
-PRINT *, "wrote to domain"
   call printStatus(status)
   call finalize_Domain(thisDomain)
 end program ParticleFileToDomain
 ! --------------------------------------------------------------------------
 
-subroutine read_particle_file_size (parfile, nx, ny, nzp)
-  implicit none
+subroutine read_particle_file_size (parfile, nx, ny, nzp, ftype, dims)
+
+  use netcdf
+
+!  implicit none
   character(len=*), intent(in) :: parfile
-  integer, intent(out) :: nx, ny, nzp
-  
-  open (unit=2, file=trim(parfile), status='old')
-  read (2,*)
-  read (2,*) nx, ny, nzp
-  close (2)
+  integer, intent(out) :: nx, ny, nzp, ftype, dims
+
+  integer, dimension(10)        :: ncStatus
+  integer                       :: ncFileID, ncDimID, ncVarID
+ 
+  ncStatus(:) = nf90_NoErr 
+  if(nf90_open(trim(parfile), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
+      PRINT *, "read_particle_file_size: Can't open file " 
+      STOP
+  end if
+
+!! Check to see if these are supposed to be number of edges or cells and adjust accordingly
+!! make sure the names of the fields are correct
+!! ALso, I may have to use varID commands instead of dimID commands, depending on how they're stored in the netCDF file
+  ncStatus( 1) = nf90_inq_dimid(ncFileId, "NX", ncDimId)
+  ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nx)
+  ncStatus( 3) = nf90_inq_dimid(ncFileId, "NY", ncDimId)
+  ncStatus( 4) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = ny)
+  ncStatus( 5) = nf90_inq_dimid(ncFileId, "NZ", ncDimId)
+  ncStatus( 6) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nzp)
+  if(any(ncStatus(:) /= nf90_NoErr))then
+    PRINT *, "read_particle_file_size: problem reading dimensions from netCDF file"
+    STOP
+  end if
+  ncStatus( 7) = nf90_inq_varid(ncFileId, "NCw", ncVarId)  
+  if( ncStatus( 7) /= nf90_NoErr) then
+    PRINT *, "read_particle_file_size: problem reading number concentration. Assuming it is not provided and continuing with assumed number concentration provided in namelist"
+    ftype = 1
+  else
+    PRINT *, "read_particle_file_size: detected presence of number conentration."
+    ftype = 2
+  end if
+  ncStatus( 8) = nf90_inq_varid(ncFileId, "TMc", ncVarId)
+  ncStatus( 9) = nf90_inquire_variable(ncFIleID, ncVarID,ndims=dims) 
+  if( ncStatus( 8) /= nf90_NoErr .or. ncStatus( 9) /= nf90_NoErr) PRINT *, "read_particle_file_size: problem reading Temperature dimensions"
+
 end subroutine read_particle_file_size
 
 ! --------------------------------------------------------------------------
 
-subroutine read_particle_file (parfile, nx, ny, nzp, nscattab, &
-                               DropNumConc,  delx, dely, zpar, temppar,  &
+subroutine read_particle_file1DT (parfile, filekind, nx, ny, nzp, nscattab, &
+                               DropNumConc,  X, Y, Z, temppar, Pres, &
                                ncomp, ptype, masscont, reff)
- ! Reads the particle physical properties file.  The file contains a header
- ! containing the array size (nx,ny,nzp), heights (zpar), and
- ! temperature profile (temppar).  Then each row has format: 
- !   iX iY iZ  Ncomp Ptype1 masscont1 Reff1 ... PtypeN masscontN ReffN
- ! where Ncomp is the number of components, Ptype is the particle type, 
- ! masscont is the mass content (g/m^3), and Reff is the particle 
- ! effective radius (micron).
- ! Also reads the 1 and 2 parameter LWC files with LWC and Reff at each cell.
+  use netcdf
+
+ ! currently set up to only deal with 1 scattering component
+
  ! The droplet number concentration (cm^-3) is used to derive the 
  ! effective radius from LWC for the 1 parameter LWC file (assumes a
  ! gamma distribution with alpha=7).
-  implicit none
+!  implicit none
   character(len=*), intent(in) :: parfile
-  integer, intent(in) :: nx, ny, nzp, nscattab
+  integer, intent(in) :: nx, ny, nzp, nscattab, filekind
   real,    intent(in) :: DropNumConc
-  real(8),    intent(out) :: delx, dely, zpar(nzp+1), temppar(nzp+1)
+  real(8),    intent(out) :: X(nx+1), Y(ny+1), Z(nzp+1), temppar(nzp)
   integer, intent(out) :: ncomp(nx,ny,nzp), ptype(nscattab,nx,ny,nzp)
   real,    intent(out) :: masscont(nscattab,nx,ny,nzp), reff(nscattab,nx,ny,nzp)
+  real, dimension(nx,ny,nzp), intent(out)   :: Pres
   
   ! Local variables
-  integer :: i, filekind, ix, iy, iz, nc, pt(nscattab)
+  integer :: i, ic, ix, iy, iz, nc, pt(nscattab), ncFileID, ncVarID
   real    :: mass(nscattab), re(nscattab)
+  real, parameter               :: Rd = 287.0
+  integer, dimension(20)        :: ncStatus
+  real, allocatable, dimension(:,:,:,:)  :: numConc
 
    ! Initialize the output arrays (in case there are missing grid points)
   ncomp(:,:,:) = 0
@@ -417,59 +447,165 @@ subroutine read_particle_file (parfile, nx, ny, nzp, nscattab, &
   masscont(:,:,:,:) = 0.0
   reff(:,:,:,:) = 0.0
   
-   ! Read in the header
-  open (unit=2, file=trim(parfile), status='old')
-  read (2,*) filekind
-  read (2,*) ! nx, ny, nzp
-  read (2,*) delx, dely   
-  read (2,*) (zpar(iz), iz=1, nzp+1)
-  read (2,*) (temppar(iz), iz=1, nzp+1)
-  
+  ncStatus(:) = nf90_NoErr
+
+  if(nf90_open(trim(parfile), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
+      PRINT *, "read_particle_file: Can't open file "
+      STOP
+  end if  
+
+  ncStatus( 1) = nf90_inq_varid(ncFileId, "X", ncVarId)   ! units of meters
+  ncStatus( 2) = nf90_get_var(ncFileId, ncVarId, X(1:nx))
+  ncStatus( 3) = nf90_inq_varid(ncFileId, "Y", ncVarId)   ! units of meters
+  ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, Y(1:ny))
+  ncStatus( 5) = nf90_inq_varid(ncFileId, "Z", ncVarId)   ! units of meters
+  ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, Z(1:nzp))
+  ncStatus( 7) = nf90_inq_varid(ncFileId, "QCw", ncVarId)  ! units of g/kg
+  ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, masscont(1,:,:,:))
+  ncStatus( 9) = nf90_inq_varid(ncFileId, "TMc", ncVarId)  ! units of celcius
+  ncStatus(10) = nf90_get_var(ncFileId, ncVarId, temppar)
+  ncStatus(11) = nf90_inq_varid(ncFileId, "Prs", ncVarId) ! units of hPa
+  ncStatus(12) = nf90_get_var(ncFileId, ncVarId, Pres)
+  ncStatus(13) = nf90_inq_varid(ncFileId, "QCi", ncVarId)  ! units of g/kg
+  ncStatus(14) = nf90_get_var(ncid=ncFileId, varid=ncVarId, values=masscont(2,:,:,:))
+
+  if(any(ncStatus(:) /= nf90_NoErr)) then
+     PRINT *, "read_particle_file1DT: problem reading  properties file."
+     STOP
+  end if
+
+ ! convert pressure, temperature, mass content to proper units: Pa, K, g m^-3
+ ! to convert mass you multiply by dry air density which can be determined from T, P, and Rd
+  Pres = Pres *100.0
+  temppar = temppar + 273.15
+  if(any(temppar(:) .lt. 0.0_8)) PRINT *, "read_particle_file1DT: temperatures negative"
+  forall (ix=1:nx, iy=1:ny, ic=1:nscattab)
+    masscont(ic,:,iy,ix) = masscont(ic,:,iy,ix) * Pres(:,iy,ix) / (Rd * temppar)
+  end forall
+
   select case(filekind)
-    case(1, 2)
-      if (nscattab /= 1) &
-        stop 'read_particle_file: Must have only one scattering table to use 1 or 2 parameter LWC file.'
-      ! Read in the data
-      do while (.true.)  
-        if (filekind == 1) then
-          read (2,*,end=190) ix, iy, iz, mass(1)
-          re(1) = 100* ( mass(1) *0.75*1.3889/(3.14159*DropNumConc) )**(1.0/3)
-        else
-          read (2,*,end=190) ix, iy, iz, mass(1), re(1)
-        endif
-        if (ix >= 1 .and. ix <= nx .and. iy >= 1 .and. iy <= ny .and. &
-            iz >= 1 .and. iz <= nzp) then
-          ncomp(ix,iy,iz) = 1
-          ptype(1,ix,iy,iz) = 1
-          masscont(1,ix,iy,iz) = mass(1) 
-          reff(1,ix,iy,iz) = re(1)
-        endif
-      enddo  
-    
-    case(3)
-      ! Read in the data
-      do while (.true.)  
-        read (2,*,end=190) ix, iy, iz, nc, &
-                         (pt(i), mass(i), re(i), i=1,min(nc,nscattab))
-        if (any(pt(:min(nc,nscattab)) > nscattab)) &
-          stop 'read_particle_file: Particle type greater than number of scattering tables.'
-        if (ix >= 1 .and. ix <= nx .and. iy >= 1 .and. iy <= ny .and. &
-            iz >= 1 .and. iz <= nzp) then
-          ncomp(ix,iy,iz) = nc
-          ptype(1:nc,ix,iy,iz) = pt(1:nc)
-          masscont(1:nc,ix,iy,iz) = mass(1:nc)
-          reff(1:nc,ix,iy,iz) = re(1:nc)
-        endif
-      enddo  
-    
+    case(1) ! number concentration not provided in file so derive Reff from constant value
+      reff(:,:,:,:) = 100* ( masscont(:,:,:,:) *0.75*1.3889/(3.14159*DropNumConc) )**(1.0/3)
+      ncomp = 2
+      ptype(1,:,:,:) = 1
+      ptype(2,:,:,:) = 2
+
+    case(2) ! number concentration provided in file, so derive Reff from that
+      allocate(numConc(nscattab,nzp,ny,nx))
+      ncStatus(1) = nf90_inq_varid(ncFileId, "NCw", ncVarId) ! units of hPa
+      ncStatus(2) = nf90_get_var(ncFileId, ncVarId, numConc(1,:,:,:))
+      ncStatus(3) = nf90_inq_varid(ncFileId, "NCi", ncVarId) ! units of hPa
+      ncStatus(4) = nf90_get_var(ncFileId, ncVarId, numConc(2,:,:,:))
+
+      if(any(ncStatus(:) /= nf90_NoErr)) then
+        PRINT *, "read_particle_file1DT: problem reading number concentration."
+        STOP
+      end if
+      reff(:,:,:,:) = 100* ( masscont(:,:,:,:) *0.75*1.3889/(3.14159*numConc(:,:,:,:)) )**(1.0/3)
+      ncomp = 2 
+      ptype(1,:,:,:) = 1
+      ptype(2,:,:,:) = 2
+ 
   case default
-    stop 'read_particle_file: Must be type 2 or 3 particle properties file.'
+    stop 'read_particle_file1DT: must be recognized type particle properties file.'
   end select 
   
-190 continue
-  close (2) 
-end subroutine read_particle_file
+end subroutine read_particle_file1DT
+! -------------------------------------------------------------------------
+subroutine read_particle_file3DT (parfile, filekind, nx, ny, nzp, nscattab, &
+                               DropNumConc,  X, Y, Z, temppar, Pres, &
+                               ncomp, ptype, masscont, reff)
+ ! currently set up to only deal with 1 scattering component
 
+ ! The droplet number concentration (cm^-3) is used to derive the
+ ! effective radius from LWC for the 1 parameter LWC file (assumes a
+ ! gamma distribution with alpha=7).
+  use netcdf
+!  implicit none
+  character(len=*), intent(in) :: parfile
+  integer, intent(in) :: nx, ny, nzp, nscattab, filekind
+  real,    intent(in) :: DropNumConc
+  real(8),    intent(out) :: X(nx+1), Y(ny+1), Z(nzp+1), temppar(nx,ny,nzp)
+  integer, intent(out) :: ncomp(nx,ny,nzp), ptype(nscattab,nx,ny,nzp)
+  real,    intent(out) :: masscont(nscattab,nx,ny,nzp), reff(nscattab,nx,ny,nzp)
+  real, dimension(nx,ny,nzp), intent(out)   :: Pres
+
+  ! Local variables
+  integer :: i, ix, iy, iz, nc, pt(nscattab), ncFileID, ncVarID
+  real    :: mass(nscattab), re(nscattab)
+  real, parameter               :: Rd = 287.0
+  integer, dimension(20)        :: ncStatus
+  real, allocatable, dimension(:,:,:,:)  :: numConc
+
+   ! Initialize the output arrays (in case there are missing grid points)
+  ncomp(:,:,:) = 0
+  ptype(:,:,:,:) = 0
+  masscont(:,:,:,:) = 0.0
+  reff(:,:,:,:) = 0.0
+
+  ncStatus(:) = nf90_NoErr
+
+  if(nf90_open(trim(parfile), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
+      PRINT *, "read_particle_file3DT: Can't open file "
+      STOP
+  end if
+
+  ncStatus( 1) = nf90_inq_varid(ncFileId, "X", ncVarId)   ! units of meters
+  ncStatus( 2) = nf90_get_var(ncFileId, ncVarId, X(1:nx))
+  ncStatus( 3) = nf90_inq_varid(ncFileId, "Y", ncVarId)   ! units of meters
+  ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, Y(1:ny))
+  ncStatus( 5) = nf90_inq_varid(ncFileId, "Z", ncVarId)   ! units of meters
+  ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, Z(1:nzp))
+  ncStatus( 7) = nf90_inq_varid(ncFileId, "QCw", ncVarId)  ! units of g/kg
+  ncStatus( 8) = nf90_get_var(ncid=ncFileId, varid=ncVarId, values=masscont(1,:,:,:))
+  ncStatus( 9) = nf90_inq_varid(ncFileId, "TMc", ncVarId)  ! units of celcius
+  ncStatus(10) = nf90_get_var(ncFileId, ncVarId, temppar(:,:,:))
+  ncStatus(11) = nf90_inq_varid(ncFileId, "Prs", ncVarId) ! units of hPa
+  ncStatus(12) = nf90_get_var(ncFileId, ncVarId, Pres(:,:,:))
+  ncStatus(13) = nf90_inq_varid(ncFileId, "QCi", ncVarId)  ! units of g/kg
+  ncStatus(14) = nf90_get_var(ncid=ncFileId, varid=ncVarId, values=masscont(2,:,:,:))
+
+  if(any(ncStatus(:) /= nf90_NoErr)) then
+     PRINT *, "read_particle_file3DT: problem reading  properties file. ", ncStatus(1:14)
+!     PRINT *, trim(nf90_strerror(ncStatus(8)))
+     STOP
+  end if
+
+ ! convert pressure, temperature, mass content to proper units: Pa, K, g m^-3
+ ! to convert mass you multiply by dry air density which can be determined from T, P, and Rd
+  Pres = Pres *100.0 ! convert from hPa to Pa
+  temppar = temppar + 273.15 ! convert from Celcius to Kelvin
+  if(any(temppar(:,:,:) .lt. 0.0_8))PRINT *, "read_particle_file3DT: temperatures negative"
+  forall (i=1:nscattab)
+    masscont(i,:,:,:) = masscont(i,:,:,:) * Pres / (Rd * temppar) ! convert from g/kg to g/(m^3)
+  end forall
+
+  select case(filekind)
+    case(1) ! number concentration not provided in file so derive Reff from constant value
+      reff(:,:,:,:) = 100* ( masscont(:,:,:,:) *0.75*1.3889/(3.14159*DropNumConc) )**(1.0/3)
+      ncomp = 2
+      ptype(1,:,:,:) = 1
+      ptype(2,:,:,:) = 2
+
+    case(2) ! number concentration provided in file, so derive Reff from that
+      allocate(numConc(nscattab,nx,ny,nzp))
+      ncStatus(1) = nf90_inq_varid(ncFileId, "NCi", ncVarId) ! units of hPa
+      ncStatus(2) = nf90_get_var(ncFileId, ncVarId, numConc(2,:,:,:))
+      ncStatus(3) = nf90_inq_varid(ncFileId, "NCw", ncVarId) ! units of hPa
+      ncStatus(4) = nf90_get_var(ncFileId, ncVarId, numConc(1,:,:,:))
+      if(any(ncStatus(:) /= nf90_NoErr)) then
+        PRINT *, "read_particle_file3DT: problem reading number concentration."
+        STOP
+      end if
+      reff(:,:,:,:) = 100* ( masscont(:,:,:,:) *0.75*1.3889/(3.14159*numConc(:,:,:,:)) )**(1.0/3)
+      ncomp = 2
+      ptype(1,:,:,:) = 1
+      ptype(2,:,:,:) = 2
+
+  case default
+    stop 'read_particle_file3DT: must be recognized type particle properties file.'
+  end select
+end subroutine read_particle_file3DT
 ! --------------------------------------------------------------------------
 
 subroutine organize_levels (nZp, Zpar, TempPar, &
@@ -481,7 +617,7 @@ subroutine organize_levels (nZp, Zpar, TempPar, &
   implicit none
   integer, intent(in) :: nZp, numOtherLevels, nZt
   real(8),    intent(in) :: Zpar(nZp+1), TempPar(nZp+1)
-  real(8),    intent(in) :: OtherHeights(numOtherLevels), OtherTemps(numOtherLevels)
+  real,    intent(in) :: OtherHeights(numOtherLevels), OtherTemps(numOtherLevels)
   real(8),    intent(out) :: Zlevels(nZt+1), Temp(nZt+1)
   integer, intent(out) :: izLevelBase
   integer :: i, j, k
@@ -533,7 +669,7 @@ subroutine read_molec_abs_file (MolecAbsFileName, nZt, Zlevels, GasExt)
   character(len=*), intent(in) :: MolecAbsFileName
   integer, intent(in) :: nZt
   real(8),    intent(in) :: Zlevels(1:nZt+1)
-  real(8),    intent(out) :: GasExt(1:nZt)
+  real(8),    intent(out) :: GasExt(1:nZt+1)
   integer :: nZ
   real(8), allocatable :: Zlevin(:)
 
@@ -545,6 +681,7 @@ subroutine read_molec_abs_file (MolecAbsFileName, nZt, Zlevels, GasExt)
     read (2,*) Zlevin(1:nZ+1)
     if (nZ /= nZt .or. any(abs(Zlevin(:) - Zlevels(:)) > spacing(Zlevels))) then
       print *, 'read_molec_abs_file: input Z levels do not match'
+      print *, 'Zlevin=', Zlevin(:), 'Zlevels=', Zlevels(:)
       stop
     endif
     deallocate (Zlevin)
@@ -555,7 +692,7 @@ end subroutine read_molec_abs_file
 
 ! --------------------------------------------------------------------------
 
-subroutine rayleigh_extinct (nzt, Zlevels, Temp, wavelen, RaylExt)
+subroutine rayleigh_extinct (nx, ny, nzt, Temps, Pres, wavelen, RaylExt)
  ! Computes the molecular Rayleigh extinction profile RaylExt [/km]
  ! from the temperature profile Temp [k] at Zlevels [km].  Assumes
  ! a linear lapse rate between levels to compute the pressure at
@@ -566,37 +703,22 @@ subroutine rayleigh_extinct (nzt, Zlevels, Temp, wavelen, RaylExt)
  ! an exponential behavior.
  ! The extinction profile is returned with zeros if wavelen<=0.
   implicit none
-  integer, intent(in) :: nzt
-  real(8),    intent(in) :: Zlevels(nzt+1), Temp(nzt+1) !!! assumes Zlevels is in km!!!!
-  real,    intent(in) ::  wavelen
-  real(8),    intent(out) :: RaylExt(nzt)
+  integer, intent(in) :: nx, ny, nzt
+  real ,    intent(in) :: wavelen
+  real, dimension(nx, ny, nzt), intent(in)     :: Pres
+  real(8), dimension(nx, ny, nzt), intent(in)     :: Temps
+  real(8),    intent(out) :: RaylExt(nx,ny,nzt)
   
-  integer :: i
-  real    :: raylcoef, pres, lapse, ts, dz
-  real(8) :: extlev(nzt+1)
+  real    :: raylcoef, Pres_hPa(nx,ny,nzt)
+  integer  :: ix, iy, iz
 
+! pressure needs to be in hPa 
+  Pres_hPa = Pres/100.0
   raylcoef = 2.97E-4*wavelen**(-4.15+0.2*wavelen)
-
-   ! Find surface pressure by integrating hydrostatic relation
-   !  for a dry atmosphere up to surface height.
-  pres = 1013.
-  ts = Temp(1)
-  lapse = 6.5*0.001
-  pres = pres*(ts/(ts+lapse*Zlevels(1)*1000.))**(9.8/(287.*lapse))
-
-   ! Use layer mean temperature to compute fractional pressure change.
-  do i = 1, nzt
-    dz = 1000.*(Zlevels(i+1)-Zlevels(i))
-    lapse = (Temp(i)-Temp(i+1))/dz
-    if (abs(lapse) .gt. 0.0001) then
-      pres = pres*(Temp(i+1)/Temp(i))**(9.8/(287.*lapse))
-    else
-      pres = pres*exp(-9.8*dz/(287.*Temp(i)))
-    endif
-  enddo
-  extlev(:) = raylcoef*pres/Temp(:)
-  RaylExt(1:nzt) = (extlev(1:nzt)-extlev(2:nzt+1)) & 
-                  / log(extlev(1:nzt)/extlev(2:nzt+1))
+    RaylExt = raylcoef*Pres_hPa/Temps
+  if(any(RaylExt(:,:,:)<0.0_8)) PRINT *, "WARNING: Rayleigh extinction negative"
+  if(any(Pres_hpa(:,:,:)<0.0_8)) PRINT *, "WARNING: pressure negative"
+  if(any(Temps(:,:,:)<0.0_8)) PRINT *, "WARNING: temperature negative"
 end subroutine rayleigh_extinct
 
 ! --------------------------------------------------------------------------
@@ -608,13 +730,13 @@ subroutine create_temp_field(nZt, nx, ny, temp_in, temp_out)
 
  implicit none
  integer, intent(in)   :: nZt, nx, ny
- real(8), intent(in)      :: temp_in(1:nZt+1)
+ real(8), intent(in)      :: temp_in(1:nZt)
  real(8), intent(out)     :: temp_out(1:nx,1:ny,1:nZt)
 
- integer               :: i
+ integer               :: ix, iy
 
- do i = 1, nZt
-    temp_out(:,:,i)=(temp_in(i)+temp_in(i+1))/2
- end do
+ forall (ix=1:nx, iy=1:ny)
+    temp_out(ix,iy,:)=temp_in
+ end forall
 
 end subroutine create_temp_field

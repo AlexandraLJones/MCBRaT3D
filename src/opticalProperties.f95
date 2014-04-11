@@ -564,7 +564,7 @@ contains
     type(ErrorMessage), intent(inout) :: status
     
     ! Local variables
-    integer                        :: i, j
+    integer                        :: i, j, n
     logical                        :: fillsDomainInVertical
     
     ! Netcdf-related local variables
@@ -578,7 +578,7 @@ contains
     if(.not. isValid(thisDomain)) then
       call setStateToFailure(status, "write_Domain: domain hasn't been initialized.") 
     else
-      ncStatus( 1) = nf90_create(trim(fileName), nf90_Clobber, ncFileId)
+      ncStatus( 1) = nf90_create(trim(fileName), NF90_64BIT_OFFSET , ncFileId)
       !
       ! Domain dimensions 
       !
@@ -600,8 +600,10 @@ contains
       !
       ncStatus(12) = nf90_put_att(ncFileID, nf90_Global, "xyRegularlySpaced", asInt(thisDomain%xyRegularlySpaced)) 
       ncStatus(13) = nf90_put_att(ncFileID, nf90_Global,  "zRegularlySpaced", asInt(thisDomain%zRegularlySpaced))
-      if(any(ncStatus(:) /= nf90_NoErr)) &
+      if(any(ncStatus(:) /= nf90_NoErr))then
+	PRINT *, "define grids", ncStatus(1:13) 
         call setStateToFailure(status, "write_Domain: error writing domain information") 
+      end if
         
       if(.not. stateIsFailure(status) .and. containsComponents(thisDomain)) then
         ncStatus( 1) = nf90_put_att(ncFileID, nf90_Global, "numberOfComponents", size(thisDomain%components))
@@ -649,9 +651,11 @@ contains
             ncStatus( 9) = nf90_def_var(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex",     nf90_short, &
                                         (/ xGridDimId, yGridDimId, zGridDimId /) , indexVarId)
           end if
-          if(any(ncStatus(:) /= nf90_NoErr)) &
+          if(any(ncStatus(:) /= nf90_NoErr)) then
+            PRINT *, "define vars", ncStatus(1:9)
             call setStateToFailure(status,   &
                                    "write_Domain: Error creating definitions for component" // trim(IntToChar(i)))
+          end if
         end do 
       end if
       !
@@ -668,7 +672,9 @@ contains
       ncStatus( 8) = nf90_inq_varid(ncFileId, "Temperatures", ncVarID)
       ncStatus( 9) = nf90_put_var(ncFileId, ncVarId, thisDomain%temps(:,:,:))
       if(any(ncStatus(:) /= nf90_NoErr)) then
-        print *, ncStatus(1:9)
+	do n=1,9
+         print *, "put grids", trim(nf90_strerror(ncStatus(n)))
+        end do
         call setStateToFailure(status, "write_Domain: error writing domain data") 
       end if
   
@@ -961,40 +967,63 @@ contains
     ! Local variables
     integer :: numX, numY, numZ, numPhaseFunctions
         
-    if(isValid(thisDomain)) then 
+    if(isValid(thisDomain) .and. .not. stateIsFailure(status)) then 
+PRINT *, "Domain valid"
       numX = size(extinction, 1); numY = size(extinction, 2); numZ = size(extinction, 3)
       
       ! Are the arrays all the same size? 
       if(any((/ size(singleScatteringAlbedo, 1), size(phaseFunctionIndex, 1) /) /= numX) .or. &
          any((/ size(singleScatteringAlbedo, 2), size(phaseFunctionIndex, 2) /) /= numY) .or. &
-         any((/ size(singleScatteringAlbedo, 3), size(phaseFunctionIndex, 3) /) /= numZ)) &
+         any((/ size(singleScatteringAlbedo, 3), size(phaseFunctionIndex, 3) /) /= numZ))then
         call setStateToFailure(status, "validateOpticalComponent: optical property grids must be the same size.") 
-        
+      else
+PRINT *, "optical property grids same size."        
+      end if
       ! Do the arrays conform to the grid in the domain? 
       if(.not. any(numX == (/ 1, size(thisDomain%xPosition) - 1 /)) .or. &
-         .not. any(numY == (/ 1, size(thisDomain%yPosition) - 1/)))      &
+         .not. any(numY == (/ 1, size(thisDomain%yPosition) - 1/))) then
         call setStateToFailure(status, "validateOpticalComponent: arrays don't conform to horizontal extent of domain.")
-      if(zLevelBase + numZ - 1 > size(thisDomain%zPosition) .or. zLevelBase < 1) &
+      else
+PRINT *, "arrays conform to horizontal extent"
+      end if
+      if(zLevelBase + numZ - 1 > size(thisDomain%zPosition) .or. zLevelBase < 1) then
         call setStateToFailure(status, "validateOpticalComponent: arrays don't conform to vertical extent of domain.")
-     
+      else
+PRINT *, "arrays conform to vertical extent"     
+      end if
       ! Resonable values for the properties
-      if(any(extinction(:, :, :) < 0.)) &
+      if(any(extinction(:, :, :) < 0.)) then
         call setStateToFailure(status, "validateOpticalComponent: extinction must be >= 0.")
-      if(any(singleScatteringAlbedo(:, :, :) < 0.) .or. any(singleScatteringAlbedo(:, :, :) > 1. )) &
+      else
+PRINT *, "extinction > 0"
+      end if
+      if(any(singleScatteringAlbedo(:, :, :) < 0.) .or. any(singleScatteringAlbedo(:, :, :) > 1. )) then
         call setStateToFailure(status, "validateOpticalComponent: singleScatteringAlbedo must be between 0 and 1")
+      else
+PRINT *, "single scattering albedo btwn 0 and 1"
+      end if
       
       ! Check the phase function table
-      if(.not. stateIsFailure(status)) then 
+      if(.not. stateIsFailure(status)) then
+PRINT *, "state is not failure" 
         call getInfo_PhaseFunctionTable(table, nEntries = numPhaseFunctions, status = status)
-        if(any(phaseFunctionIndex(:, :, :) < 0 .or. phaseFunctionIndex(:, :, :) > numPhaseFunctions)) &
+PRINT *, "numPhaseFunctions= ", numPhaseFunctions, " maxIndex= ", maxval(phaseFunctionIndex), " minIndex ", minval(phaseFunctionIndex)
+        if(any(phaseFunctionIndex(:, :, :) < 0 .or. phaseFunctionIndex(:, :, :) > numPhaseFunctions))then
           call setStateToFailure(status, "validateOpticalComponent: phase function index is out of bounds")
+        else
+PRINT *, "phase function indices within bounds"
+        end if
         ! Are the phase functions ready to go ? 
-        if(.not. isReady_PhaseFunctionTable(table)) &
+        if(.not. isReady_PhaseFunctionTable(table)) then
           call setStateToFailure(status, "validateOpticalComponent: phase function table is not ready.")
+        else
+PRINT *, "phase function table ready"
+        end if
       end if 
       
       ! We could check to see if the component names overlap. 
     else
+PRINT *, "state is failure upon entering, or domain hasn't been initialized"      
       call setStateToFailure(status, "validateOpticalComponent: domain hasn't been initialized.")
     end if
 
