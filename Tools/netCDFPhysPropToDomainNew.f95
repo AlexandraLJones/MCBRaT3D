@@ -68,7 +68,7 @@ program ParticleFileToDomain
                           OtherTemps(maxOtherLevels) = 0
                           
   real                 :: RayleighWavelength = 0
-  real                 :: DropNumConc = 0.
+  real                 :: DropNumConc(maxNumComps) = 0.
   character(len=256)   :: outputFileName = ""
   
   character(len=512)   :: tableDescription
@@ -114,8 +114,11 @@ program ParticleFileToDomain
   namelistFileName = getOneArgument()
   open (unit=1, file=trim(namelistFileName), status='OLD')
   read (1, nml = fileNames)
+PRINT *, "read filenames"
   read (1, nml = profile)
+PRINT *, "read profile"
   read (1, nml = physicalProperties)
+PRINT *, "read properties"
   close (1)
   
   !
@@ -126,7 +129,7 @@ program ParticleFileToDomain
   if(len_trim(outputFileName) == 0) stop "Must specify output file name." 
  ! if(all(len_trim(ScatTableFiles) == 0))    stop "Must specify as many scattering tables as there are components"
 
-  if(DropNumConc < 0) stop "DropNumConc must be positive" 
+  if(any(DropNumConc < 0)) stop "DropNumConc must be positive" 
   if(RayleighWavelength < 0) stop "RayleighWavelength must be non-negative." 
   
   
@@ -148,16 +151,18 @@ program ParticleFileToDomain
   if (Tdim .eq. 1) then
    allocate(Temp(nZt))
    call read_particle_file1DT (ParticleFileName, Pfile_type, nX, nY, nZt, numScatTables, &
-                           DropNumConc,  xEdges, yEdges, zEdges, Temp, Pres, &
+                           DropNumConc(1:numScatTables),  xEdges, yEdges, zEdges, Temp, Pres, &
                            nComp, ptype, MassCont, Reff)
    call create_temp_field (nZt, nX, nY, Temp, temps)
   else if (Tdim .eq. 3)then
    call read_particle_file3DT (ParticleFileName, Pfile_type, nX, nY, nZt, numScatTables, &
-                           DropNumConc,  xEdges, yEdges, zEdges, temps, Pres, &
+                           DropNumConc(1:numScatTables),  xEdges, yEdges, zEdges, temps, Pres, &
                            nComp, ptype, MassCont, Reff)
   else
    PRINT *, "Check dimensions of temperature field. must be either 1 or 3 but is: ", Tdim
   end if
+
+!Reff(2,:,:,:) = 100.0  
 
 if(any(temps(:,:,:) .lt. 0.0_8)) PRINT *, "temperatures negative"
 
@@ -254,9 +259,10 @@ PRINT *, "numscatTables= ", numScatTables
           extinct(ix,iy,iz,iscat) = MassCont(k,ix,iy,iz) * &  
                                     ((1-f)*ExtinctTable(il,iscat) + f*ExtinctTable(il+1,iscat))
           ssa(ix,iy,iz,iscat) = (1-f)*ssaTable(il,iscat) + f*ssaTable(il+1,iscat)
-	  if(ssa(ix,iy,iz,iscat) .lt. 0.0 .or. ssa(ix,iy,iz,iscat) .gt. 1.0)then
-PRINT *, "ix, iy, iz, iscat, ssa", ix, iy, iz, iscat, ssa(ix,iy,iz,iscat)
-STOP
+	  if(ssa(ix,iy,iz,iscat) .gt. 1.0_8)then
+	    ssa(ix,iy,iz,iscat) = 1.0_8
+!PRINT *, "ix, iy, iz, iscat, ssa", ix, iy, iz, iscat, ssa(ix,iy,iz,iscat)
+!STOP
 	  end if
           ! Chose the closest phase function
           if (f < 0.5) then
@@ -428,7 +434,7 @@ subroutine read_particle_file1DT (parfile, filekind, nx, ny, nzp, nscattab, &
 !  implicit none
   character(len=*), intent(in) :: parfile
   integer, intent(in) :: nx, ny, nzp, nscattab, filekind
-  real,    intent(in) :: DropNumConc
+  real,    intent(in) :: DropNumConc(nscattab)
   real(8),    intent(out) :: X(nx+1), Y(ny+1), Z(nzp+1), temppar(nzp)
   integer, intent(out) :: ncomp(nx,ny,nzp), ptype(nscattab,nx,ny,nzp)
   real,    intent(out) :: masscont(nscattab,nx,ny,nzp), reff(nscattab,nx,ny,nzp)
@@ -485,10 +491,11 @@ subroutine read_particle_file1DT (parfile, filekind, nx, ny, nzp, nscattab, &
 
   select case(filekind)
     case(1) ! number concentration not provided in file so derive Reff from constant value
-      reff(:,:,:,:) = 100* ( masscont(:,:,:,:) *0.75*1.3889/(3.14159*DropNumConc) )**(1.0/3)
-      ncomp = 2
-      ptype(1,:,:,:) = 1
-      ptype(2,:,:,:) = 2
+      forall (ic=1:nscattab)
+        reff(ic,:,:,:) = 100* ( masscont(ic,:,:,:) *0.75*1.3889/(3.14159*DropNumConc(ic)) )**(1.0/3)
+        ptype(ic,:,:,:) = ic
+      end forall
+      ncomp = nscattab
 
     case(2) ! number concentration provided in file, so derive Reff from that
       allocate(numConc(nscattab,nzp,ny,nx))
@@ -524,7 +531,7 @@ subroutine read_particle_file3DT (parfile, filekind, nx, ny, nzp, nscattab, &
 !  implicit none
   character(len=*), intent(in) :: parfile
   integer, intent(in) :: nx, ny, nzp, nscattab, filekind
-  real,    intent(in) :: DropNumConc
+  real,    intent(in) :: DropNumConc(nscattab)
   real(8),    intent(out) :: X(nx+1), Y(ny+1), Z(nzp+1), temppar(nx,ny,nzp)
   integer, intent(out) :: ncomp(nx,ny,nzp), ptype(nscattab,nx,ny,nzp)
   real,    intent(out) :: masscont(nscattab,nx,ny,nzp), reff(nscattab,nx,ny,nzp)
@@ -582,10 +589,11 @@ subroutine read_particle_file3DT (parfile, filekind, nx, ny, nzp, nscattab, &
 
   select case(filekind)
     case(1) ! number concentration not provided in file so derive Reff from constant value
-      reff(:,:,:,:) = 100* ( masscont(:,:,:,:) *0.75*1.3889/(3.14159*DropNumConc) )**(1.0/3)
+      forall (i=1:nscattab)
+        reff(i,:,:,:) = 100* ( masscont(i,:,:,:) *0.75*1.3889/(3.14159*DropNumConc(i)) )**(1.0/3)
+        ptype(i,:,:,:) = i
+      end forall
       ncomp = 2
-      ptype(1,:,:,:) = 1
-      ptype(2,:,:,:) = 2
 
     case(2) ! number concentration provided in file, so derive Reff from that
       allocate(numConc(nscattab,nx,ny,nzp))
