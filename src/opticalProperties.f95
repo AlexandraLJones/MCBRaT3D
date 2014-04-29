@@ -158,7 +158,7 @@ contains
        new_Domain%lambda       = lambda
        new_Domain%lambdaI      = lambdaI
        new_Domain%nlambda      = nlambda
-PRINT *, 'domain file lambda= ', new_Domain%nlambda, nlambda
+PRINT *, 'new_Domain: nlambdas match= ', new_Domain%nlambda, nlambda
        new_Domain%surfaceAlbedo = albedo
 
        ! Are the grids regularly spaced? Compare the distance between each pair 

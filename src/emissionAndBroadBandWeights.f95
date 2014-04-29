@@ -66,9 +66,11 @@ module emissionAndBBWeights
      real(8), optional, dimension(:,:,:),intent(out)     :: voxelWeights
      type(ErrorMessage), intent(inout)                   :: status
 
+     integer                                             :: j, k
+
      if(present(numX)) numX = size(theseWeights%voxelWeights,1)
      if(present(numY)) numY = size(theseWeights%voxelWeights,2)
-     if(present(numZ)) numZ = size(theseWeights%voxelWeights,2)
+     if(present(numZ)) numZ = size(theseWeights%voxelWeights,3)
 
      if(present(fracAtmsPower))then
 	if(present(iLambda))then
@@ -79,7 +81,8 @@ module emissionAndBBWeights
      end if
 
      if (present(levelWeights) .and. present(iLambda))then
-	if(size(levelWeights) .ne. size(theseWeights%voxelWeights,1)) then
+PRINT *, size(levelWeights), size(theseWeights%levelWeights,1)
+	if(size(levelWeights) .ne. size(theseWeights%voxelWeights,3)) then
 	  call setStateToFailure(status, "getInfo_Weights: array for levelWeights is wrong dimensions.")
 	else
 	  levelWeights = theseWeights%levelWeights(:,ilambda)
@@ -88,7 +91,8 @@ module emissionAndBBWeights
 	call setStateToFailure(status, "getInfo_Weights: must supply iLambda for levelWeights.")
      end if
      if (present(colWeights) .and. present(iLambda))then
-        if(size(colWeights,1) .ne. size(theseWeights%voxelWeights,1) .or. size(colWeights,2) .ne. size(theseWeights%voxelWeights,2)) then
+PRINT *, size(colWeights,1), size(colWeights,2), size(theseWeights%colWeights,1), size(theseWeights%colWeights,2)
+        if(size(colWeights,1) .ne. size(theseWeights%voxelWeights,2) .or. size(colWeights,2) .ne. size(theseWeights%voxelWeights,3)) then
           call setStateToFailure(status, "getInfo_Weights: array for colWeights is wrong dimensions.")
         else
           colWeights = theseWeights%colWeights(:,:,iLambda)
@@ -97,10 +101,23 @@ module emissionAndBBWeights
 	call setStateToFailure(status, "getInfo_Weights: must supply iLambda for colWeights.")
      end if
      if (present(voxelWeights) .and. present(iLambda))then
+PRINT *, size(voxelWeights,1), size(voxelWeights,2), size(voxelWeights,3), size(theseWeights%voxelWeights,1), size(theseWeights%voxelWeights,2), size(theseWeights%voxelWeights,3)
         if(size(voxelWeights,1) .ne. size(theseWeights%voxelWeights,1) .or. size(voxelWeights,2) .ne. size(theseWeights%voxelWeights,2) .or. size(voxelWeights,3) .ne. size(theseWeights%voxelWeights,3)) then
           call setStateToFailure(status, "getInfo_Weights: array for voxelWeights is wrong dimensions.")
         else
           voxelWeights = theseWeights%voxelWeights(:,:,:,iLambda)
+if (ilambda .eq. 10)then
+    write(32,"(36F12.8)") levelWeights(:)
+    DO k = 1, size(theseWeights%voxelWeights,3)
+      write(33,"(100F12.8)") colWeights(:,k)
+      DO j = 1, size(theseWeights%voxelWeights,2)
+        write(31,"(100F12.8)") voxelWeights(:,j,k)
+      end do
+    end do
+    close(31)
+    close(32)
+    close(33)
+end if
         end if
      else
 	call setStateToFailure(status, "getInfo_Weights: must supply iLambda for voxelWeights.")
@@ -248,8 +265,8 @@ module emissionAndBBWeights
 
        atmsPhotons=ceiling(SUM(totalPhotons * theseWeights%fracAtmsPower(:)))
        theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(nlambda)
-PRINT *, theseWeights%fracAtmsPower
-PRINT *, theseWeights%totalPowerCDF
+PRINT *, "emission_weighting: fraction of atmos power ", theseWeights%fracAtmsPower
+PRINT *, "emission_weighting: total power CDF ", theseWeights%totalPowerCDF
      end if
    end subroutine emission_weighting
 

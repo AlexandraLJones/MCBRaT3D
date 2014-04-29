@@ -165,17 +165,17 @@ program monteCarloDriver
 !PRINT*, 'returned from initializeProcesses'
 
 ! temporary output file for the purposes of debugging
-!  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
+  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
   write(photon_file, '(A,I0.4)') "photon.out.",thisProc
-!  write(col_file, '(A,I0.4)') "col.out.",thisProc
-!  write(row_file, '(A,I0.4)') "row.out.",thisProc
+  write(col_file, '(A,I0.4)') "col.out.",thisProc
+  write(level_file, '(A,I0.4)') "level.out.",thisProc
 !  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
 !  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
 !  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
 
-!  open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
-!  open(unit=12, file=trim(level_file) , status='UNKNOWN')
-!  open(unit=13, file=trim(col_file) , status='UNKNOWN')
+  open(unit=31, file=trim(voxel_file) , status='UNKNOWN')
+  open(unit=32, file=trim(level_file) , status='UNKNOWN')
+  open(unit=33, file=trim(col_file) , status='UNKNOWN')
 !  open(unit=14, file=trim(row_file) , status='UNKNOWN')
 !  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
 !  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
@@ -400,15 +400,18 @@ call printStatus(status)
 
      call emission_weighting(thisDomain, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons,voxel_weights, col_weights=col_weights, level_weights=level_weights, totalFlux=emittedFlux, status=status) 
 PRINT *, 'returned from emission_weighting'
-!    DO iz= 1,nZ
-!      DO iy= 1,nY
-!	DO ix=1,nz
-!          PRINT*,   voxel_weights(ix,iy,iz,:)
-!	END DO
-!	PRINT *,  col_weights(iy,iz,:)
-!      END DO
-!      PRINT *, level_weights(iz,:)
-!    END DO
+
+!    write(32,"(36F12.8)") level_weights(:,1)
+!    DO k = 1, nZ
+!      write(33,"(100F12.8)") col_weights(:,k,1)
+!      DO j = 1, nY
+!        write(31,"(100F12.8)") voxel_weights(:,j,k,1)
+!      end do
+!    end do
+!    close(31)
+!    close(32)
+!    close(33)
+
      solarFlux=emittedFlux
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
@@ -421,12 +424,12 @@ PRINT*, freqDistr
         incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms, status=status, option1=voxel_tallys1)
 	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
      END DO
-PRINT *, 'initialized BB phtoon stream'
+PRINT *, 'initialized BB photon stream'
 call printStatus(status)
     open(unit=12, file=trim(photon_file) , status='UNKNOWN')
     DO k = 1, nZ
       DO j = 1, nY
-        write(12,"(3I12)") voxel_tallys1_sum(:,j,k)
+        write(12,"(100I12)") voxel_tallys1_sum(:,j,k)
       end do
     end do
     close(12)

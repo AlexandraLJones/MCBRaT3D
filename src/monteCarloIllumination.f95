@@ -344,7 +344,7 @@ contains
 	real(8), allocatable, dimension(:,:)                    :: colWeights
 	real(8), allocatable, dimension(:,:,:)                  :: voxelWeights
 	real                                                    :: RN
-	integer                                                 :: numX, numY, numZ, i, ii, ij, ik, sfcTally, atmsTally 
+	integer                                                 :: numX, numY, numZ, i, ii, ij, ik, sfcTally, atmsTally, k, j 
 
     sfcTally = 0; atmsTally = 0
     ! Checks
@@ -363,8 +363,19 @@ contains
                photons%solarMu(numberOfPhotons),  photons%solarAzimuth(numberOfPhotons))
 
 	! get relevant theseWeights values    !!!!!!!BUT i REALLY ONLY HAVE TO DO THIS FOR THE ATMOSPHERE SO SHOULD IT GO IN A DIFFERENT SUBROUTINE, MAYBE IN THE EMISSIONbbwEIGHTS MODULE?????
-	  allocate(levelWeights(1:numX), colWeights(1:numX,1:numY), voxelWeights(1:numX,1:numY,1:numZ))
+	  allocate(levelWeights(1:numZ), colWeights(1:numY,1:numZ), voxelWeights(1:numX,1:numY,1:numZ))
 	  call getInfo_weights(theseWeights=theseWeights, iLambda=iLambda, fracAtmsPower=fracAtmsPower, levelWeights=levelWeights, colWeights=colWeights, voxelWeights=voxelWeights, status=status)
+!    write(32,"(36F12.8)") levelWeights(:)
+!    DO k = 1, numZ
+!      write(33,"(100F12.8)") colWeights(:,k)
+!      DO j = 1, numY
+!        write(31,"(100F12.8)") voxelWeights(:,j,k)
+!      end do
+!    end do
+!    close(31)
+!    close(32)
+!    close(33)
+
 	  DO i = 1, numberOfPhotons
 	  ! determine if it's emitting from the surface or atmosphere
 	    RN = getRandomReal(randomNumbers)

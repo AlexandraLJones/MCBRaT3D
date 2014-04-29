@@ -47,7 +47,7 @@ ifeq (${compiler},ftn)
      F95Flags = -dynamic${Modules} 
      FFlags =
   else
-     F95Flags = -g -O fp0 -Rb -Rc -Rp -rm${Modules}
+     F95Flags = -g -O fp0 -Rb -Rc -Rp -rm -dynamic${Modules}
      FFlags = -g -O fp0 -rm
   endif
 endif
