@@ -158,7 +158,7 @@ contains
        new_Domain%lambda       = lambda
        new_Domain%lambdaI      = lambdaI
        new_Domain%nlambda      = nlambda
-PRINT *, 'new_Domain: nlambdas match= ', new_Domain%nlambda, nlambda
+!PRINT *, 'new_Domain: nlambdas match= ', new_Domain%nlambda, nlambda
        new_Domain%surfaceAlbedo = albedo
 
        ! Are the grids regularly spaced? Compare the distance between each pair 
@@ -547,9 +547,14 @@ PRINT *, 'new_Domain: nlambdas match= ', new_Domain%nlambda, nlambda
       end if
       if(present(temps))then
         if(size(temps) /= size(thisDomain%temps))then
+!PRINT *, 'getInfo_Domain: array for temps not the right size'
           call setStateToFailure(status, "getInfo_Domain: array for temps not the right size.")
+!	elseif (COUNT(thisDomain%temps .le. 0.0_8) .gt. 0) then
+!PRINT *, 'getInfo_Domain: there are temperatures at or below 0.0 K. MIN(thisDomain%temps)= ', MINVAL(thisDomain%temps)
+!	  call setStateToFailure(status, "getInfo_Domain: there are temperatures at or below 0.0 K.")
         else
           temps(:,:,:) = thisDomain%temps(:,:,:)
+!PRINT *, 'getINfoDomain: min(thisDomain%temps), min(temps) ', MINVAL(thisDomain%temps), MINVAL(temps)
         end if
       end if
       if(containsComponents(thisDomain)) then 
@@ -908,6 +913,8 @@ PRINT *, 'new_Domain: nlambdas match= ', new_Domain%nlambda, nlambda
       
       ncStatus(15) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
       ncStatus(16) = nf90_get_var(ncFileId, ncVarId, temps)
+!      if( COUNT(temps .le. 0.0_8) .gt. 0)PRINT *, 'readDomain: there are temps at or below 0.0 K'
+!PRINT *, 'readDomain: min temp = ', MINVAL(temps)
       if(any(ncStatus(:) /= nf90_NoErr)) &
         call setStateToFailure(status, "read_Domain: " // trim(fileName) // &
                                " doesn't look an optical properties file.") 

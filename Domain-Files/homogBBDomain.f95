@@ -10,21 +10,22 @@ program homogBBDomain
   use netcdf  
   implicit none
   
-  character(len=256) :: LGfile,  domfile, domfile_str, component_string, file_list
-  integer ::  ncid, varid, status, nx, ny, nz, i, pEnt,maxz=20, nLG, nlambda, ilambda, isoIndex
+  character(len=256) :: LGfile,  domfile, domfile_str, component_string, file_list, sourcefile_str
+  integer ::  ncid, varid, status, nx, ny, nz, i, pEnt,maxz=20, nLG, nlambda, ilambda, isoIndex, source, ncFileId, DimId, ncVarId
   integer :: nLegendreCoefficients = 180
-  real(8)    ::  dx, dy, dz, isoT, concen, isoSSA, isobeta_e, s_lambda, dlambda, albedo
+  real(8)    ::  dx, dy, dz, isoT, concen, isoSSA, isobeta_e, s_lambda, dlambda, albedo, Rad
   real     :: re, g
   real, allocatable	 ::  LG(:)
-  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:),  Temp(:,:,:), lambdas(:)
+  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:),  Temp(:,:,:), lambdas(:), sourceFunc(:)
   integer, allocatable	::	pInd(:,:,:), LGind(:)
   integer, dimension(3) ::  dims
+  integer, dimension(16) :: ncStatus
   real, dimension(1000) :: thetas
   real, dimension(1000,1) :: values
   real, dimension(2) 			:: LegendreCoefs
   logical								::	HGphase=.false.
     
-  type(ErrorMessage)              :: domstatus
+  type(ErrorMessage)              :: domstatus, srcstatus
   type(phaseFunction)		  :: PhaseFunc
   type(phaseFunctionTable)        :: table, OnePhaseFuncTable
   type(domain)                    :: cloud
@@ -34,6 +35,9 @@ program homogBBDomain
 
 ! read data from input
   
+  read(*,'(1I)') source
+  read(*,'(1F)') Rad
+  read(*,'(1A)') sourcefile_str
   read(*,'(1F)') albedo
   read(*,'(1F)') g
   read(*,'(1I)') nx
@@ -109,6 +113,28 @@ program homogBBDomain
     call printStatus(domstatus)
     if(stateIsSuccess(domstatus)) call setStateToCompleteSuccess(domstatus)
   END DO
-close(22)  
+  close(22)  
+
+  if(source .lt. 0)then  ! solar source; create solar source file
+     allocate(sourceFunc(1:nLambda))
+     sourceFunc = Rad
+     ncStatus(:) = nf90_NoErr
+     ncStatus( 1) = nf90_create(trim(sourcefile_str), nf90_Clobber, ncFileId)
+     ncStatus( 2) = nf90_def_dim(ncFileId, "Lambdas", nLambda, DimId)
+     ncStatus( 3) = nf90_def_var(ncFileId, "Lambdas", nf90_double, DimId, ncVarId)
+     ncStatus( 4) = nf90_def_var(ncFileId, "SourceFunction", nf90_double, DimId, ncVarId)
+
+     if(any(ncStatus(:) /= nf90_NoErr)) &
+         call setStateToFailure(srcstatus, "homogBBDomain: error writing source function file")
+     if(.not. stateIsFailure(srcstatus))then
+         ncStatus( 1) = nf90_EndDef(ncFileId)
+         ncStatus( 2) = nf90_inq_varid(ncFileId, "Lambdas", ncVarID)
+         ncStatus( 3) = nf90_put_var(ncFileId, ncVarId, lambdas)
+         ncStatus( 4) = nf90_inq_varid(ncFileId, "SourceFunction", ncVarID)
+         ncStatus( 5) = nf90_put_var(ncFileId, ncVarId, sourceFunc)
+         ncStatus( 6) = nf90_close(ncFileId)
+     end if
+
+  end if
 end program homogBBDomain
 

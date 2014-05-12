@@ -83,7 +83,7 @@ program monteCarloDriver
                           reportAbsorptionProfile = .false. 
   
   ! File names
-  character(len=256)   :: domainFileName = "", domainFileList = ""
+  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = ""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
                           outputNetcdfFile = ""
@@ -111,7 +111,7 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         domainFileList, &
+  namelist /fileNames/         domainFileList, solarSourceFile, &
                                outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
   
@@ -128,6 +128,7 @@ program monteCarloDriver
   real(8)                 :: emittedFlux
   real                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:)
+  real(8), allocatable    :: solarSourceFunction(:), centralLambdas(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :)
   real, allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :)
   real, allocatable    :: absorbedProfile(:), absorbedProfileStats(:, :)
@@ -195,6 +196,14 @@ program monteCarloDriver
   read (1, nml = fileNames);         rewind(1)
   close (1)
 
+! if Solar simulation we want to read in the arrays to store solar spectrum from the netCDF file
+  if (LW_flag .lt. 0) then
+     allocate(solarSourceFunction(1:numLambda))
+     allocate(centralLambdas(1:numLambda))
+     call read_SolarSource(solarSourceFile, numLambda, solarSourceFunction, centralLambdas, status=status)
+PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(solarSourceFunction)
+     call printStatus(status)
+  end if
 !automatic assignment of observation angles. If angleFill
 !mu and phi must be specified
   if(angleFill) then
@@ -391,14 +400,14 @@ PRINT *, 'Specified variance reduction'
 !PRINT *, 'solarFlux=', solarFlux
   if(LW_flag >= 0.0)then
      theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=numLambda, status=status)
-PRINT *, 'initialized weights'
+PRINT *, 'initialized thermal weights'
 call printStatus(status)
      allocate (voxel_weights(nX,nY,nZ,numLambda),col_weights(nY,nZ,numLambda), level_weights(nZ,numLambda))
 !     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
 !PRINT *, 'retrieved fields for emission weighting'
 !call printStatus(status)
 
-     call emission_weighting(thisDomain, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons,voxel_weights, col_weights=col_weights, level_weights=level_weights, totalFlux=emittedFlux, status=status) 
+     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons,voxel_weights, col_weights=col_weights, level_weights=level_weights, totalFlux=emittedFlux, status=status) 
 PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
@@ -412,7 +421,6 @@ PRINT *, 'returned from emission_weighting'
 !    close(32)
 !    close(33)
 
-     solarFlux=emittedFlux
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
 PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
@@ -424,7 +432,7 @@ PRINT*, freqDistr
         incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms, status=status, option1=voxel_tallys1)
 	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
      END DO
-PRINT *, 'initialized BB photon stream'
+PRINT *, 'initialized thermal BB photon stream'
 call printStatus(status)
     open(unit=12, file=trim(photon_file) , status='UNKNOWN')
     DO k = 1, nZ
@@ -435,14 +443,20 @@ call printStatus(status)
     close(12)
      incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1), level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
-PRINT *, 'initialized LW photon stream'
+PRINT *, 'initialized single photon'
 call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
   else
      theseWeights=new_Weights(numLambda=numLambda, status=status)
-PRINT *, 'initialized weights'
+PRINT *, 'initialized solar weights'
 call printStatus(status)
+     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
+PRINT *, 'filled solar weights'
+call printStatus(status)
+     deallocate(solarSourceFunction)
+     deallocate(centralLambdas)
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms, freqDistr)
+PRINT *, freqDistr
      DO i = 1, numLambda
        incomingBBPhotons(i) = new_PhotonStream (solarMu, solarAzimuth, &
                                       numberOfPhotons = freqDistr(i),   &
@@ -451,7 +465,13 @@ call printStatus(status)
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 PRINT *, 'initialized SW photon stream'
 call printStatus(status)
+     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
+                                      numberOfPhotons = 1,   &
+                                      randomNumbers = randoms, status=status)
+call printStatus(status)
+PRINT *, 'initialized SW test photon'     
   end if
+  solarFlux = emittedFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
 !  call finalize_Domain(thisDomain)
 STOP
