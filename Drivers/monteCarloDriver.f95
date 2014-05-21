@@ -117,7 +117,8 @@ program monteCarloDriver
   
 
    ! Local variables
-  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
+  character(len=256)   :: namelistFileName
+!  character(len=256)   :: voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
   integer              :: nX, nY, nZ, phtn
   integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
@@ -134,21 +135,22 @@ program monteCarloDriver
   real, allocatable    :: absorbedProfile(:), absorbedProfileStats(:, :)
   real, allocatable    :: absorbedVolume(:, :, :), absorbedVolumeStats(:, :, :, :)
   real, allocatable    :: Radiance(:, :, :), RadianceStats(:, :, :, :)
-  real, allocatable    :: meanFluxUpByScatOrd(:), meanFluxDownByScatOrd(:)
-  real, allocatable    :: meanFluxUpByScatOrdStats(:,:), meanFluxDownByScatOrdStats(:,:)
-  real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
-  real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
-  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
+!  real, allocatable    :: meanFluxUpByScatOrd(:), meanFluxDownByScatOrd(:)
+!  real, allocatable    :: meanFluxUpByScatOrdStats(:,:), meanFluxDownByScatOrdStats(:,:)
+!  real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
+!  real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
+!  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
   integer              ::  N, atms_photons
-  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
-  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:), freqDistr(:)
+!  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
+!  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
+  integer, allocatable   ::  freqDistr(:)
 
    ! I3RC Monte Carlo code derived type variables
   type(domain)               :: thisDomain
   type(domain), allocatable, dimension(:) :: BBDomain
   type(ErrorMessage)         :: status
   type(randomNumberSequence) :: randoms
-  type(photonStream)         :: incomingPhotons
+!  type(photonStream)         :: incomingPhotons
   type(photonStream), allocatable, dimension(:) :: incomingBBPhotons
   type(integrator)           :: mcIntegrator
   type(Weights)              :: theseWeights
@@ -166,17 +168,17 @@ program monteCarloDriver
 !PRINT*, 'returned from initializeProcesses'
 
 ! temporary output file for the purposes of debugging
-  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
-  write(photon_file, '(A,I0.4)') "photon.out.",thisProc
-  write(col_file, '(A,I0.4)') "col.out.",thisProc
-  write(level_file, '(A,I0.4)') "level.out.",thisProc
+!  write(voxel_file, '(A,I0.4)') "voxel.out.",thisProc
+!  write(photon_file, '(A,I0.4)') "photon.out.",thisProc
+!  write(col_file, '(A,I0.4)') "col.out.",thisProc
+!  write(level_file, '(A,I0.4)') "level.out.",thisProc
 !  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
 !  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
 !  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
 
-  open(unit=31, file=trim(voxel_file) , status='UNKNOWN')
-  open(unit=32, file=trim(level_file) , status='UNKNOWN')
-  open(unit=33, file=trim(col_file) , status='UNKNOWN')
+!  open(unit=31, file=trim(voxel_file) , status='UNKNOWN')
+!  open(unit=32, file=trim(level_file) , status='UNKNOWN')
+!  open(unit=33, file=trim(col_file) , status='UNKNOWN')
 !  open(unit=14, file=trim(row_file) , status='UNKNOWN')
 !  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
 !  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
@@ -207,7 +209,7 @@ PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(so
 !automatic assignment of observation angles. If angleFill
 !mu and phi must be specified
   if(angleFill) then
-  if((phiFill(3) >= 0.) .and. (thetaFill(3) >= 0. )  .and. &
+   if((phiFill(3) >= 0.) .and. (thetaFill(3) >= 0. )  .and. &
      (thetaFill(2) .ge. thetaFill(1)) .and. (phiFill(2) .ge. phiFill(1)) )   then 
     nMu = int( (thetaFill(2) - thetafill(1))/thetafill(3)) +1
     nPhi = int((phiFill(2) - phiFill(1))/phiFill(3)) +1 
@@ -235,8 +237,11 @@ PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(so
          intensityPhis(k) = phis(j)
       end do
     end do
+   end if
   end if
-  end if 
+ if (allocated(mus)) deallocate(mus)
+ if (allocated(phis)) deallocate(phis) 
+
   numRadDir = count(abs(intensityMus(:)) > 0.) 
   computeIntensity = numRadDir > 0 .and. &
                      (len_trim(outputRadFile) > 0 .or. len_trim(outputNetcdfFile) > 0)
@@ -245,7 +250,7 @@ PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(so
   !set recScatOrd to false if the number requested is negative
   !no need to do the opposite because the integrator 
   !will listen only to numRecScatOrd if it is present
-  if(numRecScatOrd < 0) recScatOrd=.false.
+!  if(numRecScatOrd < 0) recScatOrd=.false.
 
   ! -----------------------------------------
   !  Read the domain file
@@ -310,14 +315,14 @@ PRINT *, 'Specified Intensity Calcs'
     call printStatus(status) 
   endif
 
-  if(recScatOrd) then
-    call specifyParameters (mcIntegrator, &
-                            recScatOrd=recScatOrd, &
-                            numRecScatOrd=numRecScatOrd, & 
-                            status = status)
-PRINT *, 'SPecified recScatOrder'
-    call printStatus(status)
-  end if 
+!  if(recScatOrd) then
+!    call specifyParameters (mcIntegrator, &
+!                            recScatOrd=recScatOrd, &
+!                            numRecScatOrd=numRecScatOrd, & 
+!                            status = status)
+!PRINT *, 'SPecified recScatOrder'
+!    call printStatus(status)
+!  end if 
 
   !
   ! Make the algorithmic choices
@@ -354,14 +359,14 @@ PRINT *, 'Specified variance reduction'
 
 !PRINT *, 'Driver: Specified Parameters'
    ! Allocate and zero the arrays for radiative quantities and moments 
-  allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
-  allocate (voxel_tallys2(nX, nY, nZ), voxel_tallys2_sum(nX, nY, nZ), voxel_tallys2_total(nX, nY, nZ))
+!  allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
+!  allocate (voxel_tallys2(nX, nY, nZ), voxel_tallys2_sum(nX, nY, nZ), voxel_tallys2_total(nX, nY, nZ))
   allocate (fluxUp      (nX, nY), fluxUpStats      (nX, nY, 2))
   allocate (fluxDown    (nX, nY), fluxDownStats    (nX, nY, 2))
   allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 2))
   allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 2))
   allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 2))
-  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
+!  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
 !  voxel_tallys2(:,:,:)=0 ; voxel_tallys2_sum(:,:,:) = 0 ; voxel_tallys2_total(:,:,:) = 0
   meanFluxUpStats(:) = 0.0  ; meanFluxDownStats(:) = 0.0  ; meanFluxAbsorbedStats(:) = 0.0
   fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
@@ -371,20 +376,20 @@ PRINT *, 'Specified variance reduction'
     RadianceStats(:, :, :, :) = 0.0
   endif  
   
-  if(recScatOrd .and. numRecScatOrd >=0) then 
-    allocate(meanFluxUpByScatOrd(0:numRecScatOrd), meanFluxDownByScatOrd(0:numRecScatOrd),&
-             fluxUpByScatOrd(nX,nY,0:numRecScatOrd),fluxDownByScatOrd(nX,nY,0:numRecScatOrd), &
-             meanFluxUpByScatOrdStats(0:numRecScatOrd, 2), meanFluxDownByScatOrdStats(0:numRecScatOrd,2), &
-             fluxUpByScatOrdStats(nX,nY, 0:numRecScatOrd, 2), fluxDownByScatOrdStats(nX,nY,0:numRecScatOrd,2))
-    meanFluxUpByScatOrdStats=0.0;meanFluxDownByScatOrdStats=0.0;
-    fluxUpByScatOrdStats=0.0;fluxDownByScatOrdStats=0.0;
-    
-    if(computeIntensity) then
-      allocate(intensityByScatOrd(nX,nY,numRadDir,0:numRecScatOrd), &
-               intensityByScatOrdStats(nX,nY,numRadDir, 0:numRecScatOrd, 2))
-      intensityByScatOrdStats=0.0;
-    end if
-  end if
+!  if(recScatOrd .and. numRecScatOrd >=0) then 
+!    allocate(meanFluxUpByScatOrd(0:numRecScatOrd), meanFluxDownByScatOrd(0:numRecScatOrd),&
+!             fluxUpByScatOrd(nX,nY,0:numRecScatOrd),fluxDownByScatOrd(nX,nY,0:numRecScatOrd), &
+!             meanFluxUpByScatOrdStats(0:numRecScatOrd, 2), meanFluxDownByScatOrdStats(0:numRecScatOrd,2), &
+!             fluxUpByScatOrdStats(nX,nY, 0:numRecScatOrd, 2), fluxDownByScatOrdStats(nX,nY,0:numRecScatOrd,2))
+!    meanFluxUpByScatOrdStats=0.0;meanFluxDownByScatOrdStats=0.0;
+!    fluxUpByScatOrdStats=0.0;fluxDownByScatOrdStats=0.0;
+!    
+!    if(computeIntensity) then
+!      allocate(intensityByScatOrd(nX,nY,numRadDir,0:numRecScatOrd), &
+!               intensityByScatOrdStats(nX,nY,numRadDir, 0:numRecScatOrd, 2))
+!      intensityByScatOrdStats=0.0;
+!    end if
+!  end if
 
   ! --------------------------------------------------------------------------
   ! Compute radiative transfer with a trivial number of photons. 
@@ -402,12 +407,12 @@ PRINT *, 'Specified variance reduction'
      theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=numLambda, status=status)
 PRINT *, 'initialized thermal weights'
 call printStatus(status)
-     allocate (voxel_weights(nX,nY,nZ,numLambda),col_weights(nY,nZ,numLambda), level_weights(nZ,numLambda))
+!     allocate (voxel_weights(nX,nY,nZ,numLambda),col_weights(nY,nZ,numLambda), level_weights(nZ,numLambda))
 !     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
 !PRINT *, 'retrieved fields for emission weighting'
 !call printStatus(status)
 
-     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons,voxel_weights, col_weights=col_weights, level_weights=level_weights, totalFlux=emittedFlux, status=status) 
+     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons, totalFlux=emittedFlux, status=status) 
 PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
@@ -429,22 +434,22 @@ call printStatus(status)
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms, freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
 PRINT*, freqDistr
      DO i = 1, numLambda
-        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms, status=status, option1=voxel_tallys1)
-	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
+        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms, status=status)
+!	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
      END DO
 PRINT *, 'initialized thermal BB photon stream'
 call printStatus(status)
-    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
-    DO k = 1, nZ
-      DO j = 1, nY
-        write(12,"(100I12)") voxel_tallys1_sum(:,j,k)
-      end do
-    end do
-    close(12)
-     incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1), level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
+!    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
+!    DO k = 1, nZ
+ !     DO j = 1, nY
+  !      write(12,"(100I12)") voxel_tallys1_sum(:,j,k)
+ !     end do
+!    end do
+!    close(12)
+!     incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1), level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
-PRINT *, 'initialized single photon'
-call printStatus(status)
+!PRINT *, 'initialized single photon'
+!call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
   else
      theseWeights=new_Weights(numLambda=numLambda, status=status)
@@ -465,23 +470,25 @@ PRINT *, freqDistr
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 PRINT *, 'initialized SW photon stream'
 call printStatus(status)
-     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
-                                      numberOfPhotons = 1,   &
-                                      randomNumbers = randoms, status=status)
-call printStatus(status)
-PRINT *, 'initialized SW test photon'     
+!     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
+!                                      numberOfPhotons = 1,   &
+!                                      randomNumbers = randoms, status=status)
+!call printStatus(status)
+!PRINT *, 'initialized SW test photon'     
   end if
+  call finalize_Weights(theseWeights)
+  deallocate(freqDistr)
   solarFlux = emittedFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
 !  call finalize_Domain(thisDomain)
-STOP
+!STOP
 
   ! Now we compute the radiative transfer for a single photon 
-  if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
-  call computeRadiativeTransfer (mcIntegrator,thisDomain, randoms, incomingPhotons, status, voxel_tallys2)
-PRINT *, 'Computed RT for a single photon'
-  call printStatus(status) 
-  call finalize_PhotonStream (incomingPhotons)
+!  if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
+!  call computeRadiativeTransfer (mcIntegrator,thisDomain, randoms, incomingPhotons, status)
+!PRINT *, 'Computed RT for a single photon'
+!  call printStatus(status) 
+!  call finalize_PhotonStream (incomingPhotons)
 !PRINT *, 'Driver: succesfully tested photon initialization'
 
   call cpu_time(cpuTime1)
@@ -490,7 +497,7 @@ PRINT *, 'Computed RT for a single photon'
 !PRINT *, "called synchronizeProcesses"
   cpuTimeSetup = sumAcrossProcesses(cpuTime1 - cpuTime0) 
 PRINT *, "cpuTimeSetup=", cpuTimeSetup
-STOP
+!STOP
   if (MasterProc) &
     print *, "Setup CPU time (secs, approx): ", int(cpuTimeSetup)
 !PRINT *, "setup completed"
@@ -517,21 +524,21 @@ STOP
 
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
-    if(LW_flag >= 0.0)then
-       incomingPhotons = new_PhotonStream (numberOfPhotons=numPhotonsPerBatch, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1),&
-level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status, option1=voxel_tallys1)  
+!    if(LW_flag >= 0.0)then
+!       incomingPhotons = new_PhotonStream (numberOfPhotons=numPhotonsPerBatch, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1),&
+!level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !DO phtn=1,numPhotonsPerBatch
 !   PRINT *, incomingPhotons%xPosition(phtn), incomingPhotons%yPosition(phtn), incomingPhotons%zPosition(phtn)
 !ENDDO      
-    else
-       incomingPhotons = new_PhotonStream (solarMu, solarAzimuth,                &
-                                        numberOfPhotons = numPhotonsPerBatch, &
-                                        randomNumbers = randoms, status = status)
-    end if
-    call printStatus(status)
+!    else
+!       incomingPhotons = new_PhotonStream (solarMu, solarAzimuth,                &
+!                                        numberOfPhotons = numPhotonsPerBatch, &
+!                                        randomNumbers = randoms, status = status)
+!    end if
+!    call printStatus(status)
 !PRINT *, 'Driver: Initialized photons for batch', batch
     ! Now we compute the radiative transfer for this batch of photons. 
-    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms, incomingPhotons, status, voxel_tallys2)
+    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms, incomingBBPhotons(i), status)
 !PRINT *, 'Driver: COmputed RT for batch', batch
      ! Get the radiative quantities:
      !   This particular integrator provides fluxes at the top and bottom 
@@ -570,35 +577,38 @@ level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, st
       RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + (solarFlux*Radiance(:, :, :))**2
     endif
 
-   if(recScatOrd) then 
-      call reportResults(mcIntegrator, &
-             meanFluxUpByScatOrd=meanFluxUpByScatOrd, meanFluxDownByScatOrd=meanFluxDownByScatOrd, &
-             fluxUpByScatOrd=fluxUpByScatOrd, fluxDownByScatOrd=fluxDownByScatOrd, status=status)
-      !accumulate quantities as above
-      meanFluxUpByScatOrdStats(:,1) = meanFluxUpByScatOrdStats(:,1) + solarFlux*meanFluxUpByScatOrd(:)
-      meanFluxUpByScatOrdStats(:,2) = meanFluxUpByScatOrdStats(:,2) + (solarFlux*meanFluxUpByScatOrd(:))**2
-      meanFluxDownByScatOrdStats(:,1) = meanFluxDownByScatOrdStats(:,1) +  solarFlux*meanFluxDownByScatOrd(:)
-      meanFluxDownByScatOrdStats(:,2) = meanFluxDownByScatOrdStats(:,2) + (solarFlux*meanFluxUpByScatOrd(:))**2
-      meanFluxDownByScatOrdStats(:,1) = meanFluxDownByScatOrdStats(:,1) +  (solarFlux*meanFluxDownByScatOrd(:))**2
-            fluxUpByScatOrdStats(:,:,:,1) = fluxUpByScatOrdStats(:,:,:,1) +  solarFlux*fluxUpByScatOrd(:,:,:)
-            fluxUpByScatOrdStats(:,:,:,2) = fluxUpByScatOrdStats(:,:,:,2) + ( solarFlux*fluxUpByScatOrd(:,:,:))**2
-          fluxDownByScatOrdStats(:,:,:,1) = fluxDownByScatOrdStats(:,:,:,1) +  solarFlux*fluxDownByScatOrd(:,:,:)
-          fluxDownByScatOrdStats(:,:,:,2) = fluxDownByScatOrdStats(:,:,:,2) + ( solarFlux*fluxDownByScatOrd(:,:,:))**2
-      if(computeIntensity) then
-        call reportResults(mcIntegrator, intensityByScatOrd=intensityByScatOrd, status=status)
-        intensityByScatOrdStats(:,:,:,:,1) = intensityByScatOrdStats(:,:,:,:,1) +  solarFlux*intensityByScatOrd(:,:,:,:)
-        intensityByScatOrdStats(:,:,:,:,2) = intensityByScatOrdStats(:,:,:,:,2) + ( solarFlux*intensityByScatOrd(:,:,:,:))**2
-      end if
-   end if
+!   if(recScatOrd) then 
+!      call reportResults(mcIntegrator, &
+!             meanFluxUpByScatOrd=meanFluxUpByScatOrd, meanFluxDownByScatOrd=meanFluxDownByScatOrd, &
+!             fluxUpByScatOrd=fluxUpByScatOrd, fluxDownByScatOrd=fluxDownByScatOrd, status=status)
+!      !accumulate quantities as above
+!      meanFluxUpByScatOrdStats(:,1) = meanFluxUpByScatOrdStats(:,1) + solarFlux*meanFluxUpByScatOrd(:)
+!      meanFluxUpByScatOrdStats(:,2) = meanFluxUpByScatOrdStats(:,2) + (solarFlux*meanFluxUpByScatOrd(:))**2
+!      meanFluxDownByScatOrdStats(:,1) = meanFluxDownByScatOrdStats(:,1) +  solarFlux*meanFluxDownByScatOrd(:)
+!      meanFluxDownByScatOrdStats(:,2) = meanFluxDownByScatOrdStats(:,2) + (solarFlux*meanFluxUpByScatOrd(:))**2
+!      meanFluxDownByScatOrdStats(:,1) = meanFluxDownByScatOrdStats(:,1) +  (solarFlux*meanFluxDownByScatOrd(:))**2
+!            fluxUpByScatOrdStats(:,:,:,1) = fluxUpByScatOrdStats(:,:,:,1) +  solarFlux*fluxUpByScatOrd(:,:,:)
+!            fluxUpByScatOrdStats(:,:,:,2) = fluxUpByScatOrdStats(:,:,:,2) + ( solarFlux*fluxUpByScatOrd(:,:,:))**2
+!          fluxDownByScatOrdStats(:,:,:,1) = fluxDownByScatOrdStats(:,:,:,1) +  solarFlux*fluxDownByScatOrd(:,:,:)
+!          fluxDownByScatOrdStats(:,:,:,2) = fluxDownByScatOrdStats(:,:,:,2) + ( solarFlux*fluxDownByScatOrd(:,:,:))**2
+!      if(computeIntensity) then
+!        call reportResults(mcIntegrator, intensityByScatOrd=intensityByScatOrd, status=status)
+!        intensityByScatOrdStats(:,:,:,:,1) = intensityByScatOrdStats(:,:,:,:,1) +  solarFlux*intensityByScatOrd(:,:,:,:)
+!        intensityByScatOrdStats(:,:,:,:,2) = intensityByScatOrdStats(:,:,:,:,2) + ( solarFlux*intensityByScatOrd(:,:,:,:))**2
+!      end if
+!   end if
 !PRINT *, 'Driver: Reported results for batch', batch
      ! Release the photon "illumination" object memory
-    call finalize_PhotonStream (incomingPhotons)
+    
     call printStatus(status)
   end do batches
-
-  if (allocated(voxel_weights)) deallocate (voxel_weights)
-  if (allocated(col_weights)) deallocate (col_weights)
-  if (allocated(level_weights)) deallocate (level_weights)  
+  DO i=1, numLambda
+    call finalize_PhotonStream (incomingBBPhotons(i))
+    call finalize_Domain(BBDomain(i))
+  END DO
+!  if (allocated(voxel_weights)) deallocate (voxel_weights)
+!  if (allocated(col_weights)) deallocate (col_weights)
+!  if (allocated(level_weights)) deallocate (level_weights)  
   !
   ! Accumulate statistics from across all the processors
   !
@@ -625,16 +635,16 @@ level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, st
     RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
 !PRINT *, "mean total RadianceStats =", sum(RadianceStats(:, :, 1,1))/real (nX * nY)  
 
-   if(recScatOrd) then
-     meanFluxUpByScatOrdStats(:,:) = sumAcrossProcesses(meanFluxUpByScatOrdStats)
-     meanFluxDownByScatOrdStats(:,:) = sumAcrossProcesses(meanFluxDownByScatOrdStats)
-     fluxUpByScatOrdStats(:,:,:,:) = sumAcrossProcesses(fluxUpByScatOrdStats)
-     fluxDownByScatOrdStats(:,:,:,:) = sumAcrossProcesses(fluxDownByScatOrdStats)
+!   if(recScatOrd) then
+!     meanFluxUpByScatOrdStats(:,:) = sumAcrossProcesses(meanFluxUpByScatOrdStats)
+!     meanFluxDownByScatOrdStats(:,:) = sumAcrossProcesses(meanFluxDownByScatOrdStats)
+!     fluxUpByScatOrdStats(:,:,:,:) = sumAcrossProcesses(fluxUpByScatOrdStats)
+!     fluxDownByScatOrdStats(:,:,:,:) = sumAcrossProcesses(fluxDownByScatOrdStats)
     
-     if(computeIntensity) then
-     intensityByScatOrdStats(:,:,:,:,:) = sumAcrossProcesses(intensityByScatOrdStats)
-     end if
-   end if
+!     if(computeIntensity) then
+!     intensityByScatOrdStats(:,:,:,:,:) = sumAcrossProcesses(intensityByScatOrdStats)
+!     end if
+!   end if
 
 !PRINT *, 'Driver: accumulated results'
 !  close(11)
@@ -676,22 +686,22 @@ level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, st
     RadianceStats(:, :, :,2) = sqrt( max(0.0, RadianceStats(:, :, :,2) - RadianceStats(:, :, :,1)**2) /(numBatches-1))
   endif
 
-  if(recScatOrd) then 
-    meanFluxUpByScatOrdStats(:,:) =meanFluxUpByScatOrdStats(:,:)/numBatches
-    meanFluxUpByScatOrdStats(:,2) = sqrt(max(0.0, meanFluxUpByScatOrdStats(:,2) - meanFluxUpByScatOrdStats(:,1)**2) / (numBatches-1))
-    meanFluxDownByScatOrdStats(:,:) = meanFluxDownByScatOrdStats(:,:)/numBatches
-    meanFluxDownByScatOrdStats(:,2) = sqrt(max(0.0, meanFluxDownByScatOrdStats(:,2) - meanFluxDownByScatOrdStats(:,1)**2) / (numBatches-1))
-    fluxUpByScatOrdStats(:,:,:,:) = fluxUpByScatOrdStats(:,:,:,:)/numBatches
-    fluxUpByScatOrdStats(:,:,:,2) = sqrt(max(0.0, fluxUpByScatOrdStats(:,:,:,2) - fluxUpByScatOrdStats(:,:,:,1)**2) / (numBatches-1))
-    fluxDownByScatOrdStats(:,:,:,:) =fluxDownByScatOrdStats(:,:,:,:)/numBatches
-    fluxDownByScatOrdStats(:,:,:,2) = sqrt(max(0.0, fluxDownByScatOrdStats(:,:,:,2) - fluxDownByScatOrdStats(:,:,:,1)**2) / (numBatches-1))
+!  if(recScatOrd) then 
+!    meanFluxUpByScatOrdStats(:,:) =meanFluxUpByScatOrdStats(:,:)/numBatches
+!    meanFluxUpByScatOrdStats(:,2) = sqrt(max(0.0, meanFluxUpByScatOrdStats(:,2) - meanFluxUpByScatOrdStats(:,1)**2) / (numBatches-1))
+!    meanFluxDownByScatOrdStats(:,:) = meanFluxDownByScatOrdStats(:,:)/numBatches
+!    meanFluxDownByScatOrdStats(:,2) = sqrt(max(0.0, meanFluxDownByScatOrdStats(:,2) - meanFluxDownByScatOrdStats(:,1)**2) / (numBatches-1))
+!    fluxUpByScatOrdStats(:,:,:,:) = fluxUpByScatOrdStats(:,:,:,:)/numBatches
+!    fluxUpByScatOrdStats(:,:,:,2) = sqrt(max(0.0, fluxUpByScatOrdStats(:,:,:,2) - fluxUpByScatOrdStats(:,:,:,1)**2) / (numBatches-1))
+!    fluxDownByScatOrdStats(:,:,:,:) =fluxDownByScatOrdStats(:,:,:,:)/numBatches
+!    fluxDownByScatOrdStats(:,:,:,2) = sqrt(max(0.0, fluxDownByScatOrdStats(:,:,:,2) - fluxDownByScatOrdStats(:,:,:,1)**2) / (numBatches-1))
     
-    if(computeIntensity) then
-      intensityByScatOrdStats(:,:,:,:,:) = intensityByScatOrdStats(:,:,:,:,:)/numBatches
-      intensityByScatOrdStats(:,:,:,:,2) = sqrt(max(0.0, intensityByScatOrdStats(:,:,:,:,2)-intensityByScatOrdStats(:,:,:,:,1)**2) / &
-                                           (numBatches-1))
-    end if
-  end if
+!    if(computeIntensity) then
+!      intensityByScatOrdStats(:,:,:,:,:) = intensityByScatOrdStats(:,:,:,:,:)/numBatches
+!      intensityByScatOrdStats(:,:,:,:,2) = sqrt(max(0.0, intensityByScatOrdStats(:,:,:,:,2)-intensityByScatOrdStats(:,:,:,:,1)**2) / &
+!                                           (numBatches-1))
+!    end if
+!  end if
 
 !PRINT *, 'Driver: calculated radiative quantities'
   if(MasterProc) then ! Write a single output file. 
@@ -721,7 +731,7 @@ level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, st
     end if 
   
     if(len_trim(outputNetcdfFile) > 0) then
-      if(computeIntensity .and. .not. recScatOrd) then 
+      if(computeIntensity) then 
         call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
                                  solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
                                  xPosition, yPosition, zPosition,                 &
@@ -729,27 +739,27 @@ level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, st
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats,       &
                                  intensityMus, intensityPhis, RadianceStats)      
-      elseif(computeIntensity .and. recScatOrd) then
-        call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
-                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
-                                 outputNetcdfFile,                                &
-                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
-                                 absorbedProfileStats, absorbedVolumeStats,       &
-                                 intensityMus, intensityPhis, RadianceStats,      &
-                                 numRecScatOrd,                                   &
-                                 fluxUpByScatOrdStats, fluxDownByScatOrdStats,    &
-                                 intensityByScatOrdStats                          )
-      elseif(.not. computeIntensity .and. recScatOrd) then
-        call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
-                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
-                                 outputNetcdfFile,                                &
-                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
-                                 absorbedProfileStats, absorbedVolumeStats,       &
-                                 numRecScatOrd=numRecScatOrd,                     &
-                                 fluxUpByScatOrdStats=fluxUpByScatOrdStats,       &
-                                 fluxDownByScatOrdStats=fluxDownByScatOrdStats      )
+!      elseif(computeIntensity .and. recScatOrd) then
+!        call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
+!                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+!                                 xPosition, yPosition, zPosition,                 &
+!                                 outputNetcdfFile,                                &
+!                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
+!                                 absorbedProfileStats, absorbedVolumeStats,       &
+!                                 intensityMus, intensityPhis, RadianceStats,      &
+!                                 numRecScatOrd,                                   &
+!                                 fluxUpByScatOrdStats, fluxDownByScatOrdStats,    &
+!                                 intensityByScatOrdStats                          )
+!      elseif(.not. computeIntensity .and. recScatOrd) then
+!        call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
+!                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+!                                 xPosition, yPosition, zPosition,                 &
+!                                 outputNetcdfFile,                                &
+!                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
+!                                 absorbedProfileStats, absorbedVolumeStats,       &
+!                                 numRecScatOrd=numRecScatOrd,                     &
+!                                 fluxUpByScatOrdStats=fluxUpByScatOrdStats,       &
+!                                 fluxDownByScatOrdStats=fluxDownByScatOrdStats      )
       else
         call writeResults_netcdf(domainFileName,  numPhotonsPerBatch, numBatches, &
                                  solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
@@ -762,7 +772,7 @@ level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, st
       print *, "Wrote netcdf results"                         
     end if
   end if
-
+  deallocate(xPosition,yPosition,zPosition)
   !
   ! Release all the memory. We should be able to finalize the derived types before we write 
   !   the output but this fails intermittently, so we want to be sure to get our results 
@@ -1063,9 +1073,9 @@ contains
     ncStatus(21) = nf90_put_att(ncFileId, NF90_Global, "Cpu_time_setup", CpuTimeSetup)
     ncStatus(22) = nf90_put_att(ncFileId, NF90_Global, "Number_of_processors_used", numProcs)
     
-    if(recScatOrd) then
-    ncStatus(23) = nf90_put_att(ncFileId, NF90_GLOBAL, "Highest_recorded_scattering_order", numRecScatOrd)
-    end if
+!    if(recScatOrd) then
+!    ncStatus(23) = nf90_put_att(ncFileId, NF90_GLOBAL, "Highest_recorded_scattering_order", numRecScatOrd)
+!    end if
 
     if(any(ncStatus(:) /= nf90_NoErr)) print *, "Attributes ", ncStatus(:19)
 
@@ -1133,25 +1143,25 @@ contains
     end if
  
     !recScatOrd
-    if(recScatOrd) then 
-      ncStatus(23) = nf90_def_dim(ncFileId, "numRecScatOrd", numRecScatOrd+1, scatDimId)
-      ncstatus(24) = nf90_def_var(ncFileId, "Scattering_Order", nf90_float, scatDimId, ncVarId)
-      ncStatus(25) = nf90_def_var(ncFileId, "fluxUpByScatOrd", nf90_float, &
-                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
-      ncStatus(26) = nf90_def_var(ncFileId, "fluxDownByScatOrd", nf90_float, &
-                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
-      ncStatus(27) = nf90_def_var(ncFileId, "fluxUpByScatOrd_StdErr", nf90_float, &
-                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
-      ncStatus(28) = nf90_def_var(ncFileId, "fluxDownByScatOrd_StdErr", nf90_float, &
-                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
+!    if(recScatOrd) then 
+!      ncStatus(23) = nf90_def_dim(ncFileId, "numRecScatOrd", numRecScatOrd+1, scatDimId)
+!      ncstatus(24) = nf90_def_var(ncFileId, "Scattering_Order", nf90_float, scatDimId, ncVarId)
+!      ncStatus(25) = nf90_def_var(ncFileId, "fluxUpByScatOrd", nf90_float, &
+!                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
+!      ncStatus(26) = nf90_def_var(ncFileId, "fluxDownByScatOrd", nf90_float, &
+!                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
+!      ncStatus(27) = nf90_def_var(ncFileId, "fluxUpByScatOrd_StdErr", nf90_float, &
+!                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
+!      ncStatus(28) = nf90_def_var(ncFileId, "fluxDownByScatOrd_StdErr", nf90_float, &
+!                                   (/ xDimId, yDimId, scatDimId /), ncVarId)
 
-      if(computeIntensity .and. present(intensityByScatOrdStats)) then
-      ncStatus(29) = nf90_def_var(ncFileId, "intensityByScatOrd", nf90_float, &
-                                   (/ xDimId, yDimId, dirDimId, scatDimId /), ncVarId) 
-      ncStatus(30) = nf90_def_var(ncFileId, "intensityByScatOrd_StdErr", nf90_float, &
-                                   (/ xDimId, yDimId, dirDimId, scatDimId /), ncVarId)
-      end if
-    end if
+!      if(computeIntensity .and. present(intensityByScatOrdStats)) then
+!      ncStatus(29) = nf90_def_var(ncFileId, "intensityByScatOrd", nf90_float, &
+!                                   (/ xDimId, yDimId, dirDimId, scatDimId /), ncVarId) 
+!      ncStatus(30) = nf90_def_var(ncFileId, "intensityByScatOrd_StdErr", nf90_float, &
+!                                   (/ xDimId, yDimId, dirDimId, scatDimId /), ncVarId)
+!      end if
+!    end if
 
     ncStatus(31) = nf90_EndDef(ncFileId)
     if(any(ncStatus(:) /= nf90_NoErr)) print *, ncStatus(:31)
@@ -1234,28 +1244,28 @@ contains
       if(any(ncStatus(:) /= nf90_NoErr)) print *, "Intensity", ncStatus(:8)
     end if
 
-    if(recScatOrd) then
-      ncStatus( 1) = nf90_inq_varId(ncFileId, "Scattering_Order", ncVarId)
-      ncStatus( 2) = nf90_put_var(ncFileId, ncVarId,(/(REAL(N), N=0,numRecScatOrd)/) )
-!       ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, scatOrderHolder)
-      ncStatus( 3) = nf90_inq_varId(ncFileId, "fluxUpByScatOrd", ncVarId)
-      ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, fluxUpByScatOrdStats(:,:,:,1))
-      ncStatus( 5) = nf90_inq_varId(ncFileId, "fluxUpByScatOrd_StdErr", ncVarId)
-      ncStatus( 6) = nf90_put_var(ncFileId, ncVarId, fluxUpByScatOrdStats(:,:,:,2))
-      ncStatus( 7) = nf90_inq_varId(ncFileId, "fluxDownByScatOrd", ncVarId)
-      ncStatus( 8) = nf90_put_var(ncFileId, ncVarId, fluxDownByScatOrdStats(:,:,:,1))
-      ncStatus( 9) = nf90_inq_varId(ncFileId, "fluxDownByScatOrd_StdErr", ncVarId)
-      ncStatus(10) = nf90_put_var(ncFileId, ncVarId, fluxDownByScatOrdStats(:,:,:,2))
-      if(any(ncStatus(:) /= nf90_NoErr)) print*, "Flux*ByScatOrd", ncStatus(:10)
+!    if(recScatOrd) then
+!      ncStatus( 1) = nf90_inq_varId(ncFileId, "Scattering_Order", ncVarId)
+!      ncStatus( 2) = nf90_put_var(ncFileId, ncVarId,(/(REAL(N), N=0,numRecScatOrd)/) )
+!!       ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, scatOrderHolder)
+!      ncStatus( 3) = nf90_inq_varId(ncFileId, "fluxUpByScatOrd", ncVarId)
+!      ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, fluxUpByScatOrdStats(:,:,:,1))
+!      ncStatus( 5) = nf90_inq_varId(ncFileId, "fluxUpByScatOrd_StdErr", ncVarId)
+!      ncStatus( 6) = nf90_put_var(ncFileId, ncVarId, fluxUpByScatOrdStats(:,:,:,2))
+!      ncStatus( 7) = nf90_inq_varId(ncFileId, "fluxDownByScatOrd", ncVarId)
+!      ncStatus( 8) = nf90_put_var(ncFileId, ncVarId, fluxDownByScatOrdStats(:,:,:,1))
+!      ncStatus( 9) = nf90_inq_varId(ncFileId, "fluxDownByScatOrd_StdErr", ncVarId)
+!      ncStatus(10) = nf90_put_var(ncFileId, ncVarId, fluxDownByScatOrdStats(:,:,:,2))
+!      if(any(ncStatus(:) /= nf90_NoErr)) print*, "Flux*ByScatOrd", ncStatus(:10)
       
-     if(computeIntensity .and. present(intensityByScatOrdStats)) then
-       ncStatus( 1) = nf90_inq_varId(ncFileId, "intensityByScatOrd", ncVarId)
-       ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, intensityByScatOrdStats(:,:,:,:,1))
-       ncStatus( 3) = nf90_inq_varId(ncFileId, "intensityByScatOrd_StdErr", ncVarId)
-       ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, intensityByScatOrdStats(:,:,:,:,2))
-       if(any(ncStatus(:) /= nf90_NoErr)) print*, "IntensityByScatOrd", ncStatus(:4)
-     end if
-    end if
+!     if(computeIntensity .and. present(intensityByScatOrdStats)) then
+!       ncStatus( 1) = nf90_inq_varId(ncFileId, "intensityByScatOrd", ncVarId)
+!       ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, intensityByScatOrdStats(:,:,:,:,1))
+!       ncStatus( 3) = nf90_inq_varId(ncFileId, "intensityByScatOrd_StdErr", ncVarId)
+!       ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, intensityByScatOrdStats(:,:,:,:,2))
+!       if(any(ncStatus(:) /= nf90_NoErr)) print*, "IntensityByScatOrd", ncStatus(:4)
+!     end if
+!    end if
 
     ncStatus( 1) = nf90_close(ncFileId)
     if(any(ncStatus(:) /= nf90_NoErr)) print *, ncStatus(:1)

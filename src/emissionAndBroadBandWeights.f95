@@ -29,7 +29,7 @@ module emissionAndBBWeights
 
   public :: weights
 
-  public :: new_Weights, emission_weighting, getFrequencyDistr, getInfo_weights, read_SolarSource, solar_Weighting !, xxxxx
+  public :: new_Weights, finalize_Weights, emission_weighting, getFrequencyDistr, getInfo_weights, read_SolarSource, solar_Weighting !, xxxxx
 
   contains
 
@@ -54,6 +54,17 @@ module emissionAndBBWeights
       end if
     end if
    end function new_Weights
+
+   subroutine finalize_Weights(theseWeights)
+     type(Weights), intent(inout)  :: theseWeights
+
+     deallocate(theseWeights%fracAtmsPower, theseWeights%totalPowerCDF)
+     if (associated(theseWeights%voxelWeights))then
+        NULLIFY(theseWeights%levelWeights)
+        NULLIFY(theseWeights%colWeights)
+        NULLIFY(theseWeights%voxelWeights)
+     end if
+   end subroutine finalize_Weights
 
    subroutine getInfo_Weights(theseWeights, iLambda, numX, numY, numZ, fracAtmsPower, levelWeights, colWeights, voxelWeights, status)
      implicit none
@@ -161,7 +172,7 @@ PRINT *, 'cumFlux= ', theseWeights%totalPowerCDF(i), 'dLambda= ',dLambda, 'solid
 PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPowerCDF
    end subroutine solar_Weighting
 !-------------------------------------------------------------------------------------------
-   subroutine emission_weighting(theseDomains, nLambda, theseWeights, sfcTemp, totalPhotons, atmsPhotons, voxel_weights, col_weights, level_weights, totalFlux, status)
+   subroutine emission_weighting(theseDomains, nLambda, theseWeights, sfcTemp, totalPhotons, atmsPhotons, totalFlux, status)
 !Computes Planck Radiance for each surface and atmosphere pixel to determine the wieghting for the distribution of photons.
 !Written by ALexandra Jones, University of Illinois, Urbana-Champaign, Fall 2011
 ! Updated Fall 2012 to remove predetermination of number of photons emitted per column
@@ -173,9 +184,9 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
      real(8), intent(in)                                  :: sfcTemp
      integer,  intent(in)                                 :: nLambda, totalPhotons
      integer,  intent(out)                             :: atmsPhotons
-     real(8), allocatable, dimension(:,:,:,:), intent(out)          :: voxel_weights
-     real(8), allocatable, dimension(:,:,:), intent(out)          :: col_weights
-     real(8), allocatable, dimension(:,:), intent(out)          :: level_weights
+!     real(8), allocatable, dimension(:,:,:,:), intent(out)          :: voxel_weights
+!     real(8), allocatable, dimension(:,:,:), intent(out)          :: col_weights
+!     real(8), allocatable, dimension(:,:), intent(out)          :: level_weights
      real(8),                                intent(out)  :: totalFlux
      type(ErrorMessage), intent(inout)                         :: status
      !Local variables
@@ -200,8 +211,8 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
 
      call getInfo_Domain(theseDomains(1), numX=nx, numY=ny, numZ=nz, namelistNumLambda=nlambda, &
                          numberOfComponents=nComps, status=status)
-     allocate(voxel_weights(1:nx,1:ny,1:nz,1:nlambda), col_weights(1:ny,1:nz,1:nlambda), &
-              level_weights(1:nz,1:nlambda))
+!     allocate(voxel_weights(1:nx,1:ny,1:nz,1:nlambda), col_weights(1:ny,1:nz,1:nlambda), &
+!              level_weights(1:nz,1:nlambda))
      allocate(xPosition(1:nx+1), yPosition(1:ny+1), zPosition(1:nz+1), dz(1:nz),         &
               dy(1:ny), dx(1:nx), atmsTemp(1:nx,1:ny,1:nz), ssas(1:nx,1:ny,1:nz,1:nComps),&
               ext(1:nx,1:ny,1:nz,1:nComps), cumExt(1:nx,1:ny,1:nz))
@@ -317,10 +328,7 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
 	  tempPower = theseWeights%totalPowerCDF(ilambda)
 !PRINT *, 'level_weights= ', level_weights, 'col_weights= ', col_weights
      END DO
-    
-     voxel_weights = theseWeights%voxelWeights
-     col_weights = theseWeights%colWeights
-     level_weights = theseWeights%levelWeights
+     deallocate( zPosition, dz, dy, dx, atmsTemp, ssas, ext, cumExt)    
 
      if (theseWeights%totalPowerCDF(nlambda) .eq. 0.0_8)then
         CALL setStateToFailure(status, 'emission_weighting: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
@@ -336,6 +344,7 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
 PRINT *, "emission_weighting: fraction of atmos power ", theseWeights%fracAtmsPower
 PRINT *, "emission_weighting: total power CDF ", theseWeights%totalPowerCDF
      end if
+     deallocate(xPosition, yPosition)
    end subroutine emission_weighting
 
    subroutine getFrequencyDistr(theseWeights, totalPhotons, randomNumbers, distribution)
@@ -344,14 +353,14 @@ PRINT *, "emission_weighting: total power CDF ", theseWeights%totalPowerCDF
      type(Weights), intent(in)                     :: theseWeights
      integer, intent(in)                           :: totalPhotons
      type(randomNumberSequence), intent(inout)     :: randomNumbers
-     integer, allocatable, dimension(:), intent(out)            :: distribution
+     integer, dimension(:), intent(out)            :: distribution
 
      integer                                       :: numLambda, i, n
      real                                          :: RN
 
 
      numLambda = size(theseWeights%totalPowerCDF)
-     allocate(distribution(1:numLambda))
+!     allocate(distribution(1:numLambda))
      distribution = 0.0_8
 
      DO n = 1, totalPhotons

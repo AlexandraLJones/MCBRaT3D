@@ -336,7 +336,7 @@ contains
 	integer, intent(in)                                     :: numberOfPhotons, iLambda
 	type(randomNumberSequence), intent(inout)               :: randomNumbers
 	type(ErrorMessage), intent(inout)                       :: status
-	integer, allocatable, dimension(:,:,:), optional, intent(out)        :: option1
+	integer, dimension(:,:,:), optional, intent(out)        :: option1
 	type(photonStream)                                      :: photons
 
 	real(8)                                                 :: fracAtmsPower
@@ -354,7 +354,7 @@ contains
         if(.not. stateIsFailure(status)) then
 	  call getInfo_Weights(theseWeights=theseWeights, iLambda=iLambda, numX=numX, numY=numY, numZ=numZ, status=status)
 	  if(present(option1))then
-            allocate(option1(1:numX,1:numY,1:numZ))
+!            allocate(option1(1:numX,1:numY,1:numZ))
             option1=0
           end if
 
@@ -411,6 +411,7 @@ contains
 		end if
 	    end if
 	  END DO
+deallocate (levelWeights, colWeights, voxelWeights)
 PRINT *, atmsTally, sfcTally
 	  photons%currentPhoton = 1
 	  call setStateToSuccess(status)

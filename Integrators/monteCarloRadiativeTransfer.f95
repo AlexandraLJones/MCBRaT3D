@@ -212,7 +212,8 @@ contains
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons  
     type(ErrorMessage),         intent(inout) :: status
-    integer,  dimension(:,:,:), intent(out) :: option2
+    integer, dimension(:,:,:), optional, intent(out) :: option2
+
     !
     ! Monte Carlo "integrator" to compute flux up at the top boundary, flux down at the
     !   bottom boundary, and colum absorption. (Absorption is calculated separately, 
@@ -286,7 +287,7 @@ contains
       ! Compute radiative transfer for this photon batch 
       !
       if(.not. stateIsFailure(status)) &
-         call computeRT(thisIntegrator, thisDomain, randomNumbers, incomingPhotons, numPhotonsProcessed, status, option2)
+         call computeRT(thisIntegrator, thisDomain, randomNumbers, incomingPhotons, numPhotonsProcessed, status)
 
       if(thisIntegrator%computeIntensity .and. &
          thisIntegrator%limitIntensityContributions) then 
@@ -301,14 +302,14 @@ contains
                 (    thisIntegrator%intensityByComponent(:, :, d, j) /                 &
                  sum(thisIntegrator%intensityByComponent(:, :, d, j)) ) * thisIntegrator%intensityExcess(d, j)
               
-              if(thisIntegrator%recScatOrd) then
-                do p = 0, thisIntegrator%numRecScatOrd
-                  thisIntegrator%intensityByScatOrd(:,:,d, p) =   &
-                    thisIntegrator%intensityByScatOrd(:,:,d,p) +  &
-                    (    thisIntegrator%intensityByComponent(:, :, d, j) /              &
-                     sum(thisIntegrator%intensityByComponent(:, :, d, j)) ) * thisIntegrator%intensityExcess(d,j)
-                end do
-              end if 
+!              if(thisIntegrator%recScatOrd) then
+!                do p = 0, thisIntegrator%numRecScatOrd
+!                  thisIntegrator%intensityByScatOrd(:,:,d, p) =   &
+!                    thisIntegrator%intensityByScatOrd(:,:,d,p) +  &
+!                    (    thisIntegrator%intensityByComponent(:, :, d, j) /              &
+!                     sum(thisIntegrator%intensityByComponent(:, :, d, j)) ) * thisIntegrator%intensityExcess(d,j)
+!                end do
+!              end if 
               thisIntegrator%intensityByComponent(:, :, d, j) =   & 
                 thisIntegrator%intensityByComponent(:, :, d, j) + &
                 (    thisIntegrator%intensityByComponent(:, :, d, j) /                 &
@@ -346,12 +347,12 @@ contains
       thisIntegrator%fluxDown    (:, :) = thisIntegrator%fluxDown    (:, :) / numPhotonsPerColumn(:, :)
       thisIntegrator%fluxAbsorbed(:, :) = thisIntegrator%fluxAbsorbed(:, :) / numPhotonsPerColumn(:, :) 
 
-      if(thisIntegrator%recScatOrd) then
-        forall (p = 0:thisIntegrator%numRecScatOrd)
-          thisIntegrator%fluxUpByScatOrd (:, :, p) = thisIntegrator%fluxUpByScatOrd(:, :, p) / numPhotonsPerColumn(:,:)
-          thisIntegrator%fluxDownByScatOrd(:,:,p) = thisIntegrator%fluxDownByScatOrd(:,:,p)  / numPhotonsPerColumn(:,:)
-        end forall
-      end if 
+!      if(thisIntegrator%recScatOrd) then
+!        forall (p = 0:thisIntegrator%numRecScatOrd)
+!          thisIntegrator%fluxUpByScatOrd (:, :, p) = thisIntegrator%fluxUpByScatOrd(:, :, p) / numPhotonsPerColumn(:,:)
+!          thisIntegrator%fluxDownByScatOrd(:,:,p) = thisIntegrator%fluxDownByScatOrd(:,:,p)  / numPhotonsPerColumn(:,:)
+!        end forall
+!      end if 
       !
       ! Normalize absorption profile by cell depth
       !
@@ -375,13 +376,13 @@ contains
                                                                                    numPhotonsPerColumn(:, :)
         end forall
 !PRINT *, "average column intensity normalized by photonsPerCol =", sum(thisIntegrator%intensity(:,:,1))/real (numX * numY)
-        if(thisIntegrator%recScatOrd) then
-          forall(d = 1:numIntensityDirections, p = 0:thisIntegrator%numRecScatOrd)
-            thisIntegrator%intensityByScatOrd(:, :, d, p) =  &
-                                                 thisIntegrator%intensityByScatOrd(:, :, d, p) / &
-                                                                                   numPhotonsPerColumn(:, :)
-          end forall
-        end if
+!        if(thisIntegrator%recScatOrd) then
+!          forall(d = 1:numIntensityDirections, p = 0:thisIntegrator%numRecScatOrd)
+!            thisIntegrator%intensityByScatOrd(:, :, d, p) =  &
+!                                                 thisIntegrator%intensityByScatOrd(:, :, d, p) / &
+!                                                                                   numPhotonsPerColumn(:, :)
+!          end forall
+!        end if
       end if
       deallocate(numPhotonsPerColumn)  
     end if
@@ -395,7 +396,7 @@ contains
     type(photonStream),         intent(inout) :: incomingPhotons
     integer,                    intent(  out) :: numPhotonsProcessed
     type(ErrorMessage),         intent(inout) :: status
-    integer, dimension(:,:,:), intent(out) :: option2
+    integer, dimension(:,:,:), optional, intent(out) :: option2
     !
     ! Implements a standard ray-tracing Monte Carlo algorthm or 
     !   the Marchuk (1980) maximum cross-section algorithm. The extinction
@@ -436,7 +437,7 @@ contains
     call getInfo_Domain(thisDomain,albedo=albedo,                                   &
                         totalExt=totalExt, cumExt=cumExt, ssa=singleScattAlbedo,           &
                         phaseFuncI=phaseFuncI, inversePhaseFuncs=inversePhaseFuncs, status=status)
-    option2=0
+!    option2=0
     useRayTracing = thisIntegrator%useRayTracing; useMaxCrossSection = .not. useRayTracing
     scatterThisEvent = .true. 
     if(useMaxCrossSection) &
@@ -517,14 +518,14 @@ contains
                                                 contributions, xIndexF(:), yIndexf(:))
            end if
 !PRINT *, "COntribution to radiance from photon ", nPhotons, " is ", contributions
-           if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then
-            !only record scattering order if it is within bounds
-              forall(i = 1:numIntensityDirections)
-                thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder)   = &
-                thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder) + &
-                                                                                    contributions(i)
-              end forall
-           end if
+!           if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then
+!            !only record scattering order if it is within bounds
+!              forall(i = 1:numIntensityDirections)
+!                thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder)   = &
+!                thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder) + &
+!                                                                                    contributions(i)
+!              end forall
+!           end if
            forall(i = 1:numIntensityDirections)
                 thisIntegrator%intensity(xIndexF(i), yIndexF(i), i) =  &
                   thisIntegrator%intensity(xIndexF(i), yIndexF(i), i) + contributions(i)
@@ -601,12 +602,12 @@ contains
 !              end forall 
 !          end if
 
-          if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then 
-          !only record scattering order if it is within bounds
-              thisIntegrator%fluxUpByScatOrd(xIndex, yIndex, scatteringOrder)   = &
-                        thisIntegrator%fluxUpByScatOrd(xIndex, yIndex, scatteringOrder) + photonWeight
-            
-          end if
+!          if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then 
+!          !only record scattering order if it is within bounds
+!              thisIntegrator%fluxUpByScatOrd(xIndex, yIndex, scatteringOrder)   = &
+!                        thisIntegrator%fluxUpByScatOrd(xIndex, yIndex, scatteringOrder) + photonWeight
+!            
+!          end if
           cycle photonLoop
 
         else if(zPos <= z0 + spacing(z0)) then
@@ -625,11 +626,11 @@ contains
           zIndex = 1
           zPos = z0 + spacing(z0)
           thisIntegrator%fluxDown(xIndex, yIndex) = thisIntegrator%fluxDown(xIndex, yIndex) + photonWeight
-          if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then 
-          !only record scattering order if it is within bounds
-              thisIntegrator%fluxDownByScatOrd(xIndex, yIndex, scatteringOrder) = &
-                        thisIntegrator%fluxDownByScatOrd(xIndex, yIndex, scatteringOrder) + photonWeight
-          end if
+!          if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then 
+!          !only record scattering order if it is within bounds
+!              thisIntegrator%fluxDownByScatOrd(xIndex, yIndex, scatteringOrder) = &
+!                        thisIntegrator%fluxDownByScatOrd(xIndex, yIndex, scatteringOrder) + photonWeight
+!          end if
           
           !the photon scatters off ground
           !increment scattering order
@@ -678,14 +679,14 @@ contains
                                               randomNumbers, scatteringOrder, &
                                               contributions, xIndexF(:), yIndexF(:))     
 !PRINT *, "COntribution to radiance from photon ", nPhotons, " is ", contributions, " for scattering order ", scatteringorder, " off the surface."         
-            if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then
-            !only record scattering order if it is within bounds              
-              forall(i = 1:numIntensityDirections)
-                thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder)   = &
-                  thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder) + &
-                                                                                    contributions(i)
-              end forall
-            end if
+!            if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then
+!            !only record scattering order if it is within bounds              
+!              forall(i = 1:numIntensityDirections)
+!                thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder)   = &
+!                  thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder) + &
+!                                                                                    contributions(i)
+!              end forall
+!            end if
               forall(i = 1:numIntensityDirections)
                 thisIntegrator%intensity(xIndexF(i), yIndexF(i), i) =  &
                   thisIntegrator%intensity(xIndexF(i), yIndexF(i), i) + contributions(i)
@@ -782,14 +783,14 @@ contains
                   thisIntegrator%intensityByComponent(xIndexF(i), yIndexf(i), i, component) + contributions(i)
               end forall
 
-              if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then
-              !only record scattering order if it is within bounds
-                forall(i = 1:numIntensityDirections)
-                  thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder)   = &
-                    thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder) + &
-                                                                                    contributions(i)
-                end forall
-              end if
+!              if(thisIntegrator%recScatOrd .and. scatteringOrder <= thisIntegrator%numRecScatOrd) then
+!              !only record scattering order if it is within bounds
+!                forall(i = 1:numIntensityDirections)
+!                  thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder)   = &
+!                    thisIntegrator%intensityByScatOrd(xIndexF(i), yIndexF(i), i, scatteringOrder) + &
+!                                                                                    contributions(i)
+!                end forall
+!              end if
             end if  ! end of local estimation for radiance contribution
     
             !
@@ -816,7 +817,7 @@ contains
     end do photonLoop
     
     if(thisIntegrator%computeIntensity) deallocate(contributions, xIndexF, yIndexF)
-
+    deallocate(totalExt,cumExt,singleScattAlbedo,phaseFuncI,inversePhaseFuncs)
     !
     ! Status is only set when getting photons, so if that hasn't failed we know we're ok. 
     !
@@ -876,26 +877,26 @@ contains
                               meanFluxAbsorbed = sum(thisIntegrator%fluxAbsorbed) / numColumns
 
     !domain averaged fluxes by scattering order
-    if(thisIntegrator%recScatOrd) then
-      if(present(meanFluxUpByScatOrd)) then
-        if(size(meanFluxUpByScatOrd) /= thisIntegrator%numRecScatOrd+1) then
-          call setStateToFailure(status, "reportResults: meanFluxUpByScatOrd is the wrong size")
-        else
-          forall(p = 0:thisIntegrator%numRecScatOrd)
-            meanFluxUpByScatOrd(p)   = sum(thisIntegrator%fluxUpByScatOrd(:,:,p))   / numColumns
-          end forall
-        end if
-      end if
-      if(present(meanFluxDownByScatOrd)) then
-        if(size(meanFluxDownByScatOrd) /= thisIntegrator%numRecScatOrd+1) then
-          call setStateToFailure(status, "reportResults: meanFluxDownByScatOrd is the wrong size")
-        else
-          forall (p = 0:thisIntegrator%numRecScatOrd)
-            meanFluxDownByScatOrd(p) = sum(thisIntegrator%fluxDownByScatOrd(:,:,p)) / numColumns
-          end forall
-        end if
-      end if
-    end if
+!    if(thisIntegrator%recScatOrd) then
+!      if(present(meanFluxUpByScatOrd)) then
+!        if(size(meanFluxUpByScatOrd) /= thisIntegrator%numRecScatOrd+1) then
+!          call setStateToFailure(status, "reportResults: meanFluxUpByScatOrd is the wrong size")
+!        else
+!          forall(p = 0:thisIntegrator%numRecScatOrd)
+!            meanFluxUpByScatOrd(p)   = sum(thisIntegrator%fluxUpByScatOrd(:,:,p))   / numColumns
+!          end forall
+!        end if
+!      end if
+!      if(present(meanFluxDownByScatOrd)) then
+!        if(size(meanFluxDownByScatOrd) /= thisIntegrator%numRecScatOrd+1) then
+!          call setStateToFailure(status, "reportResults: meanFluxDownByScatOrd is the wrong size")
+!        else
+!          forall (p = 0:thisIntegrator%numRecScatOrd)
+!            meanFluxDownByScatOrd(p) = sum(thisIntegrator%fluxDownByScatOrd(:,:,p)) / numColumns
+!          end forall
+!        end if
+!      end if
+!    end if
     !
     ! Pixel-by-pixel fluxes
     !
@@ -926,27 +927,27 @@ contains
       end if 
     end if 
     
-    if(thisIntegrator%recScatOrd) then 
-      if(present(fluxUpByScatOrd)) then
-        if(any((/ size(fluxUpByScatOrd, 1), size(fluxUpByScatOrd, 2), size(fluxUpByScatOrd, 3)/) /= &
-               (/ size(thisIntegrator%fluxUpByScatOrd, 1), size(thisIntegrator%fluxUpByScatOrd, 2),&
-                  size(thisIntegrator%fluxUpbyScatOrd, 3) /))) then
-          call setStateToFailure(status, "reportResults: fluxUpByScatOrder array is the wrong size")
-        else
-          fluxUpByScatOrd(:, :, :) = thisIntegrator%fluxUpByScatOrd(:, :, :)
-        end if
-      end if
+!    if(thisIntegrator%recScatOrd) then 
+!      if(present(fluxUpByScatOrd)) then
+!        if(any((/ size(fluxUpByScatOrd, 1), size(fluxUpByScatOrd, 2), size(fluxUpByScatOrd, 3)/) /= &
+!               (/ size(thisIntegrator%fluxUpByScatOrd, 1), size(thisIntegrator%fluxUpByScatOrd, 2),&
+!                  size(thisIntegrator%fluxUpbyScatOrd, 3) /))) then
+!          call setStateToFailure(status, "reportResults: fluxUpByScatOrder array is the wrong size")
+!        else
+!          fluxUpByScatOrd(:, :, :) = thisIntegrator%fluxUpByScatOrd(:, :, :)
+!        end if
+!      end if
 
-      if(present(fluxDownByScatOrd)) then
-        if(any((/ size(fluxDownByScatOrd, 1), size(fluxDownByScatOrd, 2), size(fluxDownByScatOrd, 3)/) /= &
-               (/ size(thisIntegrator%fluxDownByScatOrd, 1), size(thisIntegrator%fluxDownByScatOrd, 2), & 
-                  size(thisIntegrator%fluxDownByScatOrd, 3) /))) then
-          call setStateToFailure(status, "reportResults: fluxDownByScatOrd array is the wrong size")
-        else
-          fluxDownByScatOrd(:, :, :) = thisIntegrator%fluxDownByScatOrd(:, :, :)
-        end if
-      end if
-    end if
+!      if(present(fluxDownByScatOrd)) then
+!        if(any((/ size(fluxDownByScatOrd, 1), size(fluxDownByScatOrd, 2), size(fluxDownByScatOrd, 3)/) /= &
+!               (/ size(thisIntegrator%fluxDownByScatOrd, 1), size(thisIntegrator%fluxDownByScatOrd, 2), & 
+!                  size(thisIntegrator%fluxDownByScatOrd, 3) /))) then
+!          call setStateToFailure(status, "reportResults: fluxDownByScatOrd array is the wrong size")
+!        else
+!          fluxDownByScatOrd(:, :, :) = thisIntegrator%fluxDownByScatOrd(:, :, :)
+!        end if
+!      end if
+!    end if
     
     !
     ! Absorption - heating rate profile and volume absorption
@@ -1001,32 +1002,32 @@ contains
       end if
     end if
 
-    if(present(meanIntensityByScatOrd)) then
-      if(.not. associated(thisIntegrator%intensityByScatOrd)) then
-        call setStateToFailure(status, "reportResults: intensityByScatOrd information not available")
-      else if (size(thisIntegrator%intensityByScatOrd, 3) /= size(meanIntensity) .or. &
-              size(thisIntegrator%intensityByScatOrd, 4) /= thisIntegrator%numRecScatOrd) then
-        call setStateToFailure(status, "reportResults: requesting mean intensityByScatOrd in the wrong number of directions.")
-      else
-        numDirections = size(thisIntegrator%intensity, 3)
-        forall(direction = 1:numDirections, p=0:thisIntegrator%numRecScatOrd)
-          meanIntensityByScatOrd(direction, p) = sum(thisIntegrator%intensityByScatOrd(:, :, direction, p)) / numColumns
-        end forall
-      end if
-    end if
+!    if(present(meanIntensityByScatOrd)) then
+!      if(.not. associated(thisIntegrator%intensityByScatOrd)) then
+!        call setStateToFailure(status, "reportResults: intensityByScatOrd information not available")
+!      else if (size(thisIntegrator%intensityByScatOrd, 3) /= size(meanIntensity) .or. &
+!              size(thisIntegrator%intensityByScatOrd, 4) /= thisIntegrator%numRecScatOrd) then
+!        call setStateToFailure(status, "reportResults: requesting mean intensityByScatOrd in the wrong number of directions.")
+!      else
+!        numDirections = size(thisIntegrator%intensity, 3)
+!        forall(direction = 1:numDirections, p=0:thisIntegrator%numRecScatOrd)
+!          meanIntensityByScatOrd(direction, p) = sum(thisIntegrator%intensityByScatOrd(:, :, direction, p)) / numColumns
+!        end forall
+!      end if
+!    end if
 
-    if(present(intensityByScatOrd)) then
-      if(.not. associated(thisIntegrator%intensityByScatOrd)) then
-        call setStateToFailure(status, "reportResults: intensityByScatOrd information not available")
-      else if (any( (/ size(intensityByScatOrd, 1), size(intensityByScatOrd, 2), &
-                       size(intensityByScatOrd, 3), size(intensityByScatOrd, 4)  /) /=       &
-                    (/ size(thisIntegrator%intensityByScatOrd, 1), size(thisIntegrator%intensityByScatOrd, 2), &
-                       size(thisIntegrator%intensityByScatOrd, 3), size(thisIntegrator%intensityByScatOrd, 4) /)))  then
-        call setStateToFailure(status, "reportResults: intensity array has wrong dimensions.")
-      else
-        intensityByScatOrd(:, :, :, :) = thisIntegrator%intensityByScatOrd(:, :, :, :)
-      end if
-    end if
+!    if(present(intensityByScatOrd)) then
+!      if(.not. associated(thisIntegrator%intensityByScatOrd)) then
+!        call setStateToFailure(status, "reportResults: intensityByScatOrd information not available")
+!      else if (any( (/ size(intensityByScatOrd, 1), size(intensityByScatOrd, 2), &
+!                       size(intensityByScatOrd, 3), size(intensityByScatOrd, 4)  /) /=       &
+!                    (/ size(thisIntegrator%intensityByScatOrd, 1), size(thisIntegrator%intensityByScatOrd, 2), &
+!                       size(thisIntegrator%intensityByScatOrd, 3), size(thisIntegrator%intensityByScatOrd, 4) /)))  then
+!        call setStateToFailure(status, "reportResults: intensity array has wrong dimensions.")
+!      else
+!        intensityByScatOrd(:, :, :, :) = thisIntegrator%intensityByScatOrd(:, :, :, :)
+!      end if
+!    end if
 
 
     
@@ -1814,7 +1815,7 @@ contains
         contributions(:) = thisIntegrator%maxIntensityContribution
       end where
     end if 
-    
+    deallocate(phaseFuncI, tabulatedPhaseFunctions,tabulatedOrigPhaseFunctions) 
   end subroutine computeIntensityContribution
   !------------------------------------------------------------------------------------------
   pure function lookUpPhaseFuncValsFromTable(tablulatedPhaseFunction, scatteringAngles) &
