@@ -50,7 +50,7 @@ program monteCarloDriver
 
   implicit none
  
-  real, parameter :: Pi = acos(-1.)
+  real, parameter :: Pi = dacos(-1.0_8)
 
   ! Input parameters
   !   Radiative transfer 
@@ -481,7 +481,7 @@ call printStatus(status)
   solarFlux = emittedFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
 !  call finalize_Domain(thisDomain)
-!STOP
+STOP
 
   ! Now we compute the radiative transfer for a single photon 
 !  if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
