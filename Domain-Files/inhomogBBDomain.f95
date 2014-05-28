@@ -19,7 +19,7 @@ program inhomogBBDomain
   real(8), parameter  :: Pi=4*DATAN(1.0_8)
   real     :: re, g
   real, allocatable	 ::  LG(:)
-  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:),  Temp(:,:,:), lambdas(:), sourceFunc(:)
+  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:), lambdas(:), sourceFunc(:) !, Temp(:,:,:)
   integer, allocatable	::	pInd(:,:,:), LGind(:)
   integer, dimension(3) ::  dims
   integer, dimension(16) :: ncStatus
@@ -28,6 +28,7 @@ program inhomogBBDomain
   real, dimension(2) 			:: LegendreCoefs
   logical								::	HGphase=.false.
     
+  type(commonDomain)              :: commonD
   type(ErrorMessage)              :: domstatus, srcstatus
   type(phaseFunction)		  :: PhaseFunc
   type(phaseFunctionTable)        :: table, OnePhaseFuncTable
@@ -78,9 +79,9 @@ program inhomogBBDomain
   LGind=isoIndex
 
 !--Create 3D array of temps
-   allocate(Temp(1:nx,1:ny,1:nz))
+   allocate(commonD%temps(1:nx,1:ny,1:nz))
    DO i = 0, nz-1
-     Temp(:,:,i+1)=(Tb *(dble(nz-1-i)/(nz-1))) + (Tt *(i/dble(nz-1)))
+     commonD%temps(:,:,i+1)=(Tb *(dble(nz-1-i)/(nz-1))) + (Tt *(i/dble(nz-1)))
    END DO
 
    allocate(lambdas(1:nlambda))
@@ -107,12 +108,13 @@ program inhomogBBDomain
   DO ilambda= 1, nlambda
     write(domfile, '(A,1ES11.5,A)') TRIM(domfile_str), lambdas(ilambda) , '.dom'
     write(22,"(A)") TRIM(domfile)
-    cloud =                                                             &
-    new_Domain(xPosition = dx * (/ 0., (real(i), i = 1, nx) /), &
-               yPosition = dy * (/ 0., (real(i), i = 1, ny) /), &
-               zPosition = dz * (/ 0., (real(i), i = 1, nz) /), &
-               lambda = lambdas(ilambda), lambdaI = ilambda, nlambda=nlambda, &
-               albedo = albedo, temps = Temp, status = domstatus)
+    allocate(commonD%xPosition(1:nx), commonD%yPosition(1:ny), commonD%zPosition(1:nz))
+    commonD%xPosition=dx * (/ 0., (real(i), i = 1, nx) /)
+    commonD%yPosition=dy * (/ 0., (real(i), i = 1, ny) /)
+    commonD%zPosition=dz * (/ 0., (real(i), i = 1, nz) /)
+
+    cloud = new_Domain(commonD, lambda = lambdas(ilambda), lambdaI = ilambda, nlambda=nlambda, &
+               albedo = albedo, status = domstatus)
    call printStatus(domstatus)
 
     PhaseFunc = new_PhaseFunction(LG, status=domstatus)

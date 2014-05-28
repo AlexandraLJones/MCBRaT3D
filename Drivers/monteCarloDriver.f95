@@ -146,6 +146,7 @@ program monteCarloDriver
   integer, allocatable   ::  freqDistr(:)
 
    ! I3RC Monte Carlo code derived type variables
+  type(commonDomain)         :: commonPhysical
   type(domain)               :: thisDomain
   type(domain), allocatable, dimension(:) :: BBDomain
   type(ErrorMessage)         :: status
@@ -261,15 +262,24 @@ PRINT *, 'namelist numLambda= ', numLambda
   open(unit=22, file=TRIM(domainFileList), status='UNKNOWN')
 ! first we need to get the dimensions needed to allocate position arrays
   read(22,'(1A)') domainFileName
-  call read_Domain(domainFileName, thisDomain, status)
+  call read_Common(domainFileName, commonPhysical, status)
+  call printStatus(status)
+PRINT *, 'Driver: Read common domain'
+  call read_Domain(domainFileName, commonPhysical, thisDomain, status)
+  call printStatus(status)
   call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
+  call printStatus(status)
+PRINT *, 'Driver: got dimensions from intial domain'
   REWIND(22)
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
+!  allocate(commonPhysical%xPosition(nx+1), commonPhysical%yPosition(ny+1), commonPhysical%zPosition(nz+1), commonPhysical%temps(nx,ny,nz))
 
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
      read(22,'(1A)') domainFileName
-     call read_Domain(domainFileName, thisDomain, status)
-PRINT *, 'Driver: Read Domain'  
+PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
+   MAXVAL(commonPhysical%zPosition), MINVAL(commonPhysical%zPosition), MAXVAL(commonPhysical%temps), MINVAL(commonPhysical%temps)
+     call read_Domain(domainFileName, commonPhysical, thisDomain, status)
+PRINT *, 'Driver: Read Domain from ', domainFileName  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
      call printStatus(status)

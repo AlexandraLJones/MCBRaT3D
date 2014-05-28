@@ -57,10 +57,18 @@ module opticalProperties
     type(phaseFunctionTable)             :: table
   end type opticalComponent
 
+  type commonDomain
+      ! The domain contains the x, y, and z cell boundaries and temperatures, these things are common to all domains in the simulation regardless of wavelength
+    
+    real(8), allocatable          :: xPosition(:) 
+    real(8), allocatable          :: yPosition(:) 
+    real(8), allocatable          :: zPosition(:) 
+    real(8), allocatable          :: temps(:,:,:) 
+
+  end type commonDomain
+
   type domain
-    ! The domain contains the x, y, and z cell boundaries, flags to indicate whether the x and y 
-    !   and/or z grids are evenly spaced, and pointers to the optical components. 
-    !
+!
     private
     real(8), pointer, dimension(:)          :: xPosition => null()
     real(8), pointer, dimension(:)          :: yPosition => null()
@@ -114,22 +122,64 @@ module opticalProperties
   !------------------------------------------------------------------------------------------
 
   ! The types...
-  public :: domain, matrix 
+  public :: domain, matrix, commonDomain 
   ! ... and these procedures
   public :: new_Domain, getInfo_Domain, write_Domain, read_Domain, finalize_Domain, &
             addOpticalComponent, deleteOpticalComponent, replaceOpticalComponent,   &
             getOpticalPropertiesByComponent, finalize_Matrix, new_Matrix,           &
             accumulateExtinctionAlongPath, tabulateInversePhaseFunctions,           &
-            tabulateForwardPhaseFunctions !,  getAverageOpticalProperties
+            tabulateForwardPhaseFunctions, read_Common!,  getAverageOpticalProperties
             
 
 contains
+
+   subroutine read_Common(filename, commonD, status)
+    character(len = *), intent(in   ) :: fileName
+    type(commonDomain), intent(out)   :: commonD
+    type(ErrorMessage), intent(inout) :: status
+
+    integer, dimension(16)             :: ncStatus
+    integer                           :: ncFileID, ncDimID, zGridDimID, nXEdges, nYEdges, nZEdges, nZGrid, ncVarID
+
+    ncStatus(:) = nf90_NoErr
+    if(nf90_open(trim(fileName), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
+      call setStateToFailure(status, "read_Common: Can't open file " // trim(fileName))
+    end if
+
+    if(.not. stateIsFailure(status)) then
+      ncStatus( 1) = nf90_inq_dimid(ncFileId, "x-Edges", ncDimId)
+      ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nXEdges)
+      ncStatus( 3) = nf90_inq_dimid(ncFileId, "y-Edges", ncDimId)
+      ncStatus( 4) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nYEdges)
+      ncStatus( 5) = nf90_inq_dimid(ncFileId, "z-Edges", ncDimId)
+      ncStatus( 6) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZEdges)
+      ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-Grid", zGridDimId)
+      ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
+      allocate(commonD%xPosition(nXEdges), commonD%yPosition(nYEdges), commonD%zPosition(nZEdges), commonD%temps(nXEdges-1,nYEdges-1,nZEdges-1))
+      ncStatus( 9) = nf90_inq_varid(ncFileId, "x-Edges", ncVarId)
+      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, commonD%xPosition)
+      ncStatus(11) = nf90_inq_varid(ncFileId, "y-Edges", ncVarId)
+      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, commonD%yPosition)
+      ncStatus(13) = nf90_inq_varid(ncFileId, "z-Edges", ncVarId)
+      ncStatus(14) = nf90_get_var(ncFileId, ncVarId, commonD%zPosition)
+      ncStatus(15) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
+      ncStatus(16) = nf90_get_var(ncFileId, ncVarId, commonD%temps)
+!      if( COUNT(temps .le. 0.0_8) .gt. 0)PRINT *, 'readDomain: there are temps at or below 0.0 K'
+!PRINT *, 'readDomain: min temp = ', MINVAL(temps)
+      if(any(ncStatus(:) /= nf90_NoErr)) &
+        call setStateToFailure(status, "read_Common: " // trim(fileName) // &
+                               " doesn't look an optical properties file.")
+    end if
+
+   end subroutine
   !------------------------------------------------------------------------------------------
   ! Initialization: Routine to create new domains 
   !------------------------------------------------------------------------------------------
-  function new_Domain(xPosition, yPosition, zPosition, lambda, lambdaI, nlambda, albedo, temps, status)
-    real(8),    dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
-    real(8),    dimension(:,:,:), intent(in) :: temps
+   function new_Domain(commonD, lambda, lambdaI, nlambda, albedo, status)
+!  function new_Domain(xPosition, yPosition, zPosition, lambda, lambdaI, nlambda, albedo, temps, status)
+!    real(8),  dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
+!    real(8),  dimension(:,:,:), intent(in) :: temps
+    type(commonDomain), TARGET, intent(in)       :: commonD
     real(8), intent(in)			 :: lambda, albedo
     integer, intent(in)			 :: lambdaI, nlambda
     type(ErrorMessage),    intent(inout) :: status
@@ -142,19 +192,20 @@ contains
     ! -------------------------
     ! Checks: always increasing, within limits; 
     !   other checks performed by addOpticalComponent
-    numX = size(xPosition); numY = size(yPosition); numZ = size(zPosition)
-    if(any(xPosition(2:) - xPosition(:numX-1) <= 0.) .or. &
-       any(yPosition(2:) - yPosition(:numY-1) <= 0.) .or. &
-       any(zPosition(2:) - zPosition(:numZ-1) <= 0.))     &
+!    numX = size(xPosition); numY = size(yPosition); numZ = size(zPosition)
+    numX = size(commonD%xPosition); numY = size(commonD%yPosition); numZ = size(commonD%zPosition)
+    if(any(commonD%xPosition(2:) - commonD%xPosition(:numX-1) <= 0.) .or. &
+       any(commonD%yPosition(2:) - commonD%yPosition(:numY-1) <= 0.) .or. &
+       any(commonD%zPosition(2:) - commonD%zPosition(:numZ-1) <= 0.))     &
       call setStateToFailure(status, "new_Domain: Positions must be increasing, unique.")
      
     ! -------------------------
      if(.not. stateIsFailure(status)) then
-       allocate(new_Domain%xPosition(numX), new_Domain%yPosition(numY), new_Domain%zPosition(numZ), new_Domain%temps(numX-1,numY-1,numZ-1))
-       new_Domain%xPosition(:) = xPosition(:)
-       new_Domain%yPosition(:) = yPosition(:)
-       new_Domain%zPosition(:) = zPosition(:)
-       new_Domain%temps(:,:,:) = temps(:,:,:)       
+!       allocate(new_Domain%xPosition(numX), new_Domain%yPosition(numY), new_Domain%zPosition(numZ), new_Domain%temps(numX-1,numY-1,numZ-1))
+       new_Domain%xPosition(1:) => commonD%xPosition(:)
+       new_Domain%yPosition(1:) => commonD%yPosition(:)
+       new_Domain%zPosition(1:) => commonD%zPosition(:)
+       new_Domain%temps(1:,1:,1:) => commonD%temps(:,:,:)       
        new_Domain%lambda       = lambda
        new_Domain%lambdaI      = lambdaI
        new_Domain%nlambda      = nlambda
@@ -165,13 +216,13 @@ contains
        !   of array elements to the distance between the first two. 
        ! The default value is false. 
        !
-       if(all(abs( (xPosition(2:) - xPosition(:numX-1)) -                                &
-                   (xPosition(2)  - xPosition(1)) ) <= 2 * spacing(xPosition(2:))) .and. &
-          all(abs( (yPosition(2:) - yPosition(:numY-1)) -                                &
-                   (yPosition(2)  - yPosition(1)) ) <= 2 * spacing(yPosition(2:))))      &
+       if(all(abs( (commonD%xPosition(2:) - commonD%xPosition(:numX-1)) -                                &
+                   (commonD%xPosition(2)  - commonD%xPosition(1)) ) <= 2 * spacing(commonD%xPosition(2:))) .and. &
+          all(abs( (commonD%yPosition(2:) - commonD%yPosition(:numY-1)) -                                &
+                   (commonD%yPosition(2)  - commonD%yPosition(1)) ) <= 2 * spacing(commonD%yPosition(2:))))      &
          new_Domain%xyRegularlySpaced = .true.
-       if(all(abs( (zPosition(2:) - zPosition(:numZ-1)) -                           &
-                   (zPosition(2)  - zPosition(1)) ) <= 2 * spacing(zPosition(2:)))) &
+       if(all(abs( (commonD%zPosition(2:) - commonD%zPosition(:numZ-1)) -                           &
+                   (commonD%zPosition(2)  - commonD%zPosition(1)) ) <= 2 * spacing(commonD%zPosition(2:)))) &
          new_Domain%zRegularlySpaced = .true.
        call setStateToSuccess(status)
      end if
@@ -211,6 +262,7 @@ contains
     else
       baseLevel = 1
     end if
+PRINT *, 'addOpticalComponent3D: size of extinction array', size(extinction,1), size(extinction,2), size(extinction,3)
     call validateOpticalComponent(thisDomain, componentName,          &
                                   extinction, singleScatteringAlbedo, &
                                   phaseFunctionIndex, phaseFunctions, &
@@ -859,8 +911,9 @@ contains
     
   end subroutine write_Domain
   !------------------------------------------------------------------------------------------
-  subroutine read_Domain(fileName, thisDomain, status)
+  subroutine read_Domain(fileName, commonD, thisDomain, status)
     character(len = *), intent(in   ) :: fileName
+    type(commonDomain), intent(in) :: commonD
     type(domain), intent(  out) :: thisDomain
     type(ErrorMessage), intent(inout) :: status
     
@@ -869,9 +922,9 @@ contains
                        :: oneByte
     integer            :: i
     integer            :: nXEdges, nYEdges, nZEdges, nComponents, nZGrid
-    real(8), dimension(:), &
-           allocatable :: xEdges, yEdges, zEdges
-    real(8), dimension(:,:,:), allocatable :: temps
+!    real(8), dimension(:), &
+!           allocatable :: xEdges, yEdges, zEdges
+!    real(8), dimension(:,:,:), allocatable :: temps
 
     ! Variable for each component
     real(8),    dimension(:, :, :), allocatable :: extinction, singleScatteringAlbedo
@@ -903,24 +956,30 @@ contains
       ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-Grid", zGridDimId)
       ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
 !PRINT *, 'n_Edges', nXEdges, nYEdges, nZEdges, nZGrid
-      allocate(xEdges(nXEdges), yEdges(nYEdges), zEdges(nZEdges), temps(nXEdges-1,nYEdges-1,nZEdges-1))
-      ncStatus( 9) = nf90_inq_varid(ncFileId, "x-Edges", ncVarId)
-      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, xEdges)
-      ncStatus(11) = nf90_inq_varid(ncFileId, "y-Edges", ncVarId)
-      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, yEdges)
-      ncStatus(13) = nf90_inq_varid(ncFileId, "z-Edges", ncVarId)
-      ncStatus(14) = nf90_get_var(ncFileId, ncVarId, zEdges)
+!      allocate(commonD%xPosition(nXEdges), commonD%yPosition(nYEdges), commonD%zPosition(nZEdges), commonD%temps(nXEdges-1,nYEdges-1,nZEdges-1))
+!      ncStatus( 9) = nf90_inq_varid(ncFileId, "x-Edges", ncVarId)
+!      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, commonD%xPosition)
+!      ncStatus(11) = nf90_inq_varid(ncFileId, "y-Edges", ncVarId)
+!      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, commonD%yPosition)
+!      ncStatus(13) = nf90_inq_varid(ncFileId, "z-Edges", ncVarId)
+!      ncStatus(14) = nf90_get_var(ncFileId, ncVarId, commonD%zPosition)
       
-      ncStatus(15) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
-      ncStatus(16) = nf90_get_var(ncFileId, ncVarId, temps)
+!      ncStatus(15) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
+!      ncStatus(16) = nf90_get_var(ncFileId, ncVarId, commonD%temps)
 !      if( COUNT(temps .le. 0.0_8) .gt. 0)PRINT *, 'readDomain: there are temps at or below 0.0 K'
 !PRINT *, 'readDomain: min temp = ', MINVAL(temps)
       if(any(ncStatus(:) /= nf90_NoErr)) &
         call setStateToFailure(status, "read_Domain: " // trim(fileName) // &
                                " doesn't look an optical properties file.") 
-    end if 
-    
+    end if
+
+!    ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-Grid", zGridDimId) ! need to know zGridDimId to know if later components fill the domain completely 
+!    nXEdges = size(commonD%xPosition)
+!    nYEdges = size(commonD%yPosition)
+!    nZEdges = size(commonD%zPosition) ! need these dimensions for loater allocations even if not first read
+
     if(.not. stateIsFailure(status)) then 
+PRINT *, 'read_Domain: getting attributes'
       !
       ! Create a new domain using the initialization procedure. 
       !   The domain may have been regularly spaced when it was written to the file, but 
@@ -932,14 +991,16 @@ contains
       ncStatus( 4) = nf90_get_att(ncFileID, nf90_Global,  "surfaceAlbedo", albedo)
 
       call finalize_Domain(thisDomain)
-      thisDomain = new_Domain(xEdges, yEdges, zEdges, lambda, lambdaI, nlambda, albedo, temps, status)
+!      thisDomain = new_Domain(xEdges, yEdges, zEdges, lambda, lambdaI, nlambda, albedo, temps, status)
+PRINT *, 'read_Domain: commonD max/mins ', MAXVAL(commonD%xPosition), MINVAL(commonD%xPosition), MAXVAL(commonD%yPosition), MINVAL(commonD%yPosition), MAXVAL(commonD%zPosition), MINVAL(commonD%zPosition), MAXVAL(commonD%temps), MINVAL(commonD%temps)
+      thisDomain = new_Domain(commonD, lambda, lambdaI, nlambda, albedo, status)
       ncStatus( 5) = nf90_get_att(ncFileID, nf90_Global, "xyRegularlySpaced", oneByte) 
       if(asLogical(oneByte) .neqv. thisDomain%xyRegularlySpaced) &
         call setStateToWarning(status, "read_Domain: file and new domain don't agree on regularity of x-y spacing.") 
       ncStatus( 6) = nf90_get_att(ncFileID, nf90_Global,  "zRegularlySpaced", oneByte)
       if(asLogical(oneByte) .neqv. thisDomain%zRegularlySpaced) &
         call setStateToWarning(status, "read_Domain: file and new domain don't agree on regularity of z spacing.") 
-      deallocate(xEdges, yEdges, zEdges, temps)
+!      deallocate(xEdges, yEdges, zEdges, temps)
     end if 
 
     if(.not. stateIsFailure(status)) then 
@@ -948,9 +1009,10 @@ contains
       !   same function we'd use from outside the module. 
       !
       ncStatus( 1) = nf90_get_att(ncFileID, nf90_Global, "numberOfComponents", nComponents)
+PRINT *, 'read_Domain: reading ', nComponents, ' components'
       do i = 1, nComponents
-        ncStatus( 1) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "Name", name)
-        ncStatus( 2) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "zLevelBase", zLevelBase)
+        ncStatus( 2) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "Name", name)
+        ncStatus( 3) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "zLevelBase", zLevelBase)
         !
         ! Is the component horizontally homogeneous? Does it fill the entire domain vertically? 
         ! 
@@ -958,20 +1020,21 @@ contains
         ncStatus( 5) = nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
         horizontallyUniform = (ndims == 1)
         fillsVerticalDomain = (dimIds(ndims) == zGridDimId)
-!PRINT *, dimIds, zGridDimId
+PRINT *, dimIds, zGridDimId
         if(fillsVerticalDomain) then
           nZGrid = nZEdges - 1
-!PRINT *, 'fillsVerticalDomain=TRUE', nZgrid, nZEdges
+PRINT *, 'fillsVerticalDomain=TRUE', nZgrid, nZEdges
         else
           ncStatus( 6) = nf90_inq_dimId(ncFileId, trim(makePrefix(i)) // "z-Grid", ncDimId)
           ncStatus( 7) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZGrid)
-!PRINT *, 'fillsVerticalDomain=FALSE', ncDimId, nZgrid, nZEdges
+PRINT *, 'fillsVerticalDomain=FALSE', ncDimId, nZgrid, nZEdges
         end if
         !
         ! Read in the scalar 3D or 1D fields
         !
         if(horizontallyUniform) then
           allocate(extinction(1, 1, nZGrid), singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid)) 
+PRINT *, 'read_DOmain: horizontally uniform. extinction size: ', size(extinction,1), size(extinction,2), size(extinction,3)
           ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, extinction(1, 1, :))
           ncStatus( 9) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
           ncStatus(10) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(1, 1, :))
@@ -981,6 +1044,7 @@ contains
           allocate(            extinction(nXEdges - 1, nYEdges - 1, nZGrid), &
                    singleScatteringAlbedo(nXEdges - 1, nYEdges - 1, nZGrid), &
                        phaseFunctionIndex(nXEdges - 1, nYEdges - 1, nZGrid))
+PRINT *, 'read_Domain: horizontally nonuniform. extinction size: ', size(extinction,1), size(extinction,2), size(extinction,3)
           ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, extinction(:, :, :))
           ncStatus( 9) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
           ncStatus(10) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(:, :, :))
@@ -989,7 +1053,7 @@ contains
         end if
         if(any(ncStatus(:) /= nf90_NoErr)) then
           call setStateToFailure(status, "read_Domain: Error reading scalar fields from file " // trim(fileName))
-!	  PRINT *, ncStatus(:)
+	  PRINT *, ncStatus(:)
 	end if
         !
         ! Read in the phase function table(s) 
@@ -1003,6 +1067,8 @@ contains
         ! Add the new component to the domain. 
         !
         if(.not. stateIsFailure(status)) then
+
+PRINT *, "read_Domain: extinction size ", size(extinction, 1), size(extinction, 2), size(extinction, 3)
           call addOpticalComponent(thisDomain, name, extinction, singleScatteringAlbedo, &
                                    phaseFunctionIndex, table, zLevelBase = zLevelBase,   &
                                    status = status)
@@ -1034,10 +1100,10 @@ contains
     thisDomain%zRegularlySpaced  = .false.
     
     ! Position vectors
-    if(associated(thisDomain%xPosition)) deallocate(thisDomain%xPosition)
-    if(associated(thisDomain%yPosition)) deallocate(thisDomain%yPosition)
-    if(associated(thisDomain%zPosition)) deallocate(thisDomain%zPosition)
-    if(associated(thisDomain%temps)) deallocate(thisDomain%temps)
+    if(associated(thisDomain%xPosition)) NULLIFY(thisDomain%xPosition)
+    if(associated(thisDomain%yPosition)) NULLIFY(thisDomain%yPosition)
+    if(associated(thisDomain%zPosition)) NULLIFY(thisDomain%zPosition)
+    if(associated(thisDomain%temps)) NULLIFY(thisDomain%temps)
     !  Optical components
     if(containsComponents(thisDomain)) then
       do i = 1, size(thisDomain%components)
@@ -1135,8 +1201,10 @@ contains
         
       ! Do the arrays conform to the grid in the domain? 
       if(.not. any(numX == (/ 1, size(thisDomain%xPosition) - 1 /)) .or. &
-         .not. any(numY == (/ 1, size(thisDomain%yPosition) - 1/)))      &
+         .not. any(numY == (/ 1, size(thisDomain%yPosition) - 1/)))  then !   &
+PRINT *, 'numX, size(thisDomain%xPosition), numY, size(thisDomain%yPosition) ', numX, size(thisDomain%xPosition), numY, size(thisDomain%yPosition)          
         call setStateToFailure(status, "validateOpticalComponent: arrays don't conform to horizontal extent of domain.")
+      end if
       if(zLevelBase + numZ - 1 > size(thisDomain%zPosition) .or. zLevelBase < 1) &
         call setStateToFailure(status, "validateOpticalComponent: arrays don't conform to vertical extent of domain.")
      

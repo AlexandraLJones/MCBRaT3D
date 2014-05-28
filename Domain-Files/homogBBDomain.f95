@@ -16,7 +16,7 @@ program homogBBDomain
   real(8)    ::  dx, dy, dz, isoT, concen, isoSSA, isobeta_e, s_lambda, dlambda, albedo, Rad
   real     :: re, g
   real, allocatable	 ::  LG(:)
-  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:),  Temp(:,:,:), lambdas(:), sourceFunc(:)
+  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:),  lambdas(:), sourceFunc(:)!, Temp(:,:,:)
   integer, allocatable	::	pInd(:,:,:), LGind(:)
   integer, dimension(3) ::  dims
   integer, dimension(16) :: ncStatus
@@ -28,6 +28,7 @@ program homogBBDomain
   type(ErrorMessage)              :: domstatus, srcstatus
   type(phaseFunction)		  :: PhaseFunc
   type(phaseFunctionTable)        :: table, OnePhaseFuncTable
+  type(commonDomain)              :: commonD
   type(domain)                    :: cloud
 
   re = 10.0
@@ -65,8 +66,8 @@ program homogBBDomain
   LGind=isoIndex
 
 !--Create 3D array of temps
-   allocate(Temp(1:nx,1:ny,1:nz))
-   Temp(:,:,:)=isoT
+   allocate(commonD%temps(1:nx,1:ny,1:nz))
+   commonD%temps(:,:,:)=isoT
 
    allocate(lambdas(1:nlambda))
    lambdas = s_lambda + (dlambda * (/(dble(i), i = 0, nlambda-1)/))
@@ -85,12 +86,13 @@ program homogBBDomain
   DO ilambda= 1, nlambda
     write(domfile, '(A,1ES11.5,A)') TRIM(domfile_str), lambdas(ilambda) , '.dom'
     write(22,"(A)") TRIM(domfile)
-    cloud =                                                             &
-    new_Domain(xPosition = dx * (/ 0., (real(i), i = 1, nx) /), &
-               yPosition = dy * (/ 0., (real(i), i = 1, ny) /), &
-               zPosition = dz * (/ 0., (real(i), i = 1, nz) /), &
-               lambda = lambdas(ilambda), lambdaI = ilambda, nlambda=nlambda, &
-               albedo = albedo, temps = Temp, status = domstatus)
+    allocate(commonD%xPosition(1:nx), commonD%yPosition(1:ny), commonD%zPosition(1:nz))
+    commonD%xPosition=dx * (/ 0., (real(i), i = 1, nx) /)
+    commonD%yPosition=dy * (/ 0., (real(i), i = 1, ny) /)
+    commonD%zPosition=dz * (/ 0., (real(i), i = 1, nz) /)
+
+    cloud = new_Domain(commonD, lambda = lambdas(ilambda), lambdaI = ilambda, nlambda=nlambda, &
+                        albedo = albedo, status = domstatus)
    call printStatus(domstatus)
 
     PhaseFunc = new_PhaseFunction(LG, status=domstatus)
