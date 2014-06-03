@@ -229,9 +229,14 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
      tempPower = 0.0_8
      lambda_u = 0.0_8
      
+      !!$OMP DO ORDERED PRIVATE(ilambda, lambda, dlambda, albedo, ssas, ext, cumExt, &
+      !!$OMP& emiss, b, sfcPower, sfcPlanckRad, atmsPower, previous, corr_contrib, &
+      !!$OMP& temp_sum, corr, prev_exact, atmsPlanckRad, totalAbsCoef, ix, iy, iz) &
+      !!$OMP& FIRSTPRIVATE(tempPower, lambda_u, status) LASTPRIVATE(status)
+   !!THIS IS A COMMENT!!$OMP& SHARED(theseWeights, dz, dy, dx, nlambda, theseDomains, h, c, k, sfcTemp, a, Pi, xPosition, yPosition, atmsTemp, nx, ny, nz) 
      DO ilambda = 1, nlambda
-
-	if (ilambda .gt. 1 .and. ilambda .lt. nlambda) then
+         !!$OMP ORDERED
+	if (ilambda .gt. 1 .and. ilambda .lt. nlambda) then ! this if block has to be executed in order
 	  call getInfo_Domain(theseDomains(ilambda+1), lambda=lambda_u(3), status=status)
 	  dlambda = (lambda_u(3)-lambda_u(1))/2.0_8 ! half points between ilambda and the adjacent values
 	  lambda = lambda_u(2)
@@ -249,6 +254,7 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
 	else ! should never end up here
 	  PRINT *, 'emission_weighting: ended up in error condition of the loop. ilambda = ', ilambda
         end if
+         !!$OMP END ORDERED
 
 !PRINT *, lambda, dlambda
 

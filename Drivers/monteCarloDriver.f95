@@ -123,7 +123,7 @@ program monteCarloDriver
   integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
   integer              :: numberOfComponents
-  logical              :: computeIntensity
+  logical              :: computeIntensity, ompParallel
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
   real(8)                 :: emittedFlux
@@ -140,7 +140,7 @@ program monteCarloDriver
 !  real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
 !  real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
 !  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
-  integer              ::  N, atms_photons
+  integer              ::  N, atms_photons, maxThreads, availProcs
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
   integer, allocatable   ::  freqDistr(:)
@@ -150,15 +150,15 @@ program monteCarloDriver
   type(domain)               :: thisDomain
   type(domain), allocatable, dimension(:) :: BBDomain
   type(ErrorMessage)         :: status
-  type(randomNumberSequence) :: randoms
+  type(randomNumberSequence), allocatable, dimension(:) :: randoms
 !  type(photonStream)         :: incomingPhotons
   type(photonStream), allocatable, dimension(:) :: incomingBBPhotons
   type(integrator)           :: mcIntegrator
   type(Weights)              :: theseWeights
 
   ! Variables related to splitting up the job across processors
-  integer            :: thisProc            ! ID OF CURRENT PROCESSOR; default 0
-  integer            :: numProcs            ! TOTAL NUMBER OF PROCESSORS USED; default 1
+  integer            :: thisProc, thisThread            ! ID OF CURRENT PROCESSOR; default 0
+  integer            :: numProcs, numThreads            ! TOTAL NUMBER OF PROCESSORS USED; default 1
   integer            :: batchesPerProcessor
 
   ! -----------------------------------------
@@ -166,6 +166,19 @@ program monteCarloDriver
   !
 !PRINT*, 'about to call initializeProcesses' 
   call initializeProcesses(numProcs, thisProc)
+
+ !!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
+    
+ availProcs = OMP_GET_NUM_PROCS()
+! maxThreads = OMP_GET_THREAD_LIMIT()
+ ompParallel =  OMP_IN_PARALLEL()
+PRINT *, 'in parallel region? ', ompParallel, 'available procs:', availProcs
+
+  numThreads = OMP_GET_NUM_THREADS()
+PRINT *, 'numThreads=', numThreads
+  !!$OMP SINGLE
+  allocate(randoms(0:numThreads-1))
+   
 !PRINT*, 'returned from initializeProcesses'
 
 ! temporary output file for the purposes of debugging
@@ -230,7 +243,9 @@ PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(so
 !        phis(i)=phiFill(1) + (i*phiFill(3))
 !     END FORALL
     end if
- 
+  !!$OMP END SINGLE
+
+ !!$OMP DO PRIVATE(i, j, k) 
     do i = 1,nMu
       do j = 1,nPhi
          k = (i-1)*nPhi+j
@@ -240,6 +255,7 @@ PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(so
     end do
    end if
   end if
+  !!$OMP SINGLE
  if (allocated(mus)) deallocate(mus)
  if (allocated(phis)) deallocate(phis) 
 
@@ -264,22 +280,22 @@ PRINT *, 'namelist numLambda= ', numLambda
   read(22,'(1A)') domainFileName
   call read_Common(domainFileName, commonPhysical, status)
   call printStatus(status)
-PRINT *, 'Driver: Read common domain'
+if(thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
   call read_Domain(domainFileName, commonPhysical, thisDomain, status)
   call printStatus(status)
   call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
   call printStatus(status)
-PRINT *, 'Driver: got dimensions from intial domain'
+if(thisThread .eq. 0)PRINT *, 'Driver: got dimensions from intial domain'
   REWIND(22)
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
 !  allocate(commonPhysical%xPosition(nx+1), commonPhysical%yPosition(ny+1), commonPhysical%zPosition(nz+1), commonPhysical%temps(nx,ny,nz))
 
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
      read(22,'(1A)') domainFileName
-PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
+if(thisThread .eq. 0)PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
    MAXVAL(commonPhysical%zPosition), MINVAL(commonPhysical%zPosition), MAXVAL(commonPhysical%temps), MINVAL(commonPhysical%temps)
      call read_Domain(domainFileName, commonPhysical, thisDomain, status)
-PRINT *, 'Driver: Read Domain from ', domainFileName  
+if(thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
      call printStatus(status)
@@ -293,7 +309,7 @@ print *, 'Driver: got info for Domain: ', i
       call printStatus(status)
   END DO
   call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
-PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
+if(thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
   call printStatus(status)
 
   close(22)
@@ -303,7 +319,7 @@ PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
 
   ! Set up the integrator object. It only grabs information from the domain that is consistent between all of them so I only need to pass any one domain
   mcIntegrator = new_Integrator(thisDomain, status = status)     
-PRINT *, 'initialized Integrator'
+if(thisThread .eq. 0)PRINT *, 'initialized Integrator'
   call printStatus(status)					 ! CAN I MOVE THIS SECTION INITIALIZING THE INTEGRATOR TO BEFORE THE LOOP RADING IN ALL THE DOMAINS BUT AFTER READING IN THE FIRST DOMAIN SO THAT I CAN JUST PARALLELIZE THE REST? 
 !  call finalize_Domain(thisDomain)                               !
 
@@ -312,7 +328,7 @@ PRINT *, 'initialized Integrator'
                           minInverseTableSize = nPhaseIntervals, &
                           LW_flag = LW_flag,                     &
                           status = status)
-PRINT *, 'Specified photon source'
+if(thisThread .eq. 0)PRINT *, 'Specified photon source'
   call printStatus(status) 
 
   if (computeIntensity) then
@@ -321,7 +337,7 @@ PRINT *, 'Specified photon source'
                             intensityMus=intensityMus(1:numRadDir), &
                             intensityPhis=intensityPhis(1:numRadDir), &
                             computeIntensity=computeIntensity,numComps=numberOfComponents, status=status)
-PRINT *, 'Specified Intensity Calcs'
+if(thisThread .eq. 0)PRINT *, 'Specified Intensity Calcs'
     call printStatus(status) 
   endif
 
@@ -341,7 +357,7 @@ PRINT *, 'Specified Intensity Calcs'
                          useRayTracing      = useRayTracing,        &
                          useRussianRoulette = useRussianRoulette,   &
                          status = status)
-PRINT *, 'Specfied ray tracing'
+if(thisThread .eq. 0)PRINT *, 'Specfied ray tracing'
   call printStatus(status) 
   
   !
@@ -363,7 +379,7 @@ PRINT *, 'Specfied ray tracing'
                          maxIntensityContribution =                 &
                                    maxIntensityContribution,        &
                          status = status)
-PRINT *, 'Specified variance reduction'
+if(thisThread .eq. 0)PRINT *, 'Specified variance reduction'
     call printStatus(status) 
   end if
 
@@ -385,6 +401,7 @@ PRINT *, 'Specified variance reduction'
     allocate (Radiance(nX, nY, numRadDir), RadianceStats(nX, nY, numRadDir, 2))
     RadianceStats(:, :, :, :) = 0.0
   endif  
+  !!$OMP END SINGLE
   
 !  if(recScatOrd .and. numRecScatOrd >=0) then 
 !    allocate(meanFluxUpByScatOrd(0:numRecScatOrd), meanFluxDownByScatOrd(0:numRecScatOrd),&
@@ -408,7 +425,10 @@ PRINT *, 'Specified variance reduction'
   !   do any internal pre-computation. 
 
   ! Seed the random number generator.
-  randoms = new_RandomNumberSequence(seed = (/ iseed, 0 /) )
+  thisThread = OMP_GET_THREAD_NUM()
+PRINT *, 'thisThread=', thisThread
+  randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
+  !!$OMP SINGLE
   allocate (freqDistr(1:numLambda), incomingBBPhotons(1:numLambda))
    ! The initial direction and position of the photons are precomputed and 
    !   stored in an "illumination" object.
@@ -423,7 +443,7 @@ call printStatus(status)
 !call printStatus(status)
 
      call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons, totalFlux=emittedFlux, status=status) 
-PRINT *, 'returned from emission_weighting'
+if(thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
 !    DO k = 1, nZ
@@ -438,16 +458,18 @@ PRINT *, 'returned from emission_weighting'
 
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
-PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
+if(thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 call printStatus(status)
 !PRINT *, 'Driver: calculated emission weighting'
-     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms, freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
-PRINT*, freqDistr
+     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
+if(thisThread .eq. 0)PRINT*, freqDistr
+ !!$OMP DO SCHEDULE(static, 1) PRIVATE(thisThread)
      DO i = 1, numLambda
-        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms, status=status)
+PRINT *, 'numThreads=', numThreads, 'thisThread=', thisThread
+        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms(thisThread), status=status)
 !	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
      END DO
-PRINT *, 'initialized thermal BB photon stream'
+if(thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
 call printStatus(status)
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 !    DO k = 1, nZ
@@ -463,22 +485,23 @@ call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
   else
      theseWeights=new_Weights(numLambda=numLambda, status=status)
-PRINT *, 'initialized solar weights'
+if(thisThread .eq. 0)PRINT *, 'initialized solar weights'
 call printStatus(status)
      call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
-PRINT *, 'filled solar weights'
+if(thisThread .eq. 0)PRINT *, 'filled solar weights'
 call printStatus(status)
      deallocate(solarSourceFunction)
      deallocate(centralLambdas)
-     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms, freqDistr)
-PRINT *, freqDistr
+     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr)
+if(thisThread .eq. 0)PRINT *, freqDistr
+ !!$OMP DO SCHEDULE(static, 1)
      DO i = 1, numLambda
        incomingBBPhotons(i) = new_PhotonStream (solarMu, solarAzimuth, &
                                       numberOfPhotons = freqDistr(i),   &
-                                      randomNumbers = randoms, status=status)
+                                      randomNumbers = randoms(thisThread), status=status)
      END DO
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
-PRINT *, 'initialized SW photon stream'
+if(thisThread .eq. 0)PRINT *, 'initialized SW photon stream'
 call printStatus(status)
 !     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
 !                                      numberOfPhotons = 1,   &
@@ -491,6 +514,7 @@ call printStatus(status)
   solarFlux = emittedFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
 !  call finalize_Domain(thisDomain)
+ !!$OMP END PARALLEL
 STOP
 
   ! Now we compute the radiative transfer for a single photon 
@@ -530,7 +554,7 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
   batches: do batch = thisProc*batchesPerProcessor + 1, thisProc*batchesPerProcessor + batchesPerProcessor
     ! Seed the random number generator.
     !   Variable randoms holds the state of the random number generator. 
-    randoms = new_RandomNumberSequence(seed = (/ iseed, batch /) )
+    randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, batch, thisThread /) ) 
 
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
@@ -548,7 +572,7 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
 !    call printStatus(status)
 !PRINT *, 'Driver: Initialized photons for batch', batch
     ! Now we compute the radiative transfer for this batch of photons. 
-    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms, incomingBBPhotons(i), status)
+    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms(thisThread), incomingBBPhotons(i), status)
 !PRINT *, 'Driver: COmputed RT for batch', batch
      ! Get the radiative quantities:
      !   This particular integrator provides fluxes at the top and bottom 
@@ -792,7 +816,7 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
   deallocate (absorbedProfile, absorbedProfileStats, absorbedVolume, absorbedVolumeStats)
   if (computeIntensity) deallocate (Radiance, RadianceStats)
 
-  call finalize_RandomNumberSequence(randoms)
+  call finalize_RandomNumberSequence(randoms(thisThread))
   call finalize_Integrator (mcIntegrator)
 
 contains
