@@ -206,11 +206,12 @@ contains
   !   fluxes. There actual work might be done in other subroutines (to reflect 
   !   algorithmic choices, say). 
   !------------------------------------------------------------------------------------------
-  subroutine computeRadiativeTransfer(thisIntegrator,thisDomain, randomNumbers, incomingPhotons, status, option2)
+  subroutine computeRadiativeTransfer(thisIntegrator,thisDomain, randomNumbers, incomingPhotons, numPhotonsProcessed, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
     type(domain),		intent(inout)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons  
+    integer,                    intent(  out) :: numPhotonsProcessed
     type(ErrorMessage),         intent(inout) :: status
     integer, dimension(:,:,:), optional, intent(out) :: option2
 
@@ -226,7 +227,6 @@ contains
     !   cross-section and computeRT_PhotonTracing for simple ray tracing. 
     
     ! Local variables
-    integer :: numPhotonsProcessed
     integer :: numIntensityDirections, numX, numY, numZ, numComponents, j, k, d,p
     real, dimension(:, :), allocatable &
             :: numPhotonsPerColumn

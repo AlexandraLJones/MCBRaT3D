@@ -140,7 +140,7 @@ program monteCarloDriver
 !  real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
 !  real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
 !  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
-  integer              ::  N, atms_photons, maxThreads, availProcs
+  integer              ::  N, atms_photons, maxThreads, availProcs, numPhotonsProcessed, totalNumPhotons
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
   integer, allocatable   ::  freqDistr(:)
@@ -572,7 +572,7 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
 !    call printStatus(status)
 !PRINT *, 'Driver: Initialized photons for batch', batch
     ! Now we compute the radiative transfer for this batch of photons. 
-    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms(thisThread), incomingBBPhotons(i), status)
+    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms(thisThread), incomingBBPhotons(i), numPhotonsProcessed, status)
 !PRINT *, 'Driver: COmputed RT for batch', batch
      ! Get the radiative quantities:
      !   This particular integrator provides fluxes at the top and bottom 
