@@ -262,7 +262,7 @@ contains
     else
       baseLevel = 1
     end if
-PRINT *, 'addOpticalComponent3D: size of extinction array', size(extinction,1), size(extinction,2), size(extinction,3)
+!PRINT *, 'addOpticalComponent3D: size of extinction array', size(extinction,1), size(extinction,2), size(extinction,3)
     call validateOpticalComponent(thisDomain, componentName,          &
                                   extinction, singleScatteringAlbedo, &
                                   phaseFunctionIndex, phaseFunctions, &
@@ -492,7 +492,7 @@ PRINT *, 'addOpticalComponent3D: size of extinction array', size(extinction,1), 
       call setStateToFailure(status, "getInfo_Domain: domain hasn't been initialized.")
     else
       if(present(namelistNumLambda)) then
-	PRINT *, 'namelistNumLambda= ', namelistNumLambda, 'thisDomain%nlambda= ', thisDomain%nlambda
+	!PRINT *, 'namelistNumLambda= ', namelistNumLambda, 'thisDomain%nlambda= ', thisDomain%nlambda
 	if(namelistNumLambda .ne. thisDomain%nlambda) call setStateToFailure(status, &
 		"getInfo_Domain: number of wavelengths from namelist does not match number of wavelengths from domain file")
       end if
@@ -979,7 +979,7 @@ PRINT *, 'addOpticalComponent3D: size of extinction array', size(extinction,1), 
 !    nZEdges = size(commonD%zPosition) ! need these dimensions for loater allocations even if not first read
 
     if(.not. stateIsFailure(status)) then 
-PRINT *, 'read_Domain: getting attributes'
+!PRINT *, 'read_Domain: getting attributes'
       !
       ! Create a new domain using the initialization procedure. 
       !   The domain may have been regularly spaced when it was written to the file, but 
@@ -992,7 +992,7 @@ PRINT *, 'read_Domain: getting attributes'
 
       call finalize_Domain(thisDomain)
 !      thisDomain = new_Domain(xEdges, yEdges, zEdges, lambda, lambdaI, nlambda, albedo, temps, status)
-PRINT *, 'read_Domain: commonD max/mins ', MAXVAL(commonD%xPosition), MINVAL(commonD%xPosition), MAXVAL(commonD%yPosition), MINVAL(commonD%yPosition), MAXVAL(commonD%zPosition), MINVAL(commonD%zPosition), MAXVAL(commonD%temps), MINVAL(commonD%temps)
+!PRINT *, 'read_Domain: commonD max/mins ', MAXVAL(commonD%xPosition), MINVAL(commonD%xPosition), MAXVAL(commonD%yPosition), MINVAL(commonD%yPosition), MAXVAL(commonD%zPosition), MINVAL(commonD%zPosition), MAXVAL(commonD%temps), MINVAL(commonD%temps)
       thisDomain = new_Domain(commonD, lambda, lambdaI, nlambda, albedo, status)
       ncStatus( 5) = nf90_get_att(ncFileID, nf90_Global, "xyRegularlySpaced", oneByte) 
       if(asLogical(oneByte) .neqv. thisDomain%xyRegularlySpaced) &
@@ -1009,7 +1009,7 @@ PRINT *, 'read_Domain: commonD max/mins ', MAXVAL(commonD%xPosition), MINVAL(com
       !   same function we'd use from outside the module. 
       !
       ncStatus( 1) = nf90_get_att(ncFileID, nf90_Global, "numberOfComponents", nComponents)
-PRINT *, 'read_Domain: reading ', nComponents, ' components'
+!PRINT *, 'read_Domain: reading ', nComponents, ' components'
       do i = 1, nComponents
         ncStatus( 2) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "Name", name)
         ncStatus( 3) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "zLevelBase", zLevelBase)
@@ -1020,21 +1020,21 @@ PRINT *, 'read_Domain: reading ', nComponents, ' components'
         ncStatus( 5) = nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
         horizontallyUniform = (ndims == 1)
         fillsVerticalDomain = (dimIds(ndims) == zGridDimId)
-PRINT *, dimIds, zGridDimId
+!PRINT *, dimIds, zGridDimId
         if(fillsVerticalDomain) then
           nZGrid = nZEdges - 1
-PRINT *, 'fillsVerticalDomain=TRUE', nZgrid, nZEdges
+!PRINT *, 'fillsVerticalDomain=TRUE', nZgrid, nZEdges
         else
           ncStatus( 6) = nf90_inq_dimId(ncFileId, trim(makePrefix(i)) // "z-Grid", ncDimId)
           ncStatus( 7) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZGrid)
-PRINT *, 'fillsVerticalDomain=FALSE', ncDimId, nZgrid, nZEdges
+!PRINT *, 'fillsVerticalDomain=FALSE', ncDimId, nZgrid, nZEdges
         end if
         !
         ! Read in the scalar 3D or 1D fields
         !
         if(horizontallyUniform) then
           allocate(extinction(1, 1, nZGrid), singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid)) 
-PRINT *, 'read_DOmain: horizontally uniform. extinction size: ', size(extinction,1), size(extinction,2), size(extinction,3)
+!PRINT *, 'read_DOmain: horizontally uniform. extinction size: ', size(extinction,1), size(extinction,2), size(extinction,3)
           ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, extinction(1, 1, :))
           ncStatus( 9) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
           ncStatus(10) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(1, 1, :))
@@ -1044,7 +1044,7 @@ PRINT *, 'read_DOmain: horizontally uniform. extinction size: ', size(extinction
           allocate(            extinction(nXEdges - 1, nYEdges - 1, nZGrid), &
                    singleScatteringAlbedo(nXEdges - 1, nYEdges - 1, nZGrid), &
                        phaseFunctionIndex(nXEdges - 1, nYEdges - 1, nZGrid))
-PRINT *, 'read_Domain: horizontally nonuniform. extinction size: ', size(extinction,1), size(extinction,2), size(extinction,3)
+!PRINT *, 'read_Domain: horizontally nonuniform. extinction size: ', size(extinction,1), size(extinction,2), size(extinction,3)
           ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, extinction(:, :, :))
           ncStatus( 9) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
           ncStatus(10) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(:, :, :))
@@ -1053,7 +1053,7 @@ PRINT *, 'read_Domain: horizontally nonuniform. extinction size: ', size(extinct
         end if
         if(any(ncStatus(:) /= nf90_NoErr)) then
           call setStateToFailure(status, "read_Domain: Error reading scalar fields from file " // trim(fileName))
-	  PRINT *, ncStatus(:)
+	  !PRINT *, ncStatus(:)
 	end if
         !
         ! Read in the phase function table(s) 
@@ -1068,7 +1068,7 @@ PRINT *, 'read_Domain: horizontally nonuniform. extinction size: ', size(extinct
         !
         if(.not. stateIsFailure(status)) then
 
-PRINT *, "read_Domain: extinction size ", size(extinction, 1), size(extinction, 2), size(extinction, 3)
+!PRINT *, "read_Domain: extinction size ", size(extinction, 1), size(extinction, 2), size(extinction, 3)
           call addOpticalComponent(thisDomain, name, extinction, singleScatteringAlbedo, &
                                    phaseFunctionIndex, table, zLevelBase = zLevelBase,   &
                                    status = status)
@@ -1202,7 +1202,7 @@ PRINT *, "read_Domain: extinction size ", size(extinction, 1), size(extinction, 
       ! Do the arrays conform to the grid in the domain? 
       if(.not. any(numX == (/ 1, size(thisDomain%xPosition) - 1 /)) .or. &
          .not. any(numY == (/ 1, size(thisDomain%yPosition) - 1/)))  then !   &
-PRINT *, 'numX, size(thisDomain%xPosition), numY, size(thisDomain%yPosition) ', numX, size(thisDomain%xPosition), numY, size(thisDomain%yPosition)          
+!PRINT *, 'numX, size(thisDomain%xPosition), numY, size(thisDomain%yPosition) ', numX, size(thisDomain%xPosition), numY, size(thisDomain%yPosition)          
         call setStateToFailure(status, "validateOpticalComponent: arrays don't conform to horizontal extent of domain.")
       end if
       if(zLevelBase + numZ - 1 > size(thisDomain%zPosition) .or. zLevelBase < 1) &

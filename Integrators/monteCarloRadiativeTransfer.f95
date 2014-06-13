@@ -206,11 +206,12 @@ contains
   !   fluxes. There actual work might be done in other subroutines (to reflect 
   !   algorithmic choices, say). 
   !------------------------------------------------------------------------------------------
-  subroutine computeRadiativeTransfer(thisIntegrator,thisDomain, randomNumbers, incomingPhotons, numPhotonsProcessed, status, option2)
+  subroutine computeRadiativeTransfer(thisIntegrator,thisDomain, randomNumbers, incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
     type(domain),		intent(inout)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons  
+    integer,                    intent(in   ) :: numPhotonsPerBatch
     integer,                    intent(  out) :: numPhotonsProcessed
     type(ErrorMessage),         intent(inout) :: status
     integer, dimension(:,:,:), optional, intent(out) :: option2
@@ -287,7 +288,7 @@ contains
       ! Compute radiative transfer for this photon batch 
       !
       if(.not. stateIsFailure(status)) &
-         call computeRT(thisIntegrator, thisDomain, randomNumbers, incomingPhotons, numPhotonsProcessed, status)
+         call computeRT(thisIntegrator, thisDomain, randomNumbers, incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status)
 
       if(thisIntegrator%computeIntensity .and. &
          thisIntegrator%limitIntensityContributions) then 
@@ -389,11 +390,12 @@ contains
   end subroutine computeRadiativeTransfer
   !------------------------------------------------------------------------------------------
   subroutine computeRT(thisIntegrator, thisDomain, randomNumbers, incomingPhotons, &
-                                numPhotonsProcessed, status, option2)
+                                numPhotonsPerBatch, numPhotonsProcessed, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
     type(domain),               intent(in)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons
+    integer,                    intent(in   ) :: numPhotonsPerBatch
     integer,                    intent(  out) :: numPhotonsProcessed
     type(ErrorMessage),         intent(inout) :: status
     integer, dimension(:,:,:), optional, intent(out) :: option2
@@ -418,7 +420,7 @@ contains
     !
     ! Variables related to intensity calculations
     !
-    integer            :: numIntensityDirections
+    integer            :: numIntensityDirections, current
     real, dimension(:), allocatable ::  contributions
     integer, dimension(:), allocatable :: xIndexF, yIndexF
     real(8), allocatable, dimension(:,:,:) :: totalExt
@@ -454,12 +456,14 @@ contains
     ! Begin loop over photons
     !
     nPhotons = 0; nBad = 0
-    photonLoop: do
+CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
+PRINT *, 'Starting with Photon', current
+    photonLoop: DO WHILE (nPhotons .lt. numPhotonsPerBatch)
 !PRINT *, nPhotons
-      if(.not. morePhotonsExist(incomingPhotons)) exit photonLoop ! This means we've used all the photons
+      if(.not. morePhotonsExist(incomingPhotons)) EXIT photonLoop! This means we've used all the photons
       call getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status)
 !      if(zPos .ge. 36)PRINT *, zPos
-      if(stateIsFailure(status)) exit photonLoop
+      if(stateIsFailure(status)) EXIT photonLoop
       scatteringOrder = 0
 !PRINT *, 'mu=', mu, ' phi=', phi
       directionCosines(:) = makeDirectionCosines(mu, phi)
@@ -815,6 +819,7 @@ contains
         end if
       end do scatteringLoop
     end do photonLoop
+
     
     if(thisIntegrator%computeIntensity) deallocate(contributions, xIndexF, yIndexF)
     deallocate(totalExt,cumExt,singleScattAlbedo,phaseFuncI,inversePhaseFuncs)

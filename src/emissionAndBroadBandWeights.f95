@@ -164,7 +164,7 @@ end if
           PRINT *, 'solar_weighting: ended up in error condition of the loop. i = ', i
         end if 
         theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarSolidAngle*solarMu*radianceFunction(i))
-PRINT *, 'cumFlux= ', theseWeights%totalPowerCDF(i), 'dLambda= ',dLambda, 'solid angle= ', solarSolidAngle, 'mu= ', solarMu, 'radiance= ', radianceFunction(i)
+!PRINT *, 'cumFlux= ', theseWeights%totalPowerCDF(i), 'dLambda= ',dLambda, 'solid angle= ', solarSolidAngle, 'mu= ', solarMu, 'radiance= ', radianceFunction(i)
      END DO
      theseWeights%spectrIntgrFlux = theseWeights%totalPowerCDF(nLambda)
      totalFlux = theseWeights%spectrIntgrFlux
@@ -347,8 +347,8 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
 
        atmsPhotons=ceiling(SUM(totalPhotons * theseWeights%fracAtmsPower(:)))
        theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(nlambda)
-PRINT *, "emission_weighting: fraction of atmos power ", theseWeights%fracAtmsPower
-PRINT *, "emission_weighting: total power CDF ", theseWeights%totalPowerCDF
+!PRINT *, "emission_weighting: fraction of atmos power ", theseWeights%fracAtmsPower
+!PRINT *, "emission_weighting: total power CDF ", theseWeights%totalPowerCDF
      end if
      deallocate(xPosition, yPosition)
    end subroutine emission_weighting

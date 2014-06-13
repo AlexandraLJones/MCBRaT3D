@@ -127,7 +127,7 @@ program monteCarloDriver
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
   real(8)                 :: emittedFlux
-  real                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
+  real                 :: meanFluxUpStats(3), meanFluxDownStats(3), meanFluxAbsorbedStats(3)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:)
   real(8), allocatable    :: solarSourceFunction(:), centralLambdas(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :)
@@ -140,10 +140,14 @@ program monteCarloDriver
 !  real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
 !  real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
 !  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
-  integer              ::  N, atms_photons, maxThreads, availProcs, numPhotonsProcessed, totalNumPhotons
+  integer              ::  N, atms_photons, maxThreads, availProcs, numPhotonsProcessed, start, n, ierr
+  integer              :: batchesAssigned, batchesCompleted, totalNumPhotons = 0
+  integer              :: currentFreq(1)
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
-  integer, allocatable   ::  freqDistr(:)
+  integer, allocatable   ::  freqDistr(:), startingPhoton(:)
+  integer, dimension(MPI_STATUS_SIZE)  :: mpiStatus
+  integer, parameter     :: EXIT_TAG = 99, NEW_FREQ = 1, SAME_FREQ = 2
 
    ! I3RC Monte Carlo code derived type variables
   type(commonDomain)         :: commonPhysical
@@ -172,7 +176,7 @@ program monteCarloDriver
  availProcs = OMP_GET_NUM_PROCS()
 ! maxThreads = OMP_GET_THREAD_LIMIT()
  ompParallel =  OMP_IN_PARALLEL()
-PRINT *, 'in parallel region? ', ompParallel, 'available procs:', availProcs
+!PRINT *, 'in parallel region? ', ompParallel, 'available procs:', availProcs
 
   numThreads = OMP_GET_NUM_THREADS()
 PRINT *, 'numThreads=', numThreads
@@ -280,22 +284,22 @@ PRINT *, 'namelist numLambda= ', numLambda
   read(22,'(1A)') domainFileName
   call read_Common(domainFileName, commonPhysical, status)
   call printStatus(status)
-if(thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
   call read_Domain(domainFileName, commonPhysical, thisDomain, status)
   call printStatus(status)
   call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
   call printStatus(status)
-if(thisThread .eq. 0)PRINT *, 'Driver: got dimensions from intial domain'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got dimensions from intial domain'
   REWIND(22)
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
 !  allocate(commonPhysical%xPosition(nx+1), commonPhysical%yPosition(ny+1), commonPhysical%zPosition(nz+1), commonPhysical%temps(nx,ny,nz))
 
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
      read(22,'(1A)') domainFileName
-if(thisThread .eq. 0)PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
    MAXVAL(commonPhysical%zPosition), MINVAL(commonPhysical%zPosition), MAXVAL(commonPhysical%temps), MINVAL(commonPhysical%temps)
      call read_Domain(domainFileName, commonPhysical, thisDomain, status)
-if(thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
      call printStatus(status)
@@ -309,7 +313,7 @@ print *, 'Driver: got info for Domain: ', i
       call printStatus(status)
   END DO
   call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
-if(thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
   call printStatus(status)
 
   close(22)
@@ -319,7 +323,7 @@ if(thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, num
 
   ! Set up the integrator object. It only grabs information from the domain that is consistent between all of them so I only need to pass any one domain
   mcIntegrator = new_Integrator(thisDomain, status = status)     
-if(thisThread .eq. 0)PRINT *, 'initialized Integrator'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized Integrator'
   call printStatus(status)					 ! CAN I MOVE THIS SECTION INITIALIZING THE INTEGRATOR TO BEFORE THE LOOP RADING IN ALL THE DOMAINS BUT AFTER READING IN THE FIRST DOMAIN SO THAT I CAN JUST PARALLELIZE THE REST? 
 !  call finalize_Domain(thisDomain)                               !
 
@@ -328,7 +332,7 @@ if(thisThread .eq. 0)PRINT *, 'initialized Integrator'
                           minInverseTableSize = nPhaseIntervals, &
                           LW_flag = LW_flag,                     &
                           status = status)
-if(thisThread .eq. 0)PRINT *, 'Specified photon source'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified photon source'
   call printStatus(status) 
 
   if (computeIntensity) then
@@ -337,7 +341,7 @@ if(thisThread .eq. 0)PRINT *, 'Specified photon source'
                             intensityMus=intensityMus(1:numRadDir), &
                             intensityPhis=intensityPhis(1:numRadDir), &
                             computeIntensity=computeIntensity,numComps=numberOfComponents, status=status)
-if(thisThread .eq. 0)PRINT *, 'Specified Intensity Calcs'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified Intensity Calcs'
     call printStatus(status) 
   endif
 
@@ -357,7 +361,7 @@ if(thisThread .eq. 0)PRINT *, 'Specified Intensity Calcs'
                          useRayTracing      = useRayTracing,        &
                          useRussianRoulette = useRussianRoulette,   &
                          status = status)
-if(thisThread .eq. 0)PRINT *, 'Specfied ray tracing'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specfied ray tracing'
   call printStatus(status) 
   
   !
@@ -379,7 +383,7 @@ if(thisThread .eq. 0)PRINT *, 'Specfied ray tracing'
                          maxIntensityContribution =                 &
                                    maxIntensityContribution,        &
                          status = status)
-if(thisThread .eq. 0)PRINT *, 'Specified variance reduction'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified variance reduction'
     call printStatus(status) 
   end if
 
@@ -387,18 +391,18 @@ if(thisThread .eq. 0)PRINT *, 'Specified variance reduction'
    ! Allocate and zero the arrays for radiative quantities and moments 
 !  allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
 !  allocate (voxel_tallys2(nX, nY, nZ), voxel_tallys2_sum(nX, nY, nZ), voxel_tallys2_total(nX, nY, nZ))
-  allocate (fluxUp      (nX, nY), fluxUpStats      (nX, nY, 2))
-  allocate (fluxDown    (nX, nY), fluxDownStats    (nX, nY, 2))
-  allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 2))
-  allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 2))
-  allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 2))
+  allocate (fluxUp      (nX, nY), fluxUpStats      (nX, nY, 3))
+  allocate (fluxDown    (nX, nY), fluxDownStats    (nX, nY, 3))
+  allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 3))
+  allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 3))
+  allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 3))
 !  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
 !  voxel_tallys2(:,:,:)=0 ; voxel_tallys2_sum(:,:,:) = 0 ; voxel_tallys2_total(:,:,:) = 0
   meanFluxUpStats(:) = 0.0  ; meanFluxDownStats(:) = 0.0  ; meanFluxAbsorbedStats(:) = 0.0
   fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
   absorbedProfilestats(:, :) = 0.0 ;  absorbedVolumeStats(:, :, :, :) = 0.0
   if (computeIntensity) then
-    allocate (Radiance(nX, nY, numRadDir), RadianceStats(nX, nY, numRadDir, 2))
+    allocate (Radiance(nX, nY, numRadDir), RadianceStats(nX, nY, numRadDir, 3))
     RadianceStats(:, :, :, :) = 0.0
   endif  
   !!$OMP END SINGLE
@@ -427,7 +431,8 @@ if(thisThread .eq. 0)PRINT *, 'Specified variance reduction'
   ! Seed the random number generator.
   thisThread = OMP_GET_THREAD_NUM()
 PRINT *, 'thisThread=', thisThread
-  randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
+  !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
+  randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
   !!$OMP SINGLE
   allocate (freqDistr(1:numLambda), incomingBBPhotons(1:numLambda))
    ! The initial direction and position of the photons are precomputed and 
@@ -443,7 +448,7 @@ call printStatus(status)
 !call printStatus(status)
 
      call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons, totalFlux=emittedFlux, status=status) 
-if(thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
 !    DO k = 1, nZ
@@ -458,18 +463,18 @@ if(thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
-if(thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 call printStatus(status)
 !PRINT *, 'Driver: calculated emission weighting'
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
-if(thisThread .eq. 0)PRINT*, freqDistr
+if(MasterProc .and. thisThread .eq. 0)PRINT*, freqDistr
  !!$OMP DO SCHEDULE(static, 1) PRIVATE(thisThread)
      DO i = 1, numLambda
 PRINT *, 'numThreads=', numThreads, 'thisThread=', thisThread
         incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms(thisThread), status=status)
 !	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
      END DO
-if(thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
 call printStatus(status)
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 !    DO k = 1, nZ
@@ -485,15 +490,15 @@ call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
   else
      theseWeights=new_Weights(numLambda=numLambda, status=status)
-if(thisThread .eq. 0)PRINT *, 'initialized solar weights'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized solar weights'
 call printStatus(status)
      call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
-if(thisThread .eq. 0)PRINT *, 'filled solar weights'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
 call printStatus(status)
      deallocate(solarSourceFunction)
      deallocate(centralLambdas)
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr)
-if(thisThread .eq. 0)PRINT *, freqDistr
+if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
  !!$OMP DO SCHEDULE(static, 1)
      DO i = 1, numLambda
        incomingBBPhotons(i) = new_PhotonStream (solarMu, solarAzimuth, &
@@ -501,7 +506,7 @@ if(thisThread .eq. 0)PRINT *, freqDistr
                                       randomNumbers = randoms(thisThread), status=status)
      END DO
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
-if(thisThread .eq. 0)PRINT *, 'initialized SW photon stream'
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized SW photon stream'
 call printStatus(status)
 !     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
 !                                      numberOfPhotons = 1,   &
@@ -510,12 +515,12 @@ call printStatus(status)
 !PRINT *, 'initialized SW test photon'     
   end if
   call finalize_Weights(theseWeights)
-  deallocate(freqDistr)
+
   solarFlux = emittedFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
 !  call finalize_Domain(thisDomain)
  !!$OMP END PARALLEL
-STOP
+!STOP
 
   ! Now we compute the radiative transfer for a single photon 
 !  if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
@@ -540,114 +545,178 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
 
   ! The  loop over batches is for estimating the uncertainty in the flux and
   !   radiance from the variance between numBatches independent calculations. 
-  numBatches = max(numBatches,2)
-  batchesPerProcessor = numBatches/numProcs
-  ! If the number of batches doesn't divide among the processors evenly increase the 
-  !   number until it does. 
-  if(mod(numBatches, numProcs) /= 0) then 
-    batchesPerProcessor = batchesPerProcessor + 1
-    numBatches = batchesPerProcessor * numProcs
-  end if 
-  if (MasterProc) &
-    print *, "Doing ", batchesPerProcessor, " batches on each of ", numProcs, " processors." 
+!  numBatches = max(numBatches,2)
+!  batchesPerProcessor = numBatches/numProcs
+!  ! If the number of batches doesn't divide among the processors evenly increase the 
+!  !   number until it does. 
+!  if(mod(numBatches, numProcs) /= 0) then 
+!    batchesPerProcessor = batchesPerProcessor + 1
+!    numBatches = batchesPerProcessor * numProcs
+!  end if 
+ 
+!  if (MasterProc) &
+!    print *, "Doing ", batchesPerProcessor, " batches on each of ", numProcs, " processors." 
 !PRINT *, "entering batch loop"
-  batches: do batch = thisProc*batchesPerProcessor + 1, thisProc*batchesPerProcessor + batchesPerProcessor
-    ! Seed the random number generator.
-    !   Variable randoms holds the state of the random number generator. 
-    randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, batch, thisThread /) ) 
+!  batches: do batch = thisProc*batchesPerProcessor + 1, thisProc*batchesPerProcessor + batchesPerProcessor
+  if(MasterProc)then  ! must be master process
+    currentFreq = 1								! This is a new variable. Should only range from 1 to nlambda
+    allocate(startingPhoton(1:numlambda))               ! This is a new variable. Needs to be initialized to 1
+    startingPhoton = 1
+    batchesAssigned = 0
+    batchesCompleted = 0
+    ! hand out initial work to processes and update photons and currentFreq. !!numProcs must be .le. numLambda!!
+    DO n = 1, numProcs-1							! This range means the master proc won't do any worker work
+	DO WHILE(freqDistr(currentFreq(1)) .lt. 1 .and. currentFreq(1) .lt. numLambda) ! this do while loop let's us skip over empty frequencies
+	  currentFreq = currentFreq + 1
+	END DO	
+	CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
+	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
+	
+	! update the variables for the next proc
+	freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
+	startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+	batchesAssigned = batchesAssigned + 1
+	PRINT *, 'MasterProc=', thisProc, 'sending photons of frequency index ', currentFreq, 'which has', freqDistr(currentFreq), 'photons remaining, to rank ', n
 
-    ! The initial direction and position of the photons are precomputed and 
-    !   stored in an "illumination" object. 
-!    if(LW_flag >= 0.0)then
-!       incomingPhotons = new_PhotonStream (numberOfPhotons=numPhotonsPerBatch, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1),&
-!level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
-!DO phtn=1,numPhotonsPerBatch
-!   PRINT *, incomingPhotons%xPosition(phtn), incomingPhotons%yPosition(phtn), incomingPhotons%zPosition(phtn)
-!ENDDO      
-!    else
-!       incomingPhotons = new_PhotonStream (solarMu, solarAzimuth,                &
-!                                        numberOfPhotons = numPhotonsPerBatch, &
-!                                        randomNumbers = randoms, status = status)
-!    end if
-!    call printStatus(status)
-!PRINT *, 'Driver: Initialized photons for batch', batch
-    ! Now we compute the radiative transfer for this batch of photons. 
-    call computeRadiativeTransfer (mcIntegrator, thisDomain,randoms(thisThread), incomingBBPhotons(i), numPhotonsProcessed, status)
-!PRINT *, 'Driver: COmputed RT for batch', batch
-     ! Get the radiative quantities:
-     !   This particular integrator provides fluxes at the top and bottom 
-     !   of the domain for both the domain mean and pixel level fluxes,
-     !   the absorbed flux profile, 3D field of absorbed flux, and
-     !   the pixel level radiances at top and/or bottom of domain.
-    call reportResults (mcIntegrator, &
-           meanFluxUp=meanFluxUp, meanFluxDown=meanFluxDown, meanFluxAbsorbed=meanFluxAbsorbed,       &
-           fluxUp=fluxUp(:, :), fluxDown=fluxDown(:, :), fluxAbsorbed=fluxAbsorbed(:, :), &
-           absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
+	currentFreq = currentFreq + 1			! so that next proc will be assigned a dif freq
+    END DO
 
-     ! Accumulate the first and second moments of each quantity over the batches 
-!    voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1
-!    voxel_tallys2_sum = voxel_tallys2_sum + voxel_tallys2
-    meanFluxUpStats(1)       = meanFluxUpStats(1)       + solarFlux*meanFluxUp
-    meanFluxUpStats(2)       = meanFluxUpStats(2)       + (solarFlux*meanFluxUp)**2
-    meanFluxDownStats(1)     = meanFluxDownStats(1)     + solarFlux*meanFluxDown
-    meanFluxDownStats(2)     = meanFluxDownStats(2)     + (solarFlux*meanFluxDown)**2
-    meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1) + solarFlux*meanFluxAbsorbed
-    meanFluxAbsorbedStats(2) = meanFluxAbsorbedStats(2) + (solarFlux*meanFluxAbsorbed)**2
-          fluxUpStats(:, :, 1) =       fluxUpStats(:, :, 1) + solarFlux*fluxUp(:, :)
-          fluxUpStats(:, :, 2) =       fluxUpStats(:, :, 2) + (solarFlux*fluxUp(:, :))**2
-        fluxDownStats(:, :, 1) =     fluxDownStats(:, :, 1) + solarFlux*fluxDown(:, :)
-        fluxDownStats(:, :, 2) =     fluxDownStats(:, :, 2) + (solarFlux*fluxDown(:, :))**2
-    fluxAbsorbedStats(:, :, 1) = fluxAbsorbedStats(:, :, 1) + solarFlux*fluxAbsorbed(:, :)
-    fluxAbsorbedStats(:, :, 2) = fluxAbsorbedStats(:, :, 2) + (solarFlux*fluxAbsorbed(:, :))**2
-    absorbedProfileStats(:, 1) = absorbedProfileStats(:, 1) + solarFlux*absorbedProfile(:)
-    absorbedProfileStats(:, 2) = absorbedProfileStats(:, 2) + (solarFlux*absorbedProfile(:))**2
-    absorbedVolumeStats(:, :, :, 1) = absorbedVolumeStats(:, :, :, 1) + solarFlux*absorbedVolume(:, :, :)
-    absorbedVolumeStats(:, :, :, 2) = absorbedVolumeStats(:, :, :, 2) + (solarFlux*absorbedVolume(:, :, :))**2
+		! after the initial round of batches to processors there probably be work left to do. Allow workers to come to you for  more tasks. Listen for a query message
+    DO WHILE(batchesCompleted .lt. batchesAssigned)
+	CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
+	batchesCompleted = batchesCompleted + 1
+	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
+!	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
+	if (ANY(freqDistr(:) .gt. 0))then ! if there is still work left to do...
+	     if(freqDistr(currentFreq(1)) .gt. 0)then ! use flag SAME_FREQ. ! are more photons available at the frequency it's currently working on?
+!		PRINT *, 'More work left to do on frequency index', currentFreq, 'Telling rank ', mpiStatus(MPI_SOURCE), 'to keep going'
+		CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), SAME_FREQ, MPI_COMM_WORLD, ierr) 
+		 freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
+		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+		batchesAssigned = batchesAssigned + 1
+!		PRINT *, 'frequency index ',currentFreq, 'has ', freqDistr(currentFreq), 'remaining photons'
+	     elseif (MINVAL(startingPhoton(:)) .eq. 1)THEN ! There are unassigned frequencies left. use flag NEW_FREQ
+		currentFreq = MINLOC(startingPhoton(:)) ! Returns first location of unassigned frequency
+		CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
+		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr)   ! send the messages containing the needed info
+		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
+		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+		batchesAssigned = batchesAssigned + 1
+	    else ! assign it to the frequency with the most work left to do. use flag NEW_FREQ
+		currentFreq = MAXLOC(freqDistr(:))
+!		PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency with most remaining photons', currentFreq, freqDistr(currentFreq), 'starting with photon', startingPhoton(currentFreq)
+		CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
+		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! send the messages containing the needed info
+		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update the book keeping variables
+		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+		batchesAssigned = batchesAssigned + 1
+	    END IF
+	    PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency', currentFreq, 'starting with photon', startingPhoton(currentFreq)-numPhotonsPerBatch, 'which now has', freqDistr(currentFreq), 'photons remaining'
+	END IF
+    END DO
 
-    if (computeIntensity) then
-      call reportResults(mcIntegrator, intensity = Radiance(:, :, :), status = status)
-      RadianceStats(:, :, :,1) = RadianceStats(:, :, :,1) + solarFlux*Radiance(:, :, :)
-!PRINT *, "mean RadianceStats =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
-      RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + (solarFlux*Radiance(:, :, :))**2
-    endif
+    DO n = 1,numProcs-1	! send exit message to procs				
+	! pass to worker the needed info
+	CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, n, EXIT_TAG, MPI_COMM_WORLD, ierr)
+    END DO
 
-!   if(recScatOrd) then 
-!      call reportResults(mcIntegrator, &
-!             meanFluxUpByScatOrd=meanFluxUpByScatOrd, meanFluxDownByScatOrd=meanFluxDownByScatOrd, &
-!             fluxUpByScatOrd=fluxUpByScatOrd, fluxDownByScatOrd=fluxDownByScatOrd, status=status)
-!      !accumulate quantities as above
-!      meanFluxUpByScatOrdStats(:,1) = meanFluxUpByScatOrdStats(:,1) + solarFlux*meanFluxUpByScatOrd(:)
-!      meanFluxUpByScatOrdStats(:,2) = meanFluxUpByScatOrdStats(:,2) + (solarFlux*meanFluxUpByScatOrd(:))**2
-!      meanFluxDownByScatOrdStats(:,1) = meanFluxDownByScatOrdStats(:,1) +  solarFlux*meanFluxDownByScatOrd(:)
-!      meanFluxDownByScatOrdStats(:,2) = meanFluxDownByScatOrdStats(:,2) + (solarFlux*meanFluxUpByScatOrd(:))**2
-!      meanFluxDownByScatOrdStats(:,1) = meanFluxDownByScatOrdStats(:,1) +  (solarFlux*meanFluxDownByScatOrd(:))**2
-!            fluxUpByScatOrdStats(:,:,:,1) = fluxUpByScatOrdStats(:,:,:,1) +  solarFlux*fluxUpByScatOrd(:,:,:)
-!            fluxUpByScatOrdStats(:,:,:,2) = fluxUpByScatOrdStats(:,:,:,2) + ( solarFlux*fluxUpByScatOrd(:,:,:))**2
-!          fluxDownByScatOrdStats(:,:,:,1) = fluxDownByScatOrdStats(:,:,:,1) +  solarFlux*fluxDownByScatOrd(:,:,:)
-!          fluxDownByScatOrdStats(:,:,:,2) = fluxDownByScatOrdStats(:,:,:,2) + ( solarFlux*fluxDownByScatOrd(:,:,:))**2
-!      if(computeIntensity) then
-!        call reportResults(mcIntegrator, intensityByScatOrd=intensityByScatOrd, status=status)
-!        intensityByScatOrdStats(:,:,:,:,1) = intensityByScatOrdStats(:,:,:,:,1) +  solarFlux*intensityByScatOrd(:,:,:,:)
-!        intensityByScatOrdStats(:,:,:,:,2) = intensityByScatOrdStats(:,:,:,:,2) + ( solarFlux*intensityByScatOrd(:,:,:,:))**2
-!      end if
-!   end if
-!PRINT *, 'Driver: Reported results for batch', batch
-     ! Release the photon "illumination" object memory
-    
-    call printStatus(status)
-  end do batches
+  else ! must be a worker process
+    CALL MPI_RECV(start, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
+    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
+!    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
+
+    DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
+!	PRINT *, 'Rank ', thisProc, 'will process photons of frequency', currentFreq, 'starting with', start
+	! set the current photon of the appropriate frequency to the starting value
+	call setCurrentPhoton(incomingBBPhotons(currentFreq(1)), start, status)
+	call printStatus(status)
+	! Do the work on the sent data
+	DO i=0,numThreads-1
+	    ! seed the random number generator
+	    randoms(i) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
+	END DO
+	! Now we compute the radiative transfer for this batch of photons.
+	call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingBBPhotons(currentFreq(1)), numPhotonsPerBatch, numPhotonsProcessed, status)
+	call printStatus(status)
+	! get contribution arrays from integrator
+	!   This particular integrator provides fluxes at the top and bottom
+     	!   of the domain for both the domain mean and pixel level fluxes,
+     	!   the absorbed flux profile, 3D field of absorbed flux, and
+     	!   the pixel level radiances at top and/or bottom of domain.
+	call reportResults (mcIntegrator, &
+	meanFluxUp=meanFluxUp, meanFluxDown=meanFluxDown, meanFluxAbsorbed=meanFluxAbsorbed,   &
+	fluxUp=fluxUp(:, :), fluxDown=fluxDown(:, :), fluxAbsorbed=fluxAbsorbed(:, :), &
+	absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
+	call printStatus(status)
+	!
+	! Accumulate the first and second moments of each quantity over the batches
+	!
+	totalNumPhotons = totalNumPhotons + numPhotonsProcessed
+
+	meanFluxUpStats(1) = meanFluxUpStats(1) + solarFlux*meanFluxUp*numPhotonsProcessed
+	meanFluxUpStats(2) = meanFluxUpStats(2) + (solarFlux*meanFluxUp*numPhotonsProcessed)**2
+	meanFluxUpStats(3) = meanFluxUpStats(3) + solarFlux*meanFluxUp*(numPhotonsProcessed**(3/2))
+
+	meanFluxDownStats(1) = meanFluxDownStats(1) + solarFlux*meanFluxDown*numPhotonsProcessed
+        meanFluxDownStats(2) = meanFluxDownStats(2) + (solarFlux*meanFluxDown*numPhotonsProcessed)**2
+        meanFluxDownStats(3) = meanFluxDownStats(3) + solarFlux*meanFluxDown*(numPhotonsProcessed**(3/2))
+
+	meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1) + solarFlux*meanFluxAbsorbed*numPhotonsProcessed
+        meanFluxAbsorbedStats(2) = meanFluxAbsorbedStats(2) + (solarFlux*meanFluxAbsorbed*numPhotonsProcessed)**2
+        meanFluxAbsorbedStats(3) = meanFluxAbsorbedStats(3) + solarFlux*meanFluxAbsorbed*(numPhotonsProcessed**(3/2))
+
+	FluxUpStats(:,:,1) = FluxUpStats(:,:,1) + solarFlux*FluxUp*numPhotonsProcessed
+        FluxUpStats(:,:,2) = FluxUpStats(:,:,2) + (solarFlux*FluxUp*numPhotonsProcessed)**2
+        FluxUpStats(:,:,3) = FluxUpStats(:,:,3) + solarFlux*FluxUp*(numPhotonsProcessed**(3/2))
+
+        FluxDownStats(:,:,1) = FluxDownStats(:,:,1) + solarFlux*FluxDown*numPhotonsProcessed
+        FluxDownStats(:,:,2) = FluxDownStats(:,:,2) + (solarFlux*FluxDown*numPhotonsProcessed)**2
+        FluxDownStats(:,:,3) = FluxDownStats(:,:,3) + solarFlux*FluxDown*(numPhotonsProcessed**(3/2))
+
+        FluxAbsorbedStats(:,:,1) = FluxAbsorbedStats(:,:,1) + solarFlux*FluxAbsorbed*numPhotonsProcessed
+        FluxAbsorbedStats(:,:,2) = FluxAbsorbedStats(:,:,2) + (solarFlux*FluxAbsorbed*numPhotonsProcessed)**2
+        FluxAbsorbedStats(:,:,3) = FluxAbsorbedStats(:,:,3) + solarFlux*FluxAbsorbed*(numPhotonsProcessed**(3/2))
+
+	AbsorbedProfileStats(:,1) = AbsorbedProfileStats(:,1) + solarFlux*AbsorbedProfile*numPhotonsProcessed
+        AbsorbedProfileStats(:,2) = AbsorbedProfileStats(:,2) + (solarFlux*AbsorbedProfile*numPhotonsProcessed)**2
+        AbsorbedProfileStats(:,3) = AbsorbedProfileStats(:,3) + solarFlux*AbsorbedProfile*(numPhotonsProcessed**(3/2))
+
+	AbsorbedVolumeStats(:,:,:,1) = AbsorbedVolumeStats(:,:,:,1) + solarFlux*AbsorbedVolume*numPhotonsProcessed
+        AbsorbedVolumeStats(:,:,:,2) = AbsorbedVolumeStats(:,:,:,2) + (solarFlux*AbsorbedVolume*numPhotonsProcessed)**2
+        AbsorbedVolumeStats(:,:,:,3) = AbsorbedVolumeStats(:,:,:,3) + solarFlux*AbsorbedVolume*(numPhotonsProcessed**(3/2))
+
+	if (computeIntensity) then
+	    call reportResults(mcIntegrator, intensity = Radiance(:, :, :), status = status)
+	    RadianceStats(:, :, :,1) = RadianceStats(:, :, :,1) + solarFlux*Radiance(:, :, :)*numPhotonsProcessed
+	    RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + (solarFlux*Radiance(:, :, :)*numPhotonsProcessed)**2
+	    RadianceStats(:, :, :,3) = RadianceStats(:, :, :,3) + solarFlux*Radiance(:, :, :)*(numPhotonsProcessed**(3/2))
+	end if
+
+
+	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, 0, SAME_FREQ, MPI_COMM_WORLD, ierr)
+	CALL MPI_RECV(start, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
+	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) &
+	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
+!	PRINT *, 'rank ', thisProc, 'recieved message ', mpiStatus(MPI_TAG)
+    END DO
+
+  end if !  end do batches
+PRINT *, 'Driver: finished tracing photons'
+  deallocate(freqDistr)
+  if (allocated(startingPhoton)) deallocate(startingPhoton)
+
+
   DO i=1, numLambda
     call finalize_PhotonStream (incomingBBPhotons(i))
     call finalize_Domain(BBDomain(i))
   END DO
-!  if (allocated(voxel_weights)) deallocate (voxel_weights)
-!  if (allocated(col_weights)) deallocate (col_weights)
-!  if (allocated(level_weights)) deallocate (level_weights)  
   !
   ! Accumulate statistics from across all the processors
   !
 ! voxel_tallys1_total = sumAcrossProcesses(voxel_tallys1_sum)
 ! voxel_tallys2_total = sumAcrossProcesses(voxel_tallys2_sum)
+
+  totalNumPhotons = sumAcrossProcesses(totalNumPhotons)
 
   ! Domain-mean fluxes
   
@@ -667,20 +736,8 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
   ! Radiance
   if (computeIntensity) &
     RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
-!PRINT *, "mean total RadianceStats =", sum(RadianceStats(:, :, 1,1))/real (nX * nY)  
 
-!   if(recScatOrd) then
-!     meanFluxUpByScatOrdStats(:,:) = sumAcrossProcesses(meanFluxUpByScatOrdStats)
-!     meanFluxDownByScatOrdStats(:,:) = sumAcrossProcesses(meanFluxDownByScatOrdStats)
-!     fluxUpByScatOrdStats(:,:,:,:) = sumAcrossProcesses(fluxUpByScatOrdStats)
-!     fluxDownByScatOrdStats(:,:,:,:) = sumAcrossProcesses(fluxDownByScatOrdStats)
-    
-!     if(computeIntensity) then
-!     intensityByScatOrdStats(:,:,:,:,:) = sumAcrossProcesses(intensityByScatOrdStats)
-!     end if
-!   end if
-
-!PRINT *, 'Driver: accumulated results'
+PRINT *, 'Driver: accumulated results. Total number of photons=', totalNumPhotons
 !  close(11)
 !  close(12)
 !  close(13)
@@ -697,47 +754,36 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
   if (MasterProc) print *, "Total CPU time (secs, approx): ", int(cpuTimeTotal)
 
    ! Calculate the mean and standard error of the radiative quantities from the two moments
-  meanFluxUpStats(:)       = meanFluxUpStats(:)/numBatches
-  meanFluxUpStats(2)       = sqrt( max(0.0, meanFluxUpStats(2) - meanFluxUpStats(1)**2) /(numBatches-1))
-  meanFluxDownStats(:)     = meanFluxDownStats(:)/numBatches
-  meanFluxDownStats(2)     = sqrt( max(0.0, meanFluxDownStats(2) - meanFluxDownStats(1)**2) /(numBatches-1))
-  meanFluxAbsorbedStats(:) = meanFluxAbsorbedStats(:)/numBatches
-  meanFluxAbsorbedStats(2) = sqrt( max(0.0, meanFluxAbsorbedStats(2) - meanFluxAbsorbedStats(1)**2) /(numBatches-1))
-  fluxUpStats(:, :, :)       =fluxUpStats(:, :, :)/numBatches
-  fluxUpStats(:, :, 2)       = sqrt( max(0.0, fluxUpStats(:, :,2) - fluxUpStats(:, :,1)**2) /(numBatches-1))
-  fluxDownStats(:, :, :)     =fluxDownStats(:, :, :)/numBatches
-  fluxDownStats(:, :, 2)     = sqrt( max(0.0, fluxDownStats(:, :,2) - fluxDownStats(:, :,1)**2) /(numBatches-1))
-  fluxAbsorbedStats(:, :, :) =fluxAbsorbedStats(:, :, :)/numBatches
-  fluxAbsorbedStats(:, :, 2) = sqrt( max(0.0, fluxAbsorbedStats(:, :,2) - fluxAbsorbedStats(:, :,1)**2) /(numBatches-1))
-  absorbedProfileStats(:, :) =absorbedProfileStats(:, :)/numBatches
-  absorbedProfileStats(:, 2) = sqrt( max(0.0, absorbedProfileStats(:,2) - absorbedProfileStats(:,1)**2) /(numBatches-1))
-  absorbedVolumeStats(:, :, :, :) = absorbedVolumeStats(:, :, :, :)/numBatches
-  absorbedVolumeStats(:, :, :, 2) = sqrt( max(0.0, absorbedVolumeStats(:, :, :, 2) - absorbedVolumeStats(:, :, :,1)**2) / &
-                                    (numBatches-1))
+  meanFluxUpStats(1)       = meanFluxUpStats(1)/totalNumPhotons
+  meanFluxUpStats(2)       = sqrt( max(0.0, meanFluxUpStats(2)/(totalNumPhotons**2) - meanFluxUpStats(3)**2/totalNumPhotons**3)) 
+
+  meanFluxDownStats(1)     = meanFluxDownStats(1)/totalNumPhotons
+  meanFluxDownStats(2)     = sqrt( max(0.0, meanFluxDownStats(2)/(totalNumPhotons**2) - meanFluxDownStats(3)**2/totalNumPhotons**3))
+
+  meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1)/totalNumPhotons
+  meanFluxAbsorbedStats(2) = sqrt( max(0.0, meanFluxAbsorbedStats(2)/(totalNumPhotons**2) - meanFluxAbsorbedStats(3)**2/totalNumPhotons**3))
+
+  fluxUpStats(:, :, 1)       =fluxUpStats(:, :, 1)/totalNumPhotons
+  fluxUpStats(:, :, 2)       = sqrt( max(0.0, fluxUpStats(:, :,2)/(totalNumPhotons**2) - fluxUpStats(:, :,3)**2/totalNumPhotons**3))
+
+  fluxDownStats(:, :, 1)     =fluxDownStats(:, :, 1)/totalNumPhotons
+  fluxDownStats(:, :, 2)     = sqrt( max(0.0, fluxDownStats(:, :,2)/(totalNumPhotons**2) - fluxDownStats(:, :,3)**2/totalNumPhotons**3))
+
+  fluxAbsorbedStats(:, :, 1) =fluxAbsorbedStats(:, :, 1)/totalNumPhotons
+  fluxAbsorbedStats(:, :, 2) = sqrt( max(0.0, fluxAbsorbedStats(:, :,2)/(totalNumPhotons**2) - fluxAbsorbedStats(:, :,3)**2/totalNumPhotons**3))
+
+  absorbedProfileStats(:, 1) =absorbedProfileStats(:, 1)/totalNumPhotons
+  absorbedProfileStats(:, 2) = sqrt( max(0.0, absorbedProfileStats(:,2)/(totalNumPhotons**2) - absorbedProfileStats(:,3)**2/totalNumPhotons**3))
+
+  absorbedVolumeStats(:, :, :, 1) = absorbedVolumeStats(:, :, :, 1)/totalNumPhotons
+  absorbedVolumeStats(:, :, :, 2) = sqrt( max(0.0, absorbedVolumeStats(:, :, :, 2)/(totalNumPhotons**2) - absorbedVolumeStats(:, :, :,3)**2/totalNumPhotons**3))
   if (computeIntensity) then
-    RadianceStats(:, :, :, :) = RadianceStats(:, :, :, :)/numBatches
+    RadianceStats(:, :, :, 1) = RadianceStats(:, :, :, 1)/totalNumPhotons
 !PRINT *, "mean Radiance stats including solarflux =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
-    RadianceStats(:, :, :,2) = sqrt( max(0.0, RadianceStats(:, :, :,2) - RadianceStats(:, :, :,1)**2) /(numBatches-1))
+    RadianceStats(:, :, :,2) = sqrt( max(0.0, RadianceStats(:, :, :,2)/(totalNumPhotons**2) - RadianceStats(:, :, :,3)**2/totalNumPhotons**3))
   endif
 
-!  if(recScatOrd) then 
-!    meanFluxUpByScatOrdStats(:,:) =meanFluxUpByScatOrdStats(:,:)/numBatches
-!    meanFluxUpByScatOrdStats(:,2) = sqrt(max(0.0, meanFluxUpByScatOrdStats(:,2) - meanFluxUpByScatOrdStats(:,1)**2) / (numBatches-1))
-!    meanFluxDownByScatOrdStats(:,:) = meanFluxDownByScatOrdStats(:,:)/numBatches
-!    meanFluxDownByScatOrdStats(:,2) = sqrt(max(0.0, meanFluxDownByScatOrdStats(:,2) - meanFluxDownByScatOrdStats(:,1)**2) / (numBatches-1))
-!    fluxUpByScatOrdStats(:,:,:,:) = fluxUpByScatOrdStats(:,:,:,:)/numBatches
-!    fluxUpByScatOrdStats(:,:,:,2) = sqrt(max(0.0, fluxUpByScatOrdStats(:,:,:,2) - fluxUpByScatOrdStats(:,:,:,1)**2) / (numBatches-1))
-!    fluxDownByScatOrdStats(:,:,:,:) =fluxDownByScatOrdStats(:,:,:,:)/numBatches
-!    fluxDownByScatOrdStats(:,:,:,2) = sqrt(max(0.0, fluxDownByScatOrdStats(:,:,:,2) - fluxDownByScatOrdStats(:,:,:,1)**2) / (numBatches-1))
-    
-!    if(computeIntensity) then
-!      intensityByScatOrdStats(:,:,:,:,:) = intensityByScatOrdStats(:,:,:,:,:)/numBatches
-!      intensityByScatOrdStats(:,:,:,:,2) = sqrt(max(0.0, intensityByScatOrdStats(:,:,:,:,2)-intensityByScatOrdStats(:,:,:,:,1)**2) / &
-!                                           (numBatches-1))
-!    end if
-!  end if
-
-!PRINT *, 'Driver: calculated radiative quantities'
+PRINT *, 'Driver: calculated radiative quantities. Mean and error of FluxUp', meanFluxUpStats(1:2)
   if(MasterProc) then ! Write a single output file. 
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 

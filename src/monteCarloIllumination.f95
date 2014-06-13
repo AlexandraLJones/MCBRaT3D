@@ -51,7 +51,7 @@ module monteCarloIllumination
   ! What is visible? 
   !------------------------------------------------------------------------------------------
   public :: photonStream 
-  public :: new_PhotonStream, finalize_PhotonStream, morePhotonsExist, getNextPhoton, emission_weighting
+  public :: new_PhotonStream, finalize_PhotonStream, morePhotonsExist, getNextPhoton, emission_weighting, setCurrentPhoton
 contains
   !------------------------------------------------------------------------------------------
   ! Code
@@ -442,12 +442,29 @@ PRINT *, atmsTally, sfcTally
                        photons%currentPhoton <= size(photons%xPosition)
   end function morePhotonsExist
   !------------------------------------------------------------------------------------------
-  subroutine getNextPhoton(photons, xPosition, yPosition, zPosition, solarMu, solarAzimuth, status)
+  subroutine setCurrentPhoton(photons, currentPhoton, status)
+    type(photonStream), intent(inout) :: photons
+    integer,            intent(in   )  :: currentPhoton
+    type(ErrorMessage),   intent(inout) :: status
+
+    ! check for initialization
+    if(photons%currentPhoton < 1) &
+      call setStateToFailure(status, "getNextPhoton: photons have not been initialized.")
+    ! update current photon to proper value
+    if(.not. stateIsFailure(status)) &
+	photons%currentphoton = currentPhoton
+  end subroutine setCurrentPhoton
+  !------------------------------------------------------------------------------------------
+  subroutine getNextPhoton(photons, xPosition, yPosition, zPosition, solarMu, solarAzimuth, status, currentPhoton)
     type(photonStream), intent(inout) :: photons
     real(8),                 intent(  out) :: xPosition, yPosition, zPosition
     real,                 intent(  out) ::  solarMu, solarAzimuth
+    integer, optional,    intent(  out) :: currentPhoton
     type(ErrorMessage),   intent(inout) :: status
     
+  if(present(currentPhoton))then
+    currentPhoton = photons%currentPhoton
+  else
     ! Checks 
     ! Are there more photons?
     if(photons%currentPhoton < 1) &
@@ -466,7 +483,7 @@ PRINT *, atmsTally, sfcTally
       solarAzimuth = photons%solarAzimuth(photons%currentPhoton)
       photons%currentPhoton = photons%currentPhoton + 1
     end if
-     
+  end if   
   end subroutine getNextPhoton
   !------------------------------------------------------------------------------------------
   ! Finalization

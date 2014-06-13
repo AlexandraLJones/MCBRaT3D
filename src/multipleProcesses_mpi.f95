@@ -18,7 +18,7 @@ module multipleProcesses
   logical :: MasterProc = .true. 
   
   interface sumAcrossProcesses
-    module procedure sumAcrossProcesses_Real_Scalar,                         &
+    module procedure sumAcrossProcesses_Real_Scalar, sumAcrossProcesses_Int_Scalar,  &
                      sumAcrossProcesses_Real_1D, sumAcrossProcesses_Real_2D, &
                      sumAcrossProcesses_Real_3D, sumAcrossProcesses_Int_3D, sumAcrossProcesses_Real_4D, &
                      sumAcrossProcesses_Real_5D
@@ -80,6 +80,21 @@ contains
     sumAcrossProcesses_Real_Scalar = temp
     
   end function sumAcrossProcesses_Real_Scalar
+  ! ----------------------------------------------------------
+  function sumAcrossProcesses_Int_Scalar(x)
+    !
+    ! Add values across all processors
+    !
+    integer, intent(in) :: x
+    integer             :: sumAcrossProcesses_Int_Scalar
+
+    integer    :: temp
+    integer :: ierr
+
+    call MPI_REDUCE(x, temp, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    sumAcrossProcesses_Int_Scalar = temp
+
+  end function sumAcrossProcesses_Int_Scalar
   ! -----------------------------------------------------------
   function sumAcrossProcesses_Real_1D(x) 
     !
