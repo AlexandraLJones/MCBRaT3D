@@ -560,25 +560,42 @@ PRINT *, "cpuTimeSetup=", cpuTimeSetup
 !  batches: do batch = thisProc*batchesPerProcessor + 1, thisProc*batchesPerProcessor + batchesPerProcessor
   if(MasterProc)then  ! must be master process
     currentFreq = 1								! This is a new variable. Should only range from 1 to nlambda
+    n = 1
     allocate(startingPhoton(1:numlambda))               ! This is a new variable. Needs to be initialized to 1
     startingPhoton = 1
     batchesAssigned = 0
     batchesCompleted = 0
     ! hand out initial work to processes and update photons and currentFreq. !!numProcs must be .le. numLambda!!
-    DO n = 1, numProcs-1							! This range means the master proc won't do any worker work
-	DO WHILE(freqDistr(currentFreq(1)) .lt. 1 .and. currentFreq(1) .lt. numLambda) ! this do while loop let's us skip over empty frequencies
+    DO WHILE(currentFreq(1) .le. numLambda)
+	DO WHILE(freqDistr(currentFreq(1)) .lt. 1) ! this do while loop let's us skip over empty frequencies
 	  currentFreq = currentFreq + 1
+	  if (currentFreq(1) .gt. numLambda) EXIT
 	END DO	
-	CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
-	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
-	
-	! update the variables for the next proc
-	freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
-	startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
-	batchesAssigned = batchesAssigned + 1
-	PRINT *, 'MasterProc=', thisProc, 'sending photons of frequency index ', currentFreq, 'which has', freqDistr(currentFreq), 'photons remaining, to rank ', n
-
+	if (n .le. numLambda .and. n .le. numProcs-1 .and. currentFreq(1) .le. numLambda)then
+	  CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
+	  CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
+	  ! update the variables for the next proc
+	  freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
+	  startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+	  batchesAssigned = batchesAssigned + 1
+	  PRINT *, 'MasterProc=', thisProc, 'sending photons of frequency index ', currentFreq, 'which has', freqDistr(currentFreq), 'photons remaining, to rank ', n
+	else
+          EXIT
+        end if
+	n = n + 1
 	currentFreq = currentFreq + 1			! so that next proc will be assigned a dif freq
+    END DO
+
+    DO WHILE (n .le. numProcs-1) ! if there are any procs left that don't have tasks
+	currentFreq = MAXLOC(freqDistr(:))
+	CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
+        CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
+        ! update the variables for the next proc
+        freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
+        startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+        batchesAssigned = batchesAssigned + 1
+        PRINT *, 'MasterProc=', thisProc, 'sending photons of frequency index ', currentFreq, 'which has', freqDistr(currentFreq), 'photons remaining, to rank ', n
+	n = n + 1
     END DO
 
 		! after the initial round of batches to processors there probably be work left to do. Allow workers to come to you for  more tasks. Listen for a query message
