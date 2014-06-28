@@ -13,9 +13,9 @@ program inhomogBBDomain
   character(len=256) :: LGfile,  domfile, domfile_str, component_string, file_list, sourcefile_str
   integer ::  ncid, varid, status, nx, ny, nz, i, pEnt,maxz=20, nLG, nlambda, ilambda, isoIndex, source, shapeCode
   integer :: nLegendreCoefficients = 180
-  integer :: nxc,nyc,nzc,xs,ys,zs, xe, ye, ze, i, ncFileId, DimId, ncVarId, N
+  integer :: nxc,nyc,nzc,xs,ys,zs, xe, ye, ze, i, ncFileId, DimId, ncVarId, nLines
   real(8)    ::  dx, dy, dz, Tb, Tt, concen, SSAs, SSAe, beta_eE, beta_eS 
-  real(8) :: s_lambda, dlambda, albedo, Rad1, Rad2, W0, alpha, delta, S, y, x, rho
+  real(8) :: s_lambda, dlambda, albedo, Rad1, Rad2, W0, alpha, delta, SRho, y, x, Srange, v0
   real(8), parameter  :: Pi=4*DATAN(1.0_8)
   real     :: re, g
   real, allocatable	 ::  LG(:)
@@ -41,6 +41,10 @@ program inhomogBBDomain
 ! read data from input
 
   read(*,'(1I)') source  
+  read(*,'(1F)') alpha
+  read(*,'(1F)') W0
+  read(*,'(1I)') nLines
+  read(*,'(1F)') SRho
   read(*,'(1F)') Rad1
   read(*,'(1F)') Rad2
   read(*,'(1I)') shapeCode
@@ -74,24 +78,38 @@ program inhomogBBDomain
 
 
   allocate(LG(1:nLG))
+!PRINT *, 'allocated LG'
   allocate(LGind(1:nLG))
+!PRINT *, 'allocated LGind'
   LG(:)=(g**(/(i, i=1, nLG)/)) !! HG phase function
   LGind=isoIndex
 
 !--Create 3D array of temps
    allocate(commonD%temps(1:nx,1:ny,1:nz))
-   DO i = 0, nz-1
-     commonD%temps(:,:,i+1)=(Tb *(dble(nz-1-i)/(nz-1))) + (Tt *(i/dble(nz-1)))
-   END DO
+!PRINT *, 'allocated commonD%temps'
+   if(nz .eq. 1)then
+     commonD%temps(:,:,:) = Tb
+PRINT *, 'nz=1', commonD%temps(1,1,i+1)
+   else
+     DO i = 0, nz-1
+        commonD%temps(:,:,i+1)=(Tb *(dble(nz-1-i)/(nz-1))) + (Tt *(i/dble(nz-1)))
+PRINT *, 'z=', i+1, commonD%temps(1,1,i+1)
+     END DO
+   end if
 
    allocate(lambdas(1:nlambda))
+!PRINT *, 'allocated lambdas'
    lambdas = s_lambda + (dlambda * (/(dble(i), i = 0, nlambda-1)/))
-
+   Srange = SUM((lambdas(3:nlambda)-lambdas(1:nlambda-2))/2.0_8) + (lambdas(2)-lambdas(1)) + (lambdas(nlambda)-lambdas(nlambda-1))  ! this includes the buffers at each end because that is how the I3RC handles it. Essentially eash lambda is considered to be the center of the spectral bin
+   v0 = ((3.0_8*lambdas(1))-lambdas(2)+Srange)/2.0_8  ! center of spectral interval
 
   !--create arrays of cloud optical properties
   allocate(Ext(1:nx,1:ny,1:nz))
+!PRINT *, 'allocated Ext'
   allocate(SSA(1:nx,1:ny,1:nz))
+!PRINT *, 'allocated SSA'
   allocate(pInd(1:nx,1:ny,1:nz))
+!PRINT *, 'allocated pInd'
   Ext=0.0_8
   SSA=0.0_8
   pInd = isoIndex
@@ -105,10 +123,12 @@ program inhomogBBDomain
 
   open(unit=22, file=TRIM(file_list), status='UNKNOWN')
   ! --Create Phase Function Table
+  allocate(commonD%xPosition(1:nx), commonD%yPosition(1:ny), commonD%zPosition(1:nz))
+!PRINT *, 'allocated commonD% xPos, yPos, zPos'
   DO ilambda= 1, nlambda
     write(domfile, '(A,1ES11.5,A)') TRIM(domfile_str), lambdas(ilambda) , '.dom'
     write(22,"(A)") TRIM(domfile)
-    allocate(commonD%xPosition(1:nx), commonD%yPosition(1:ny), commonD%zPosition(1:nz))
+
     commonD%xPosition=dx * (/ 0., (real(i), i = 1, nx) /)
     commonD%yPosition=dy * (/ 0., (real(i), i = 1, ny) /)
     commonD%zPosition=dz * (/ 0., (real(i), i = 1, nz) /)
@@ -125,36 +145,35 @@ program inhomogBBDomain
 
   !--Add the cloud
     SELECT CASE (shapeCode)
-      CASE (1,2) 
+      CASE (1,2) ! homogeneous spectral properties or linear inc/dec spectrally 
 	! nothing needs to be done
+
       CASE (3) ! isolated square line shape
 	SSA = 0.0_8
 	Ext = 0.0_8
-	W0 = dlambda * nlambda /2.0_8
+!	W0 = dlambda * nlambda /10.0_8  ! Play with this denominator until you reach a desired width
+	PRINT *, 'W0=', W0, 'spectral range=', Srange 
 !	PRINT *, 'central lambda = ', ((lambdas(nlambda)+lambdas(1))/2)
 !	PRINT *, 'min, lambda, max', (((lambdas(nlambda)+lambdas(1))/2)-(W0/2)), lambdas(ilambda), (((lambdas(nlambda)+lambdas(1))/2)+(W0/2))
-	if (lambdas(ilambda) .gt. (((lambdas(nlambda)+lambdas(1))/2)-(W0/2)) .and. lambdas(ilambda) .lt. (((lambdas(nlambda)+lambdas(1))/2)+(W0/2))) Ext = beta_eS / W0 
+	if (lambdas(ilambda) .gt. (v0-(W0/2)) .and. lambdas(ilambda) .lt. (v0+(W0/2))) Ext = SRho / W0 
+
       CASE (4) ! isolated Lorentz line shape
 	SSA = 0.0_8
-	Ext = 0.0_8
-	alpha = (lambdas(nlambda)-lambdas(1))/2.0_8
-	Ext = 10.0_8*beta_eS*alpha/(Pi*((lambdas(ilambda)-((lambdas(nlambda)+lambdas(1))/2))**2 + alpha**2))
-	PRINT *, Ext(1,1,1)
-      CASE (5) ! Elsasser band model (regualry spaced, equal strength lines)
+	Ext = SRho*alpha/(Pi*((lambdas(ilambda)-v0)**2 + alpha**2))
+	PRINT *, 'spectral range=', Srange 
+
+      CASE (5) ! Elsasser band model (regualry spaced, equal strength lorentz lines)
 	SSA = 0.0_8
-	S = 1.0_8
-	N = 6 ! number of lines inspectral interval
-	delta = (lambdas(nlambda)-lambdas(1))/N
-	alpha = 4 * dlambda ! line width
+	delta = Srange/nLines
 	y = alpha/delta
 	x = lambdas(ilambda)/delta
-	rho = 1.0_8
-	Ext = rho * S * DSINH(2.0_8*pi*y)/(delta*(DCOSH(2*Pi*y)-DCOS(2*Pi*x)))
-	PRINT *, Ext(1,1,1) 
+	Ext = SRho*DSINH(2.0_8*pi*y)/(delta*(DCOSH(2*Pi*y)-DCOS(2*Pi*x)))
+        PRINT *, 'y=', y, 'delta=', delta, 'spectral range=', Srange
+
       CASE DEFAULT
           PRINT *, 'no matching case for shapeCode = ', shapeCode
     END SELECT
-	print*,'Adding cloud to domain.'
+	PRINT*,'Adding cloud to domain.'
     call addOpticalComponent(cloud, component_string,  &
                            Ext, SSA, pInd, OnePhaseFuncTable, status = domstatus)
     call printStatus(domstatus)
@@ -163,7 +182,7 @@ program inhomogBBDomain
   !--Write it to the file
 
     call write_Domain(cloud, trim(domfile), status = domstatus)
-    print *, "Writing domain: ",trim(domfile)
+    PRINT *, "Writing domain: ",trim(domfile)
     call printStatus(domstatus)
     if(stateIsSuccess(domstatus)) call setStateToCompleteSuccess(domstatus)
   END DO
@@ -171,6 +190,7 @@ program inhomogBBDomain
 
   if(source .lt. 0)then  ! solar source; create solar source file
      allocate(sourceFunc(1:nLambda))
+!PRINT *, 'allocated sourceFunc'
      SELECT CASE (shapeCode)
 	CASE (1,3,4,5) ! homogeneous spectral properties
 	  sourceFunc = Rad1

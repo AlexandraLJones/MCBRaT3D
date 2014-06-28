@@ -83,10 +83,11 @@ program homogBBDomain
 
   open(unit=22, file=TRIM(file_list), status='UNKNOWN')
   ! --Create Phase Function Table
+  allocate(commonD%xPosition(1:nx), commonD%yPosition(1:ny), commonD%zPosition(1:nz))
   DO ilambda= 1, nlambda
     write(domfile, '(A,1ES11.5,A)') TRIM(domfile_str), lambdas(ilambda) , '.dom'
     write(22,"(A)") TRIM(domfile)
-    allocate(commonD%xPosition(1:nx), commonD%yPosition(1:ny), commonD%zPosition(1:nz))
+    
     commonD%xPosition=dx * (/ 0., (real(i), i = 1, nx) /)
     commonD%yPosition=dy * (/ 0., (real(i), i = 1, ny) /)
     commonD%zPosition=dz * (/ 0., (real(i), i = 1, nz) /)

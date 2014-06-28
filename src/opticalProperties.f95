@@ -166,9 +166,12 @@ contains
       ncStatus(16) = nf90_get_var(ncFileId, ncVarId, commonD%temps)
 !      if( COUNT(temps .le. 0.0_8) .gt. 0)PRINT *, 'readDomain: there are temps at or below 0.0 K'
 !PRINT *, 'readDomain: min temp = ', MINVAL(temps)
-      if(any(ncStatus(:) /= nf90_NoErr)) &
+      if(any(ncStatus(:) /= nf90_NoErr)) then
         call setStateToFailure(status, "read_Common: " // trim(fileName) // &
                                " doesn't look an optical properties file.")
+      else
+        call setStateToSuccess(status)
+      end if
     end if
 
    end subroutine

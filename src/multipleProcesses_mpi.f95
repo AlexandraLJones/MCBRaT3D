@@ -86,7 +86,7 @@ contains
     ! Add values across all processors
     !
     integer, intent(in) :: x
-    integer             :: sumAcrossProcesses_Int_Scalar
+    integer          :: sumAcrossProcesses_Int_Scalar
 
     integer    :: temp
     integer :: ierr
@@ -100,13 +100,13 @@ contains
     !
     ! Add values across all processors
     !
-    real, dimension(:), intent(in) :: x
-    real, dimension(size(x))       :: sumAcrossProcesses_Real_1D
+    real(8), dimension(:), intent(in) :: x
+    real(8), dimension(size(x))       :: sumAcrossProcesses_Real_1D
     
-    real, dimension(size(x)) :: temp
+    real(8), dimension(size(x)) :: temp
     integer :: ierr
     
-    call MPI_REDUCE(x, temp, size(x), MPI_REAL, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    call MPI_REDUCE(x, temp, size(x), MPI_REAL8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
     sumAcrossProcesses_Real_1D(:) = temp(:)
     
   end function sumAcrossProcesses_Real_1D
@@ -115,13 +115,13 @@ contains
     !
     ! Add values across all processors
     !
-    real, dimension(:, :),       intent(in) :: x
-    real, dimension(size(x, 1), size(x, 2)) :: sumAcrossProcesses_Real_2D
+    real(8), dimension(:, :),       intent(in) :: x
+    real(8), dimension(size(x, 1), size(x, 2)) :: sumAcrossProcesses_Real_2D
     
-    real, dimension(size(x, 1), size(x, 2)) :: temp
+    real(8), dimension(size(x, 1), size(x, 2)) :: temp
     integer :: ierr
     
-    call MPI_REDUCE(x, temp, size(x), MPI_REAL, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    call MPI_REDUCE(x, temp, size(x), MPI_REAL8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
     sumAcrossProcesses_Real_2D(:, :) = temp(:, :)
     
   end function sumAcrossProcesses_Real_2D
@@ -130,15 +130,15 @@ contains
     !
     ! Add values across all processors
     !
-    real, dimension(:, :, :), intent(in) :: x
-    real, dimension(size(x, 1), size(x, 2), &
+    real(8), dimension(:, :, :), intent(in) :: x
+    real(8), dimension(size(x, 1), size(x, 2), &
                     size(x, 3))          :: sumAcrossProcesses_Real_3D
     
-    real, dimension(size(x, 1), size(x, 2), &
+    real(8), dimension(size(x, 1), size(x, 2), &
                     size(x, 3))             :: temp
     integer :: ierr
     
-    call MPI_REDUCE(x, temp, size(x), MPI_REAL, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    call MPI_REDUCE(x, temp, size(x), MPI_REAL8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
     sumAcrossProcesses_Real_3D(:, :, :) = temp(:, :, :)
     
   end function sumAcrossProcesses_Real_3D
@@ -161,31 +161,31 @@ contains
   end function sumAcrossProcesses_Int_3D
   ! -----------------------------------------------------------
   function sumAcrossProcesses_Real_4D(x) 
-    real, dimension(:, :, :, :), intent(in) :: x
+    real(8), dimension(:, :, :, :), intent(in) :: x
 
-    real, dimension(size(x, 1), size(x, 2), &
+    real(8), dimension(size(x, 1), size(x, 2), &
                     size(x, 3), size(x, 4)) :: sumAcrossProcesses_Real_4D
     
-    real, dimension(size(x, 1), size(x, 2), &
+    real(8), dimension(size(x, 1), size(x, 2), &
                     size(x, 3), size(x, 4)) :: temp
     integer :: ierr
     
-    call MPI_REDUCE(x, temp, size(x), MPI_REAL, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    call MPI_REDUCE(x, temp, size(x), MPI_REAL8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
     sumAcrossProcesses_Real_4D(:, :, :, :) = temp(:, :, :, :)
     
   end function sumAcrossProcesses_Real_4D
   ! -----------------------------------------------------------
   function sumAcrossProcesses_Real_5D(x) 
-    real, dimension(:,:,:,:,:), intent(in) :: x
-    real, dimension(size(x,1), size(x,2), size(x,3), &
+    real(8), dimension(:,:,:,:,:), intent(in) :: x
+    real(8), dimension(size(x,1), size(x,2), size(x,3), &
                     size(x,4), size(x,5)) ::  sumAcrossProcesses_Real_5D
 
-    real, dimension(size(x,1), size(x,2), size(x,3), &
+    real(8), dimension(size(x,1), size(x,2), size(x,3), &
                     size(x,4), size(x,5)) ::  temp
 
     integer :: ierr
 
-    call MPI_REDUCE(x, temp, size(x), MPI_REAL, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    call MPI_REDUCE(x, temp, size(x), MPI_REAL8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
     sumAcrossProcesses_Real_5D(:,:,:,:,:) = temp(:,:,:,:,:)
   end function sumAcrossProcesses_Real_5D
 end module multipleProcesses

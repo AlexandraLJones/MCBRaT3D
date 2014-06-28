@@ -169,7 +169,7 @@ end if
      theseWeights%spectrIntgrFlux = theseWeights%totalPowerCDF(nLambda)
      totalFlux = theseWeights%spectrIntgrFlux
      theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(nLambda)
-PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPowerCDF
+!PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPowerCDF
    end subroutine solar_Weighting
 !-------------------------------------------------------------------------------------------
    subroutine emission_weighting(theseDomains, nLambda, theseWeights, sfcTemp, totalPhotons, atmsPhotons, totalFlux, status)
@@ -400,7 +400,7 @@ PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPow
       ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, lambdas)
       ncStatus( 5) = nf90_inq_varid(ncFileId, "SourceFunction", ncVarId)
       ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, sourceFunc)
-PRINT *, 'Radmax=', MAXVAL(sourceFunc), 'Radmin=', MINVAL(sourceFunc)
+!PRINT *, 'Radmax=', MAXVAL(sourceFunc), 'Radmin=', MINVAL(sourceFunc)
       if(any(ncStatus(:) /= nf90_NoErr)) &
         call setStateToFailure(status, "read_SolarSource: " // trim(fileName) // &
                                " doesn't look a solar source function file.")

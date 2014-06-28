@@ -457,7 +457,7 @@ contains
     !
     nPhotons = 0; nBad = 0
 CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
-PRINT *, 'Starting with Photon', current
+!PRINT *, 'Starting with Photon', current
     photonLoop: DO WHILE (nPhotons .lt. numPhotonsPerBatch)
 !PRINT *, nPhotons
       if(.not. morePhotonsExist(incomingPhotons)) EXIT photonLoop! This means we've used all the photons
