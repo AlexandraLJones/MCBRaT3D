@@ -10,7 +10,7 @@ program inhomogBBDomain
   use netcdf  
   implicit none
   
-  character(len=256) :: LGfile,  domfile, domfile_str, component_string, file_list, sourcefile_str
+  character(len=256) :: LGfile,  domfile, domfile_str, component_string, file_list, sourcefile_str, int_str
   integer ::  ncid, varid, status, nx, ny, nz, i, pEnt,maxz=20, nLG, nlambda, ilambda, isoIndex, source, shapeCode
   integer :: nLegendreCoefficients = 180
   integer :: nxc,nyc,nzc,xs,ys,zs, xe, ye, ze, i, ncFileId, DimId, ncVarId, nLines
@@ -116,17 +116,25 @@ PRINT *, 'z=', i+1, commonD%temps(1,1,i+1)
   xe=xs+nxc-1
   ye=ys+nyc-1
   ze=zs+nzc-1
-  DO i=0, nxc-1
-     Ext(xs+i,ys:ye,zs:ze) = (beta_eS *(dble(nxc-1-i)/(nxc-1))) + (beta_eE *(i/dble(nxc-1)))
-     SSA(xs+i,ys:ye,zs:ze) = (SSAs *(dble(nxc-1-i)/(nxc-1))) + (SSAe *(i/dble(nxc-1)))
-  END DO
+
+  if (nxc .eq. 1)then
+    Ext(xs,ys,zs) = beta_eS
+    SSA(xs,ys,zs) = SSAs
+  else
+    DO i=0, nxc-1
+       Ext(xs+i,ys:ye,zs:ze) = (beta_eS *(dble(nxc-1-i)/(nxc-1))) + (beta_eE *(i/dble(nxc-1)))
+       SSA(xs+i,ys:ye,zs:ze) = (SSAs *(dble(nxc-1-i)/(nxc-1))) + (SSAe *(i/dble(nxc-1)))
+    END DO
+  end if
 
   open(unit=22, file=TRIM(file_list), status='UNKNOWN')
   ! --Create Phase Function Table
   allocate(commonD%xPosition(1:nx), commonD%yPosition(1:ny), commonD%zPosition(1:nz))
 !PRINT *, 'allocated commonD% xPos, yPos, zPos'
   DO ilambda= 1, nlambda
-    write(domfile, '(A,1ES11.5,A)') TRIM(domfile_str), lambdas(ilambda) , '.dom'
+!    write(domfile, '(A,1ES11.5,A)') TRIM(domfile_str), lambdas(ilambda) , '.dom'
+    write(int_str, '(I0.3)') ilambda
+    write(domfile, '(3A)') TRIM(domfile_str), TRIM(int_str) , '.dom'
     write(22,"(A)") TRIM(domfile)
 
     commonD%xPosition=dx * (/ 0., (real(i), i = 1, nx) /)
@@ -145,7 +153,7 @@ PRINT *, 'z=', i+1, commonD%temps(1,1,i+1)
 
   !--Add the cloud
     SELECT CASE (shapeCode)
-      CASE (1,2) ! homogeneous spectral properties or linear inc/dec spectrally 
+      CASE (1,2) ! homogeneous spectral properties or linear inc/dec solar spectra with homogeneous extinction 
 	! nothing needs to be done
 
       CASE (3) ! isolated square line shape
@@ -160,7 +168,7 @@ PRINT *, 'z=', i+1, commonD%temps(1,1,i+1)
       CASE (4) ! isolated Lorentz line shape
 	SSA = 0.0_8
 	Ext = SRho*alpha/(Pi*((lambdas(ilambda)-v0)**2 + alpha**2))
-	PRINT *, 'spectral range=', Srange 
+	PRINT *, 'Ext=', Ext(1,1,1), 'spectral range=', Srange 
 
       CASE (5) ! Elsasser band model (regualry spaced, equal strength lorentz lines)
 	SSA = 0.0_8
@@ -169,6 +177,11 @@ PRINT *, 'z=', i+1, commonD%temps(1,1,i+1)
 	x = lambdas(ilambda)/delta
 	Ext = SRho*DSINH(2.0_8*pi*y)/(delta*(DCOSH(2*Pi*y)-DCOS(2*Pi*x)))
         PRINT *, 'y=', y, 'delta=', delta, 'spectral range=', Srange
+
+      CASE (6,7) ! absorption increases linearly with wavelength
+	SSA = 0.0_8
+	Ext = beta_eS * lambdas(ilambda)
+	PRINT *, 'Ext=', Ext(1,1,1), 'spectral range=', Srange
 
       CASE DEFAULT
           PRINT *, 'no matching case for shapeCode = ', shapeCode
@@ -192,9 +205,9 @@ PRINT *, 'z=', i+1, commonD%temps(1,1,i+1)
      allocate(sourceFunc(1:nLambda))
 !PRINT *, 'allocated sourceFunc'
      SELECT CASE (shapeCode)
-	CASE (1,3,4,5) ! homogeneous spectral properties
+	CASE (1,3,4,5,6) !white Spectra 
 	  sourceFunc = Rad1
-	CASE (2) ! linearly increasing or decreasing spectral properties
+	CASE (2,7) ! linearly increasing or decreasing spectral properties
 	  DO i = 0, nLambda-1
      	     sourceFunc(i+1)=(Rad1 *(dble(nLambda-1-i)/(nLambda-1))) + (Rad2 *(i/dble(nLambda-1)))
    	  END DO  

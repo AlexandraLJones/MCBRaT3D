@@ -178,7 +178,7 @@ program monteCarloDriver
 !PRINT *, 'in parallel region? ', ompParallel, 'available procs:', availProcs
 
   numThreads = OMP_GET_NUM_THREADS()
-PRINT *, 'numThreads=', numThreads
+!PRINT *, 'numThreads=', numThreads
   !!$OMP SINGLE
   allocate(randoms(0:numThreads-1))
    
@@ -215,13 +215,13 @@ PRINT *, 'numThreads=', numThreads
   read (1, nml = output);            rewind(1)
   read (1, nml = fileNames);         rewind(1)
   close (1)
-
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, domainFileList, solarSourceFile
 ! if Solar simulation we want to read in the arrays to store solar spectrum from the netCDF file
   if (LW_flag .lt. 0) then
      allocate(solarSourceFunction(1:numLambda))
      allocate(centralLambdas(1:numLambda))
      call read_SolarSource(solarSourceFile, numLambda, solarSourceFunction, centralLambdas, status=status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(solarSourceFunction)
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(solarSourceFunction)
      call printStatus(status)
   end if
 !automatic assignment of observation angles. If angleFill
@@ -277,29 +277,29 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Radmax= ', MAXVAL(solarS
   !  Read the domain file
   !
   allocate(BBDomain(numLambda))
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
 !!!!!!!!!! Open list of domain files, then loop over reading them into BBDomain
   open(unit=22, file=TRIM(domainFileList), status='UNKNOWN')
 ! first we need to get the dimensions needed to allocate position arrays
   read(22,'(1A)') domainFileName
   call read_Common(domainFileName, commonPhysical, status)
   call printStatus(status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
   call read_Domain(domainFileName, commonPhysical, thisDomain, status)
   call printStatus(status)
   call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
   call printStatus(status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got dimensions from intial domain'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got dimensions from intial domain'
   REWIND(22)
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
 !  allocate(commonPhysical%xPosition(nx+1), commonPhysical%yPosition(ny+1), commonPhysical%zPosition(nz+1), commonPhysical%temps(nx,ny,nz))
 
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
      read(22,'(1A)') domainFileName
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
-   MAXVAL(commonPhysical%zPosition), MINVAL(commonPhysical%zPosition), MAXVAL(commonPhysical%temps), MINVAL(commonPhysical%temps)
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
+!   MAXVAL(commonPhysical%zPosition), MINVAL(commonPhysical%zPosition), MAXVAL(commonPhysical%temps), MINVAL(commonPhysical%temps)
      call read_Domain(domainFileName, commonPhysical, thisDomain, status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
      call printStatus(status)
@@ -310,11 +310,11 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', doma
 
 !PRINT *, lambda, lambdaI
      BBDomain(lambdaI)=thisDomain
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got info for Domain: ', i
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got info for Domain: ', i
       call printStatus(status)
   END DO
   call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
   call printStatus(status)
 
   close(22)
@@ -322,7 +322,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lam
 allocate(tempExt(nx,ny,nz))
 DO i = 1, numLambda 
 	call getInfo_Domain(BBDomain(i), lambda=lambda, totalExt=tempExt, status=status)
-	if(MasterProc .and. thisThread .eq. 0)PRINT *, 'lambda=', lambda, 'Ext=', tempExt(1,1,1)
+!	if(MasterProc .and. thisThread .eq. 0)PRINT *, 'lambda=', lambda, 'Ext=', tempExt(1,1,1)
 END DO
 deallocate(tempExt)
 !
@@ -331,7 +331,7 @@ deallocate(tempExt)
 
   ! Set up the integrator object. It only grabs information from the domain that is consistent between all of them so I only need to pass any one domain
   mcIntegrator = new_Integrator(thisDomain, status = status)     
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized Integrator'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized Integrator'
   call printStatus(status)					 ! CAN I MOVE THIS SECTION INITIALIZING THE INTEGRATOR TO BEFORE THE LOOP RADING IN ALL THE DOMAINS BUT AFTER READING IN THE FIRST DOMAIN SO THAT I CAN JUST PARALLELIZE THE REST? 
 !  call finalize_Domain(thisDomain)                               !
 
@@ -340,7 +340,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized Integrator'
                           minInverseTableSize = nPhaseIntervals, &
                           LW_flag = LW_flag,                     &
                           status = status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified photon source'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified photon source'
   call printStatus(status) 
 
   if (computeIntensity) then
@@ -349,7 +349,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified photon source'
                             intensityMus=intensityMus(1:numRadDir), &
                             intensityPhis=intensityPhis(1:numRadDir), &
                             computeIntensity=computeIntensity,numComps=numberOfComponents, status=status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified Intensity Calcs'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified Intensity Calcs'
     call printStatus(status) 
   endif
 
@@ -369,7 +369,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified Intensity Calcs'
                          useRayTracing      = useRayTracing,        &
                          useRussianRoulette = useRussianRoulette,   &
                          status = status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specfied ray tracing'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specfied ray tracing'
   call printStatus(status) 
   
   !
@@ -391,7 +391,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specfied ray tracing'
                          maxIntensityContribution =                 &
                                    maxIntensityContribution,        &
                          status = status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified variance reduction'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified variance reduction'
     call printStatus(status) 
   end if
 
@@ -448,7 +448,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Specified variance reduction'
 !PRINT *, 'solarFlux=', solarFlux
   if(LW_flag >= 0.0)then
      theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=numLambda, status=status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal weights'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal weights'
 call printStatus(status)
 !     allocate (voxel_weights(nX,nY,nZ,numLambda),col_weights(nY,nZ,numLambda), level_weights(nZ,numLambda))
 !     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
@@ -456,7 +456,7 @@ call printStatus(status)
 !call printStatus(status)
 
      call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons, totalFlux=emittedFlux, status=status) 
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
 !    DO k = 1, nZ
@@ -471,18 +471,18 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting
 
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux
 call printStatus(status)
 !PRINT *, 'Driver: calculated emission weighting'
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
-if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
+!if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
  !!$OMP DO SCHEDULE(static, 1) PRIVATE(thisThread)
      DO i = 1, numLambda
 !PRINT *, 'numThreads=', numThreads, 'thisThread=', thisThread
         incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms(thisThread), status=status)
 !	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
      END DO
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
 call printStatus(status)
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 !    DO k = 1, nZ
@@ -498,15 +498,15 @@ call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
   else
      theseWeights=new_Weights(numLambda=numLambda, status=status)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized solar weights'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized solar weights'
 call printStatus(status)
      call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
 call printStatus(status)
      deallocate(solarSourceFunction)
      deallocate(centralLambdas)
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
  !!$OMP DO SCHEDULE(static, 1)
      DO i = 1, numLambda
        incomingBBPhotons(i) = new_PhotonStream (solarMu, solarAzimuth, &
@@ -514,7 +514,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
                                       randomNumbers = randoms(thisThread), status=status)
      END DO
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized SW photon stream'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized SW photon stream'
 call printStatus(status)
 !     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
 !                                      numberOfPhotons = 1,   &
@@ -525,7 +525,7 @@ call printStatus(status)
   call finalize_Weights(theseWeights)
 
   solarFlux = emittedFlux
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
 !  call finalize_Domain(thisDomain)
  !!$OMP END PARALLEL
@@ -613,7 +613,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
 	totalNumPhotons = totalNumPhotons + numPhotonsProcessed
 	CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, MPI_ANY_SOURCE, SAME_FREQ, MPI_COMM_WORLD, mpiStatus, ierr)
 	batchesCompleted = batchesCompleted + 1
-	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
+!	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
 !	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
 	if (ANY(freqDistr(:) .gt. 0))then ! if there is still work left to do...
 	     if(freqDistr(currentFreq(1)) .gt. 0)then ! use flag SAME_FREQ. ! are more photons available at the frequency it's currently working on?
@@ -652,7 +652,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
     CALL MPI_RECV(start, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
     CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 !    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
-
+!!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
     DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
 !	PRINT *, 'Rank ', thisProc, 'will process photons of frequency', currentFreq, 'starting with', start
 	! set the current photon of the appropriate frequency to the starting value
@@ -730,9 +730,9 @@ WRITE(51, '(E26.16, I10, I4, 4E26.16 )') solarFlux, numPhotonsProcessed, current
 	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 !	PRINT *, 'rank ', thisProc, 'recieved message ', mpiStatus(MPI_TAG)
     END DO
-PRINT *, 'thisProc=', thisProc,  'RadianceStatsSums=', RadianceStats(1,1,1,1:3)
+!PRINT *, 'thisProc=', thisProc,  'RadianceStatsSums=', RadianceStats(1,1,1,1:3)
   end if !  end do batches
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
   deallocate(freqDistr)
   if (allocated(startingPhoton)) deallocate(startingPhoton)
 
@@ -770,8 +770,8 @@ close(51)
     RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
 
 if(MasterProc .and. thisThread .eq. 0)then
-  PRINT *, 'Driver: accumulated results.' 
-  PRINT *, 'RadianceStats=', RadianceStats(1,1,1,1:3)
+!  PRINT *, 'Driver: accumulated results.' 
+!  PRINT *, 'RadianceStats=', RadianceStats(1,1,1,1:3)
 end if
 !  close(11)
 !  close(12)
@@ -834,12 +834,12 @@ end if
 !PRINT *, "mean Radiance stats including solarflux =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
     RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2)/(totalNumPhotons**2.0_8)  
     RadianceStats(:, :, :,3) = (RadianceStats(:, :, :,3)**2)/(totalNumPhotons**3.0_8)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
     RadianceStats(:, :, :,2) = sqrt( max(0.0, RadianceStats(:, :, :,2)-RadianceStats(:, :, :,3)))
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
   endif
 
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: calculated radiative quantities. Mean and error of FluxUp'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: calculated radiative quantities. Mean and error of FluxUp'
   if(MasterProc) then ! Write a single output file. 
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 
