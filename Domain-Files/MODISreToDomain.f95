@@ -45,6 +45,7 @@ program cloudsdale
   read(*,'(1I)') ys
   read(*,'(1I)') zs
   read(*,'(1F)') isoT
+  read(*,'(1F)') isoT
   read(*,'(1F)') tau86
   read(*,'(1E12.0)') beta_e86
   read(*,'(1F)') dx

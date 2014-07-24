@@ -430,7 +430,7 @@ call printStatus(status)
     ! Seed the random number generator.
     !   Variable randoms holds the state of the random number generator. 
     randoms = new_RandomNumberSequence(seed = (/ iseed, batch /) )
-PRINT *, batch
+!PRINT *, batch
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
     if(LW_flag >= 0.0)then
