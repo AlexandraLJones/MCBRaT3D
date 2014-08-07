@@ -312,7 +312,7 @@ program monteCarloDriver
                          status = status)
     call printStatus(status) 
   end if
-!PRINT *, 'Driver: Specified Parameters'
+PRINT *, 'Driver: Specified Parameters'
    ! Allocate and zero the arrays for radiative quantities and moments 
   allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
   allocate (voxel_tallys2(nX, nY, nZ), voxel_tallys2_sum(nX, nY, nZ), voxel_tallys2_total(nX, nY, nZ))
@@ -379,17 +379,17 @@ call printStatus(status)
      solarFlux=emittedFlux
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
-!PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
+PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 !PRINT *, 'Driver: calculated emission weighting'
      incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights, level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 call printStatus(status)
-!PRINT *, 'Driver: initialized single photon'
+PRINT *, 'Driver: initialized single photon'
   else
      incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
                                       numberOfPhotons = 1,   &
                                       randomNumbers = randoms, status=status)
-!PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
+PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
   end if
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
   call finalize_Domain(thisDomain)
@@ -400,7 +400,7 @@ call printStatus(status)
   call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status, voxel_tallys2)
   call printStatus(status) 
   call finalize_PhotonStream (incomingPhotons)
-!PRINT *, 'Driver: succesfully tested photon initialization'
+PRINT *, 'Driver: succesfully tested photon initialization'
 
   call cpu_time(cpuTime1)
 !PRINT *, "called cpu_time"
@@ -430,7 +430,7 @@ call printStatus(status)
     ! Seed the random number generator.
     !   Variable randoms holds the state of the random number generator. 
     randoms = new_RandomNumberSequence(seed = (/ iseed, batch /) )
-!PRINT *, batch
+PRINT *, batch
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
     if(LW_flag >= 0.0)then
@@ -552,7 +552,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
      end if
    end if
 
-!PRINT *, 'Driver: accumulated results'
+PRINT *, 'Driver: accumulated results'
 !  close(11)
 !  close(12)
 !  close(13)
@@ -609,7 +609,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
     end if
   end if
 
-!PRINT *, 'Driver: calculated radiative quantities'
+PRINT *, 'Driver: calculated radiative quantities'
   if(MasterProc) then ! Write a single output file. 
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 
