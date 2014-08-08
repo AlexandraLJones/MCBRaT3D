@@ -116,7 +116,7 @@ program monteCarloDriver
   
 
    ! Local variables
-  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
+  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file, batch_file
   integer              :: nX, nY, nZ, phtn
   integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
@@ -169,6 +169,7 @@ program monteCarloDriver
 !  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
 !  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
 !  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
+   write(batch_file, '(A,I0.4)') "batch.out.", thisProc
 
 !  open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
 !  open(unit=12, file=trim(level_file) , status='UNKNOWN')
@@ -177,7 +178,7 @@ program monteCarloDriver
 !  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
 !  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
 !  open(unit=17, file=trim(voxel_file2) , status='UNKNOWN')
-
+  open(unit=51, file=trim(batch_file), status='UNKNOWN')
 
   ! -----------------------------------------
   ! Get the input variables from the namelist file
@@ -312,7 +313,7 @@ program monteCarloDriver
                          status = status)
     call printStatus(status) 
   end if
-PRINT *, 'Driver: Specified Parameters'
+!PRINT *, 'Driver: Specified Parameters'
    ! Allocate and zero the arrays for radiative quantities and moments 
   allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
   allocate (voxel_tallys2(nX, nY, nZ), voxel_tallys2_sum(nX, nY, nZ), voxel_tallys2_total(nX, nY, nZ))
@@ -384,12 +385,12 @@ PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
      incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights, level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 call printStatus(status)
-PRINT *, 'Driver: initialized single photon'
+!PRINT *, 'Driver: initialized single photon'
   else
      incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
                                       numberOfPhotons = 1,   &
                                       randomNumbers = randoms, status=status)
-PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
+!PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
   end if
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
   call finalize_Domain(thisDomain)
@@ -400,7 +401,7 @@ PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
   call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status, voxel_tallys2)
   call printStatus(status) 
   call finalize_PhotonStream (incomingPhotons)
-PRINT *, 'Driver: succesfully tested photon initialization'
+!PRINT *, 'Driver: succesfully tested photon initialization'
 
   call cpu_time(cpuTime1)
 !PRINT *, "called cpu_time"
@@ -430,7 +431,7 @@ PRINT *, 'Driver: succesfully tested photon initialization'
     ! Seed the random number generator.
     !   Variable randoms holds the state of the random number generator. 
     randoms = new_RandomNumberSequence(seed = (/ iseed, batch /) )
-PRINT *, batch
+!PRINT *, batch
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
     if(LW_flag >= 0.0)then
@@ -485,6 +486,8 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
 !PRINT *, "mean RadianceStats =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
       RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + (solarFlux*Radiance(:, :, :))**2
     endif
+	
+WRITE(51, '(10E26.16 )') solarFlux, Radiance(1,1,1), RadianceStats(1,1,1,1:2), fluxUp(1,1), fluxUpStats(1,1,1:2), fluxDown(1,1), fluxDownStats(1,1,1:2)
 
    if(recScatOrd) then 
       call reportResults(mcIntegrator, &
@@ -512,6 +515,8 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
     call printStatus(status)
   end do batches
 
+  close(51)
+  
   if (allocated(voxel_weights)) deallocate (voxel_weights)
   if (allocated(col_weights)) deallocate (col_weights)
   if (allocated(level_weights)) deallocate (level_weights)  
@@ -552,7 +557,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
      end if
    end if
 
-PRINT *, 'Driver: accumulated results'
+!PRINT *, 'Driver: accumulated results'
 !  close(11)
 !  close(12)
 !  close(13)
@@ -566,7 +571,7 @@ PRINT *, 'Driver: accumulated results'
   cpuTimeTotal = sumAcrossProcesses(cpuTime2 - cpuTime0)
   call finalizeProcesses
 
-  if (MasterProc) print *, "Total CPU time (secs, approx): ", int(cpuTimeTotal)
+  if (MasterProc) print *, "Total CPU time (secs, approx): ", int(cpuTimeTotal), "numbatches=", numBatches
 
    ! Calculate the mean and standard error of the radiative quantities from the two moments
   meanFluxUpStats(:)       = meanFluxUpStats(:)/numBatches
@@ -609,7 +614,7 @@ PRINT *, 'Driver: accumulated results'
     end if
   end if
 
-PRINT *, 'Driver: calculated radiative quantities'
+!PRINT *, 'Driver: calculated radiative quantities'
   if(MasterProc) then ! Write a single output file. 
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 
