@@ -125,13 +125,13 @@ program monteCarloDriver
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
   real(8)                 :: emittedFlux
-  real                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
+  real(8)                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :)
-  real, allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :)
-  real, allocatable    :: absorbedProfile(:), absorbedProfileStats(:, :)
-  real, allocatable    :: absorbedVolume(:, :, :), absorbedVolumeStats(:, :, :, :)
-  real, allocatable    :: Radiance(:, :, :), RadianceStats(:, :, :, :)
+  real(8), allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :)
+  real, allocatable    :: absorbedProfile(:), absorbedVolume(:, :, :)
+  real(8), allocatable    :: absorbedVolumeStats(:, :, :, :), absorbedProfileStats(:, :), RadianceStats(:, :, :, :)
+  real, allocatable    :: Radiance(:, :, :)
   real, allocatable    :: meanFluxUpByScatOrd(:), meanFluxDownByScatOrd(:)
   real, allocatable    :: meanFluxUpByScatOrdStats(:,:), meanFluxDownByScatOrdStats(:,:)
   real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
@@ -380,7 +380,7 @@ call printStatus(status)
      solarFlux=emittedFlux
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
-PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
+!PRINT *, 'emittedFlux=', emittedFlux, ' solarFlux=', solarFlux
 !PRINT *, 'Driver: calculated emission weighting'
      incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights, col_weights=col_weights, level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
 !PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
@@ -463,31 +463,31 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
      ! Accumulate the first and second moments of each quantity over the batches 
 !    voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1
 !    voxel_tallys2_sum = voxel_tallys2_sum + voxel_tallys2
-    meanFluxUpStats(1)       = meanFluxUpStats(1)       + solarFlux*meanFluxUp
-    meanFluxUpStats(2)       = meanFluxUpStats(2)       + (solarFlux*meanFluxUp)**2
-    meanFluxDownStats(1)     = meanFluxDownStats(1)     + solarFlux*meanFluxDown
-    meanFluxDownStats(2)     = meanFluxDownStats(2)     + (solarFlux*meanFluxDown)**2
-    meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1) + solarFlux*meanFluxAbsorbed
-    meanFluxAbsorbedStats(2) = meanFluxAbsorbedStats(2) + (solarFlux*meanFluxAbsorbed)**2
-          fluxUpStats(:, :, 1) =       fluxUpStats(:, :, 1) + solarFlux*fluxUp(:, :)
-          fluxUpStats(:, :, 2) =       fluxUpStats(:, :, 2) + (solarFlux*fluxUp(:, :))**2
-        fluxDownStats(:, :, 1) =     fluxDownStats(:, :, 1) + solarFlux*fluxDown(:, :)
-        fluxDownStats(:, :, 2) =     fluxDownStats(:, :, 2) + (solarFlux*fluxDown(:, :))**2
-    fluxAbsorbedStats(:, :, 1) = fluxAbsorbedStats(:, :, 1) + solarFlux*fluxAbsorbed(:, :)
-    fluxAbsorbedStats(:, :, 2) = fluxAbsorbedStats(:, :, 2) + (solarFlux*fluxAbsorbed(:, :))**2
-    absorbedProfileStats(:, 1) = absorbedProfileStats(:, 1) + solarFlux*absorbedProfile(:)
-    absorbedProfileStats(:, 2) = absorbedProfileStats(:, 2) + (solarFlux*absorbedProfile(:))**2
-    absorbedVolumeStats(:, :, :, 1) = absorbedVolumeStats(:, :, :, 1) + solarFlux*absorbedVolume(:, :, :)
-    absorbedVolumeStats(:, :, :, 2) = absorbedVolumeStats(:, :, :, 2) + (solarFlux*absorbedVolume(:, :, :))**2
+    meanFluxUpStats(1)       = meanFluxUpStats(1)       + meanFluxUp
+    meanFluxUpStats(2)       = meanFluxUpStats(2)       + meanFluxUp**2
+    meanFluxDownStats(1)     = meanFluxDownStats(1)     + meanFluxDown
+    meanFluxDownStats(2)     = meanFluxDownStats(2)     + meanFluxDown**2
+    meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1) + meanFluxAbsorbed
+    meanFluxAbsorbedStats(2) = meanFluxAbsorbedStats(2) + meanFluxAbsorbed**2
+          fluxUpStats(:, :, 1) =       fluxUpStats(:, :, 1) + fluxUp(:, :)
+          fluxUpStats(:, :, 2) =       fluxUpStats(:, :, 2) + fluxUp(:, :)**2
+        fluxDownStats(:, :, 1) =     fluxDownStats(:, :, 1) + fluxDown(:, :)
+        fluxDownStats(:, :, 2) =     fluxDownStats(:, :, 2) + fluxDown(:, :)**2
+    fluxAbsorbedStats(:, :, 1) = fluxAbsorbedStats(:, :, 1) + fluxAbsorbed(:, :)
+    fluxAbsorbedStats(:, :, 2) = fluxAbsorbedStats(:, :, 2) + fluxAbsorbed(:, :)**2
+    absorbedProfileStats(:, 1) = absorbedProfileStats(:, 1) + absorbedProfile(:)
+    absorbedProfileStats(:, 2) = absorbedProfileStats(:, 2) + absorbedProfile(:)**2
+    absorbedVolumeStats(:, :, :, 1) = absorbedVolumeStats(:, :, :, 1) + absorbedVolume(:, :, :)
+    absorbedVolumeStats(:, :, :, 2) = absorbedVolumeStats(:, :, :, 2) + absorbedVolume(:, :, :)**2
 
     if (computeIntensity) then
       call reportResults(mcIntegrator, intensity = Radiance(:, :, :), status = status)
-      RadianceStats(:, :, :,1) = RadianceStats(:, :, :,1) + solarFlux*Radiance(:, :, :)
+      RadianceStats(:, :, :,1) = RadianceStats(:, :, :,1) + Radiance(:, :, :)
 !PRINT *, "mean RadianceStats =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
-      RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + (solarFlux*Radiance(:, :, :))**2
+      RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + Radiance(:, :, :)**2
     endif
 	
-WRITE(51, '(10E26.16 )') solarFlux, Radiance(1,1,1), RadianceStats(1,1,1,1:2), fluxUp(1,1), fluxUpStats(1,1,1:2), fluxDown(1,1), fluxDownStats(1,1,1:2)
+WRITE(51, '(13E26.16 )') solarFlux, Radiance(1,1,1:4), RadianceStats(1,1,1:4,1), RadianceStats(1,1,1:4,2)
 
    if(recScatOrd) then 
       call reportResults(mcIntegrator, &
@@ -575,26 +575,35 @@ WRITE(51, '(10E26.16 )') solarFlux, Radiance(1,1,1), RadianceStats(1,1,1,1:2), f
 
    ! Calculate the mean and standard error of the radiative quantities from the two moments
   meanFluxUpStats(:)       = meanFluxUpStats(:)/numBatches
-  meanFluxUpStats(2)       = sqrt( max(0.0, meanFluxUpStats(2) - meanFluxUpStats(1)**2) /(numBatches-1))
+  meanFluxUpStats(2)       = sqrt( max(0.0, meanFluxUpStats(2)*solarFlux**2 - (solarFlux*meanFluxUpStats(1))**2) /(numBatches-1))
+   meanFluxUpStats(1)       = meanFluxUpStats(1)*solarFlux
   meanFluxDownStats(:)     = meanFluxDownStats(:)/numBatches
-  meanFluxDownStats(2)     = sqrt( max(0.0, meanFluxDownStats(2) - meanFluxDownStats(1)**2) /(numBatches-1))
+  meanFluxDownStats(2)     = sqrt( max(0.0, meanFluxDownStats(2)*solarFlux**2 - (solarFlux*meanFluxDownStats(1))**2) /(numBatches-1))
+  meanFluxDownStats(1)     = meanFluxDownStats(1)*solarFlux
   meanFluxAbsorbedStats(:) = meanFluxAbsorbedStats(:)/numBatches
-  meanFluxAbsorbedStats(2) = sqrt( max(0.0, meanFluxAbsorbedStats(2) - meanFluxAbsorbedStats(1)**2) /(numBatches-1))
+  meanFluxAbsorbedStats(2) = sqrt( max(0.0, meanFluxAbsorbedStats(2)*solarFlux**2 - (solarFlux*meanFluxAbsorbedStats(1))**2) /(numBatches-1))
+   meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1)*solarFlux
   fluxUpStats(:, :, :)       =fluxUpStats(:, :, :)/numBatches
-  fluxUpStats(:, :, 2)       = sqrt( max(0.0, fluxUpStats(:, :,2) - fluxUpStats(:, :,1)**2) /(numBatches-1))
+  fluxUpStats(:, :, 2)       = sqrt( max(0.0, fluxUpStats(:, :,2)*solarFlux**2 - (solarFlux*fluxUpStats(:, :,1))**2) /(numBatches-1))
+  fluxUpStats(:, :, 1)       =fluxUpStats(:, :, 1)*solarFlux
   fluxDownStats(:, :, :)     =fluxDownStats(:, :, :)/numBatches
-  fluxDownStats(:, :, 2)     = sqrt( max(0.0, fluxDownStats(:, :,2) - fluxDownStats(:, :,1)**2) /(numBatches-1))
+  fluxDownStats(:, :, 2)     = sqrt( max(0.0, fluxDownStats(:, :,2)*solarFlux**2 - (solarFlux*fluxDownStats(:, :,1))**2) /(numBatches-1))
+  fluxDownStats(:, :, 1)     =fluxDownStats(:, :, 1)*solarFlux
   fluxAbsorbedStats(:, :, :) =fluxAbsorbedStats(:, :, :)/numBatches
-  fluxAbsorbedStats(:, :, 2) = sqrt( max(0.0, fluxAbsorbedStats(:, :,2) - fluxAbsorbedStats(:, :,1)**2) /(numBatches-1))
+  fluxAbsorbedStats(:, :, 2) = sqrt( max(0.0, fluxAbsorbedStats(:, :,2)*solarFlux**2 - (solarFlux*fluxAbsorbedStats(:, :,1))**2) /(numBatches-1))
+  fluxAbsorbedStats(:, :, 1) =fluxAbsorbedStats(:, :, 1)*solarFlux
   absorbedProfileStats(:, :) =absorbedProfileStats(:, :)/numBatches
-  absorbedProfileStats(:, 2) = sqrt( max(0.0, absorbedProfileStats(:,2) - absorbedProfileStats(:,1)**2) /(numBatches-1))
+  absorbedProfileStats(:, 2) = sqrt( max(0.0, absorbedProfileStats(:,2)*solarFlux**2 - (solarFlux*absorbedProfileStats(:,1))**2) /(numBatches-1))
+  absorbedProfileStats(:, 1) =absorbedProfileStats(:, 1)*solarFlux
   absorbedVolumeStats(:, :, :, :) = absorbedVolumeStats(:, :, :, :)/numBatches
-  absorbedVolumeStats(:, :, :, 2) = sqrt( max(0.0, absorbedVolumeStats(:, :, :, 2) - absorbedVolumeStats(:, :, :,1)**2) / &
+  absorbedVolumeStats(:, :, :, 2) = sqrt( max(0.0, absorbedVolumeStats(:, :, :, 2)*solarFlux**2 - (solarFlux*absorbedVolumeStats(:, :, :,1))**2) / &
                                     (numBatches-1))
+  absorbedVolumeStats(:, :, :, 1) = absorbedVolumeStats(:, :, :, 1)*solarFlux
   if (computeIntensity) then
     RadianceStats(:, :, :, :) = RadianceStats(:, :, :, :)/numBatches
 !PRINT *, "mean Radiance stats including solarflux =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
-    RadianceStats(:, :, :,2) = sqrt( max(0.0, RadianceStats(:, :, :,2) - RadianceStats(:, :, :,1)**2) /(numBatches-1))
+    RadianceStats(:, :, :,2) = sqrt( max(0.0, RadianceStats(:, :, :,2)*solarFlux**2 - (solarFlux*RadianceStats(:, :, :,1))**2) /(numBatches-1))
+    RadianceStats(:, :, :, 1) = RadianceStats(:, :, :, 1)*solarFlux
   endif
 
   if(recScatOrd) then 
@@ -724,18 +733,18 @@ contains
     real(8), dimension(:), intent(in) :: xPosition, yPosition, zPosition
     ! Flux variables
     character(len = *),       intent(in) :: outputFluxFile
-    real, dimension(:),       intent(in) :: meanFluxUpStats, meanFluxDownStats, meanFluxAbsorbedStats
-    real, dimension(:, :, :), intent(in) :: fluxUpStats, fluxDownStats, fluxAbsorbedStats
+    real(8), dimension(:),       intent(in) :: meanFluxUpStats, meanFluxDownStats, meanFluxAbsorbedStats
+    real(8), dimension(:, :, :), intent(in) :: fluxUpStats, fluxDownStats, fluxAbsorbedStats
     ! Absorption variables
     character(len = *),       intent(in) :: outputAbsProfFile
-    real, dimension(:, :),    intent(in) :: absorbedProfileStats
+    real(8), dimension(:, :),    intent(in) :: absorbedProfileStats
     character(len = *),       intent(in) :: outputAbsVolumeFile
-    real, dimension(:, :, :, :), &
+    real(8), dimension(:, :, :, :), &
                               intent(in) :: absorbedVolumeStats
     ! Intensity variable
     character(len = *),       intent(in) :: outputRadFile
     real, dimension(:),       intent(in) :: intensityMus, intensityPhis
-    real, dimension(:, :, :, :), &
+    real(8), dimension(:, :, :, :), &
                               intent(in) :: RadianceStats
 
     !
@@ -900,13 +909,13 @@ contains
     real(8), dimension(:), intent(in) :: xPosition, yPosition, zPosition
 
     ! Flux variables
-    real, dimension(:, :, :),     intent(in) :: fluxUpStats, fluxDownStats, fluxAbsorbedStats
+    real(8), dimension(:, :, :),     intent(in) :: fluxUpStats, fluxDownStats, fluxAbsorbedStats
     ! Absorption variables
-    real, dimension(:, :),        intent(in) :: absorbedProfileStats
-    real, dimension(:, :, :, :),  intent(in) :: absorbedVolumeStats
+    real(8), dimension(:, :),        intent(in) :: absorbedProfileStats
+    real(8), dimension(:, :, :, :),  intent(in) :: absorbedVolumeStats
     ! Intensity variable
     real, dimension(:), optional, intent(in) :: intensityMus, intensityPhis
-    real, dimension(:, :, :, :), &
+    real(8), dimension(:, :, :, :), &
                         optional, intent(in) :: RadianceStats
     integer,            optional, intent(in) :: numRecScatOrd
     real, dimension(:,:,:,:), &
@@ -1008,25 +1017,25 @@ contains
     ! Flux variables
     !
     ncStatus( 7) = nf90_def_var(ncFileId, "fluxUp", &
-                                nf90_float, (/ xDimId, yDimId /), ncVarId)
+                                nf90_double, (/ xDimId, yDimId /), ncVarId)
     ncStatus( 8) = nf90_def_var(ncFileId, "fluxDown", &
-                                nf90_float, (/ xDimId, yDimId /), ncVarId)
+                                nf90_double, (/ xDimId, yDimId /), ncVarId)
     ncStatus( 9) = nf90_def_var(ncFileId, "fluxAbsorbed", &
-                                nf90_float, (/ xDimId, yDimId /), ncVarId)
+                                nf90_double, (/ xDimId, yDimId /), ncVarId)
     ncStatus(10) = nf90_def_var(ncFileId, "fluxUp_StdErr", &
-                                nf90_float, (/ xDimId, yDimId /), ncVarId)
+                                nf90_double, (/ xDimId, yDimId /), ncVarId)
     ncStatus(11) = nf90_def_var(ncFileId, "fluxDown_StdErr", &
-                                nf90_float, (/ xDimId, yDimId /), ncVarId)
+                                nf90_double, (/ xDimId, yDimId /), ncVarId)
     ncStatus(12) = nf90_def_var(ncFileId, "fluxAbsorbed_StdErr", &
-                                nf90_float, (/ xDimId, yDimId /), ncVarId)
+                                nf90_double, (/ xDimId, yDimId /), ncVarId)
     !
     ! Absorption profile
     !
     if(reportAbsorptionProfile) then 
       ncStatus(13) = nf90_def_var(ncFileId, "absorptionProfile", &
-                                  nf90_float, zDimId, ncVarId)
+                                  nf90_double, zDimId, ncVarId)
       ncStatus(14) = nf90_def_var(ncFileId, "absorptionProfile_StdErr", &
-                                  nf90_float, zDimId, ncVarId)
+                                  nf90_double, zDimId, ncVarId)
     end if 
     
     !
@@ -1034,9 +1043,9 @@ contains
     !
     if(reportVolumeAbsorption) then 
       ncStatus(15) = nf90_def_var(ncFileId, "absorbedVolume", &
-                                  nf90_float, (/ xDimId, yDimId, zDimID /), ncVarId)
+                                  nf90_double, (/ xDimId, yDimId, zDimID /), ncVarId)
       ncStatus(16) = nf90_def_var(ncFileId, "absorbedVolume_StdErr", &
-                                  nf90_float, (/ xDimId, yDimId, zDimId /), ncVarId)
+                                  nf90_double, (/ xDimId, yDimId, zDimId /), ncVarId)
     end if 
     
     !
@@ -1048,9 +1057,9 @@ contains
       ncStatus(19) = nf90_def_var(ncFileId, "intensityMus",  nf90_float, dirDimId, ncVarId)
       ncStatus(19) = nf90_def_var(ncFileId, "intensityPhis", nf90_float, dirDimId, ncVarId)
       ncStatus(20) = nf90_def_var(ncFileId, "intensity", &
-                                  nf90_float, (/ xDimId, yDimId, dirDimId /), ncVarId)
+                                  nf90_double, (/ xDimId, yDimId, dirDimId /), ncVarId)
       ncStatus(21) = nf90_def_var(ncFileId, "intensity_StdErr", &
-                                  nf90_float, (/ xDimId, yDimId, dirDimId /), ncVarId)
+                                  nf90_double, (/ xDimId, yDimId, dirDimId /), ncVarId)
     end if
  
     !recScatOrd

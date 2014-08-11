@@ -484,6 +484,7 @@ contains
     y0 = thisIntegrator%y0; yMax = thisIntegrator%yPosition(size(thisIntegrator%yPosition))
     z0 = thisIntegrator%z0; zMax = thisIntegrator%zPosition(size(thisIntegrator%zPosition))
     if(thisIntegrator%computeIntensity) then
+!PRINT *, "intensity directions=", thisIntegrator%intensityDirections
       numIntensityDirections = size(thisIntegrator%intensityDirections, 2)
       allocate(contributions(numIntensityDirections), &
                 xIndexF(numIntensityDirections), yIndexF(numIntensityDirections))
