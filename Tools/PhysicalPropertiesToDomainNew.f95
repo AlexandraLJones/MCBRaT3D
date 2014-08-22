@@ -210,6 +210,7 @@ program ParticleFileToDomain
    ! Calculate the molecular Rayleigh scattering extinction profile
   allocate (RaylExt(nZt))
   RaylExt(:) = 0
+PRINT *, RayleighWavelength
   if(RayleighWavelength > 0.) &
     call rayleigh_extinct (nzt, Zlevels, Temp, RayleighWavelength, RaylExt)
 
@@ -587,7 +588,7 @@ subroutine rayleigh_extinct (nzt, Zlevels, Temp, wavelen, RaylExt)
   real    :: raylcoef, pres, lapse, ts, dz, extlev(nzt+1)
 
   raylcoef = 2.97E-4*wavelen**(-4.15+0.2*wavelen)
-
+PRINT *, raylcoef
    ! Find surface pressure by integrating hydrostatic relation
    !  for a dry atmosphere up to surface height.
   pres = 1013.
@@ -598,16 +599,20 @@ subroutine rayleigh_extinct (nzt, Zlevels, Temp, wavelen, RaylExt)
    ! Use layer mean temperature to compute fractional pressure change.
   do i = 1, nzt
     dz = 1000.*(Zlevels(i+1)-Zlevels(i))
+PRINT *, dz
     lapse = (Temp(i)-Temp(i+1))/dz
+PRINT *, lapse
     if (abs(lapse) .gt. 0.0001) then
       pres = pres*(Temp(i+1)/Temp(i))**(9.8/(287.*lapse))
     else
       pres = pres*exp(-9.8*dz/(287.*Temp(i)))
     endif
+PRINT *, pres
   enddo
   extlev(:) = raylcoef*pres/Temp(:)
   RaylExt(1:nzt) = (extlev(1:nzt)-extlev(2:nzt+1)) & 
                   / log(extlev(1:nzt)/extlev(2:nzt+1))
+PRINT *, RaylExt
 end subroutine rayleigh_extinct
 
 ! --------------------------------------------------------------------------
