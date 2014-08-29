@@ -128,7 +128,7 @@ program monteCarloDriver
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
   real(8)                 :: emittedFlux
-  real(8)                 :: meanFluxUpStats(3), meanFluxDownStats(3), meanFluxAbsorbedStats(3)
+  real(8)                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:), tempExt(:,:,:)
   real(8), allocatable    :: solarSourceFunction(:), centralLambdas(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :), absorbedProfile(:), absorbedVolume(:, :, :), Radiance(:, :, :)
@@ -201,7 +201,7 @@ program monteCarloDriver
 !  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
 !  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
 !  open(unit=17, file=trim(voxel_file2) , status='UNKNOWN')
-  open(unit=51, file=trim(batch_file), status='UNKNOWN')
+!  open(unit=51, file=trim(batch_file), status='UNKNOWN')
 
   ! -----------------------------------------
   ! Get the input variables from the namelist file
@@ -399,18 +399,18 @@ deallocate(tempExt)
    ! Allocate and zero the arrays for radiative quantities and moments 
 !  allocate (voxel_tallys1(nX, nY, nZ), voxel_tallys1_sum(nX, nY, nZ), voxel_tallys1_total(nX, nY, nZ))
 !  allocate (voxel_tallys2(nX, nY, nZ), voxel_tallys2_sum(nX, nY, nZ), voxel_tallys2_total(nX, nY, nZ))
-  allocate (fluxUp      (nX, nY), fluxUpStats      (nX, nY, 3))
-  allocate (fluxDown    (nX, nY), fluxDownStats    (nX, nY, 3))
-  allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 3))
-  allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 3))
-  allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 3))
+  allocate (fluxUp      (nX, nY), fluxUpStats      (nX, nY, 2))
+  allocate (fluxDown    (nX, nY), fluxDownStats    (nX, nY, 2))
+  allocate (fluxAbsorbed(nX, nY), fluxAbsorbedStats(nX, nY, 2))
+  allocate (absorbedProfile(nZ), absorbedProfilestats(nZ, 2))
+  allocate (absorbedVolume(nX, nY, nZ), absorbedVolumeStats(nX, nY, nZ, 2))
 !  voxel_tallys1(:,:,:)=0 ; voxel_tallys1_sum(:,:,:) = 0 ; voxel_tallys1_total(:,:,:) = 0
 !  voxel_tallys2(:,:,:)=0 ; voxel_tallys2_sum(:,:,:) = 0 ; voxel_tallys2_total(:,:,:) = 0
   meanFluxUpStats(:) = 0.0  ; meanFluxDownStats(:) = 0.0  ; meanFluxAbsorbedStats(:) = 0.0
   fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
   absorbedProfilestats(:, :) = 0.0 ;  absorbedVolumeStats(:, :, :, :) = 0.0
   if (computeIntensity) then
-    allocate (Radiance(nX, nY, numRadDir), RadianceStats(nX, nY, numRadDir, 3))
+    allocate (Radiance(nX, nY, numRadDir), RadianceStats(nX, nY, numRadDir, 2))
     RadianceStats(:, :, :, :) = 0.0
   endif  
   !!$OMP END SINGLE
@@ -681,47 +681,38 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
 	!
 !	totalNumPhotons = totalNumPhotons + numPhotonsProcessed
 
-	meanFluxUpStats(1) = meanFluxUpStats(1) + solarFlux*meanFluxUp*numPhotonsProcessed
-	meanFluxUpStats(2) = meanFluxUpStats(2) + (solarFlux*meanFluxUp*numPhotonsProcessed)**2.0_8
-	meanFluxUpStats(3) = meanFluxUpStats(3) + solarFlux*meanFluxUp*(numPhotonsProcessed**(3.0_8/2))
+	meanFluxUpStats(1) = meanFluxUpStats(1) + meanFluxUp*numPhotonsProcessed
+	meanFluxUpStats(2) = meanFluxUpStats(2) + numPhotonsProcessed*(meanFluxUp**2.0_8)
 
-	meanFluxDownStats(1) = meanFluxDownStats(1) + solarFlux*meanFluxDown*numPhotonsProcessed
-        meanFluxDownStats(2) = meanFluxDownStats(2) + (solarFlux*meanFluxDown*numPhotonsProcessed)**2.0_8
-        meanFluxDownStats(3) = meanFluxDownStats(3) + solarFlux*meanFluxDown*(numPhotonsProcessed**(3.0_8/2))
+	meanFluxDownStats(1) = meanFluxDownStats(1) + meanFluxDown*numPhotonsProcessed
+        meanFluxDownStats(2) = meanFluxDownStats(2) + numPhotonsProcessed*(meanFluxDown**2.0_8)
 
-	meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1) + solarFlux*meanFluxAbsorbed*numPhotonsProcessed
-        meanFluxAbsorbedStats(2) = meanFluxAbsorbedStats(2) + (solarFlux*meanFluxAbsorbed*numPhotonsProcessed)**2.0_8
-        meanFluxAbsorbedStats(3) = meanFluxAbsorbedStats(3) + solarFlux*meanFluxAbsorbed*(numPhotonsProcessed**(3.0_8/2))
+	meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1) + meanFluxAbsorbed*numPhotonsProcessed
+        meanFluxAbsorbedStats(2) = meanFluxAbsorbedStats(2) + numPhotonsProcessed*(meanFluxAbsorbed**2.0_8)
 
-	FluxUpStats(:,:,1) = FluxUpStats(:,:,1) + solarFlux*FluxUp*numPhotonsProcessed
-        FluxUpStats(:,:,2) = FluxUpStats(:,:,2) + (solarFlux*FluxUp*numPhotonsProcessed)**2.0_8
-        FluxUpStats(:,:,3) = FluxUpStats(:,:,3) + solarFlux*FluxUp*(numPhotonsProcessed**(3.0_8/2))
+	FluxUpStats(:,:,1) = FluxUpStats(:,:,1) + FluxUp*numPhotonsProcessed
+        FluxUpStats(:,:,2) = FluxUpStats(:,:,2) + numPhotonsProcessed*(FluxUp**2.0_8)
 
-        FluxDownStats(:,:,1) = FluxDownStats(:,:,1) + solarFlux*FluxDown*numPhotonsProcessed
-        FluxDownStats(:,:,2) = FluxDownStats(:,:,2) + (solarFlux*FluxDown*numPhotonsProcessed)**2.0_8
-        FluxDownStats(:,:,3) = FluxDownStats(:,:,3) + solarFlux*FluxDown*(numPhotonsProcessed**(3.0_8/2))
+        FluxDownStats(:,:,1) = FluxDownStats(:,:,1) + FluxDown*numPhotonsProcessed
+        FluxDownStats(:,:,2) = FluxDownStats(:,:,2) + numPhotonsProcessed*(FluxDown**2.0_8)
 
-        FluxAbsorbedStats(:,:,1) = FluxAbsorbedStats(:,:,1) + solarFlux*FluxAbsorbed*numPhotonsProcessed
-        FluxAbsorbedStats(:,:,2) = FluxAbsorbedStats(:,:,2) + (solarFlux*FluxAbsorbed*numPhotonsProcessed)**2.0_8
-        FluxAbsorbedStats(:,:,3) = FluxAbsorbedStats(:,:,3) + solarFlux*FluxAbsorbed*(numPhotonsProcessed**(3.0_8/2))
+        FluxAbsorbedStats(:,:,1) = FluxAbsorbedStats(:,:,1) + FluxAbsorbed*numPhotonsProcessed
+        FluxAbsorbedStats(:,:,2) = FluxAbsorbedStats(:,:,2) + numPhotonsProcessed*(FluxAbsorbed**2.0_8)
 
-	AbsorbedProfileStats(:,1) = AbsorbedProfileStats(:,1) + solarFlux*AbsorbedProfile*numPhotonsProcessed
-        AbsorbedProfileStats(:,2) = AbsorbedProfileStats(:,2) + (solarFlux*AbsorbedProfile*numPhotonsProcessed)**2.0_8
-        AbsorbedProfileStats(:,3) = AbsorbedProfileStats(:,3) + solarFlux*AbsorbedProfile*(numPhotonsProcessed**(3.0_8/2))
+	AbsorbedProfileStats(:,1) = AbsorbedProfileStats(:,1) + AbsorbedProfile*numPhotonsProcessed
+        AbsorbedProfileStats(:,2) = AbsorbedProfileStats(:,2) + numPhotonsProcessed*(AbsorbedProfile**2.0_8)
 
-	AbsorbedVolumeStats(:,:,:,1) = AbsorbedVolumeStats(:,:,:,1) + solarFlux*AbsorbedVolume*numPhotonsProcessed
-        AbsorbedVolumeStats(:,:,:,2) = AbsorbedVolumeStats(:,:,:,2) + (solarFlux*AbsorbedVolume*numPhotonsProcessed)**2.0_8
-        AbsorbedVolumeStats(:,:,:,3) = AbsorbedVolumeStats(:,:,:,3) + solarFlux*AbsorbedVolume*(numPhotonsProcessed**(3.0_8/2))
+	AbsorbedVolumeStats(:,:,:,1) = AbsorbedVolumeStats(:,:,:,1) + AbsorbedVolume*numPhotonsProcessed
+        AbsorbedVolumeStats(:,:,:,2) = AbsorbedVolumeStats(:,:,:,2) + numPhotonsProcessed*(AbsorbedVolume**2.0_8)
 
 	if (computeIntensity) then
 	    call reportResults(mcIntegrator, intensity = Radiance(:, :, :), status = status)
-	    RadianceStats(:, :, :,1) = RadianceStats(:, :, :,1) + solarFlux*Radiance(:, :, :)*numPhotonsProcessed
-	    RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + (solarFlux*Radiance(:, :, :)*numPhotonsProcessed)**2.0_8
-	    RadianceStats(:, :, :,3) = RadianceStats(:, :, :,3) + solarFlux*Radiance(:, :, :)*(numPhotonsProcessed**(3.0_8/2))
+	    RadianceStats(:, :, :,1) = RadianceStats(:, :, :,1) + Radiance(:, :, :)*numPhotonsProcessed
+	    RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + numPhotonsProcessed*(Radiance(:, :, :)**2.0_8)
 !PRINT *, numPhotonsProcessed, 'numPhotons', solarFlux*FluxUp, '=FluxUp', solarFlux*FluxDown, '=FluxDown', solarFlux*AbsorbedVolume, '=AbsVolume', solarFlux*Radiance(:, :, :), '=Intensity'
 	end if
 
-WRITE(51, '(E26.16, I10, I4, 4E26.16 )') solarFlux, numPhotonsProcessed, currentFreq, Radiance(1,1,1), RadianceStats(1,1,1,1:3)
+!WRITE(51, '(E26.16, I10, I4, 4E26.16 )') solarFlux, numPhotonsProcessed, currentFreq, Radiance(1,1,1), RadianceStats(1,1,1,1:2)
 
 	CALL MPI_SEND(numPhotonsProcessed, 1, MPI_INTEGER, 0, PHOTONS, MPI_COMM_WORLD, ierr)
 	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, 0, SAME_FREQ, MPI_COMM_WORLD, ierr)
@@ -736,7 +727,7 @@ WRITE(51, '(E26.16, I10, I4, 4E26.16 )') solarFlux, numPhotonsProcessed, current
   deallocate(freqDistr)
   if (allocated(startingPhoton)) deallocate(startingPhoton)
 
-close(51)
+!close(51)
 
   DO i=1, numLambda
     call finalize_PhotonStream (incomingBBPhotons(i))
@@ -789,53 +780,44 @@ end if
   if (MasterProc) print *, "Total CPU time (secs, approx): ", int(cpuTimeTotal)
 
    ! Calculate the mean and standard error of the radiative quantities from the two moments
-  meanFluxUpStats(1)       = meanFluxUpStats(1)/totalNumPhotons
-  meanFluxUpStats(2)       = meanFluxUpStats(2)/(totalNumPhotons**2.0_8)  
-  meanFluxUpStats(3)       = (meanFluxUpStats(3)**2)/(totalNumPhotons**3.0_8)
-  meanFluxUpStats(2)       = sqrt(max(0.0, meanFluxUpStats(2)-meanFluxUpStats(3)))
+  meanFluxUpStats(:)       = solarFlux*meanFluxUpStats(:)/totalNumPhotons
+  meanFluxUpStats(2)       = solarFlux*meanFluxUpStats(2)
+  meanFluxUpStats(2)       = sqrt(max(0.0, meanFluxUpStats(2)-(meanFluxUpStats(1)**2.0_8))/(batchesCompleted-1))
 
-  meanFluxDownStats(1)     = meanFluxDownStats(1)/totalNumPhotons
-  meanFluxDownStats(2)     = meanFluxDownStats(2)/(totalNumPhotons**2.0_8) 
-  meanFluxDownStats(3)     = (meanFluxDownStats(3)**2)/(totalNumPhotons**3.0_8)
-  meanFluxDownStats(2)     = sqrt( max(0.0, meanFluxDownStats(2)-meanFluxDownStats(3)))
+  meanFluxDownStats(:)     = solarFlux*meanFluxDownStats(:)/totalNumPhotons
+  meanFluxDownStats(2)     = solarFlux*meanFluxDownStats(2)
+  meanFluxDownStats(2)     = sqrt(max(0.0, meanFluxDownStats(2)-(meanFluxDownStats(1)**2.0_8))/(batchesCompleted-1))
 
-  meanFluxAbsorbedStats(1) = meanFluxAbsorbedStats(1)/totalNumPhotons
-  meanFluxAbsorbedStats(2) = meanFluxAbsorbedStats(2)/(totalNumPhotons**2.0_8) 
-  meanFluxAbsorbedStats(3) = (meanFluxAbsorbedStats(3)**2)/(totalNumPhotons**3.0_8)
-  meanFluxAbsorbedStats(2) = sqrt( max(0.0, meanFluxAbsorbedStats(2)-meanFluxAbsorbedStats(3)))
+  meanFluxAbsorbedStats(:) = solarFlux*meanFluxAbsorbedStats(:)/totalNumPhotons
+  meanFluxAbsorbedStats(2) = solarFlux*meanFluxAbsorbedStats(2)
+  meanFluxAbsorbedStats(2) = sqrt(max(0.0, meanFluxAbsorbedStats(2)-(meanFluxAbsorbedStats(1)**2.0_8))/(batchesCompleted-1))
 
-  fluxUpStats(:, :, 1)       =fluxUpStats(:, :, 1)/totalNumPhotons
-  fluxUpStats(:, :, 2)       = fluxUpStats(:, :,2)/(totalNumPhotons**2.0_8) 
-  fluxUpStats(:, :,3)        =  (fluxUpStats(:, :,3)**2)/(totalNumPhotons**3.0_8)
-  fluxUpStats(:, :, 2)       = sqrt( max(0.0,fluxUpStats(:, :, 2)-fluxUpStats(:, :,3)))
+  fluxUpStats(:, :, :)       =solarFlux*fluxUpStats(:, :, :)/totalNumPhotons
+  fluxUpStats(:, :, 2)       = solarFlux*fluxUpStats(:, :, 2)
+  fluxUpStats(:, :, 2)       = sqrt(max(0.0,fluxUpStats(:, :, 2)-(fluxUpStats(:, :,1)**2.0_8))/(batchesCompleted-1))
 
-  fluxDownStats(:, :, 1)     =fluxDownStats(:, :, 1)/totalNumPhotons
-  fluxDownStats(:, :, 2)     = fluxDownStats(:, :,2)/(totalNumPhotons**2.0_8)  
-  fluxDownStats(:, :,3)      = (fluxDownStats(:, :,3)**2)/(totalNumPhotons**3.0_8)
-  fluxDownStats(:, :, 2)     = sqrt( max(0.0, fluxDownStats(:, :, 2)-fluxDownStats(:, :,3)))
+  fluxDownStats(:, :, :)     =solarFlux*fluxDownStats(:, :, :)/totalNumPhotons
+  fluxDownStats(:, :, 2)     = solarFlux*fluxDownStats(:, :, 2)
+  fluxDownStats(:, :, 2)     = sqrt(max(0.0, fluxDownStats(:, :, 2)-(fluxDownStats(:, :,1)**2.0_8))/(batchesCompleted-1))
 
-  fluxAbsorbedStats(:, :, 1) =fluxAbsorbedStats(:, :, 1)/totalNumPhotons
-  fluxAbsorbedStats(:, :, 2) = fluxAbsorbedStats(:, :,2)/(totalNumPhotons**2.0_8)  
-  fluxAbsorbedStats(:, :,3)  = (fluxAbsorbedStats(:, :,3)**2)/(totalNumPhotons**3.0_8)
-  fluxAbsorbedStats(:, :, 2) = sqrt( max(0.0, fluxAbsorbedStats(:, :, 2)-fluxAbsorbedStats(:, :,3)))
+  fluxAbsorbedStats(:, :, :) =solarFlux*fluxAbsorbedStats(:, :, :)/totalNumPhotons
+  fluxAbsorbedStats(:, :, 2) = solarFlux*fluxAbsorbedStats(:, :, 2)
+  fluxAbsorbedStats(:, :, 2) = sqrt(max(0.0, fluxAbsorbedStats(:, :, 2)-(fluxAbsorbedStats(:, :,1)**2.0_8))/(batchesCompleted-1))
 
-  absorbedProfileStats(:, 1) =absorbedProfileStats(:, 1)/totalNumPhotons
-  absorbedProfileStats(:, 2) = absorbedProfileStats(:,2)/(totalNumPhotons**2.0_8) 
-  absorbedProfileStats(:,3)  = (absorbedProfileStats(:,3)**2)/(totalNumPhotons**3.0_8)
-  absorbedProfileStats(:, 2) = sqrt( max(0.0, absorbedProfileStats(:, 2)-absorbedProfileStats(:,3)))
+  absorbedProfileStats(:, :) =solarFlux*absorbedProfileStats(:, :)/totalNumPhotons
+  absorbedProfileStats(:, 2) = solarFlux*absorbedProfileStats(:, 2)
+  absorbedProfileStats(:, 2) = sqrt(max(0.0, absorbedProfileStats(:, 2)-(absorbedProfileStats(:,1)**2.0_8))/(batchesCompleted-1))
 
-  absorbedVolumeStats(:, :, :, 1) = absorbedVolumeStats(:, :, :, 1)/totalNumPhotons
-  absorbedVolumeStats(:, :, :, 2) = absorbedVolumeStats(:, :, :, 2)/(totalNumPhotons**2.0_8) 
-  absorbedVolumeStats(:, :, :,3) = (absorbedVolumeStats(:, :, :,3)**2)/(totalNumPhotons**3.0_8)
-  absorbedVolumeStats(:, :, :, 2) = sqrt( max(0.0, absorbedVolumeStats(:, :, :, 2)-absorbedVolumeStats(:, :, :,3)))
+  absorbedVolumeStats(:, :, :, :) = solarFlux*absorbedVolumeStats(:, :, :, :)/totalNumPhotons
+  absorbedVolumeStats(:, :, :, 2) = solarFlux*absorbedVolumeStats(:, :, :, 2)
+  absorbedVolumeStats(:, :, :, 2) = sqrt(max(0.0, absorbedVolumeStats(:, :, :, 2)-(absorbedVolumeStats(:, :, :,1)**2.0_8))/(batchesCompleted-1))
 
   if (computeIntensity) then
-    RadianceStats(:, :, :, 1) = RadianceStats(:, :, :, 1)/totalNumPhotons
+    RadianceStats(:, :, :, :) = solarFlux*RadianceStats(:, :, :, :)/totalNumPhotons
+    RadianceStats(:, :, :,2) = solarFlux*RadianceStats(:, :, :, 2)
 !PRINT *, "mean Radiance stats including solarflux =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
-    RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2)/(totalNumPhotons**2.0_8)  
-    RadianceStats(:, :, :,3) = (RadianceStats(:, :, :,3)**2)/(totalNumPhotons**3.0_8)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
-    RadianceStats(:, :, :,2) = sqrt( max(0.0, RadianceStats(:, :, :,2)-RadianceStats(:, :, :,3)))
+    RadianceStats(:, :, :,2) = sqrt(max(0.0, RadianceStats(:, :, :,2)-(RadianceStats(:, :, :,1)**2.0_8))/(batchesCompleted-1))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
   endif
 
