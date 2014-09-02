@@ -119,13 +119,14 @@ program monteCarloDriver
    ! Local variables
   character(len=256)   :: namelistFileName
 !  character(len=256)   :: voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
-  character(len=256)   :: batch_file
-  integer              :: nX, nY, nZ, phtn
+  character(len=256)   :: batch_file, checkpointFile
+  integer              :: nX, nY, nZ, phtn, checkFreq = 5
   integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
   integer              :: numberOfComponents
   logical              :: computeIntensity, ompParallel
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
+  real                 :: prevTotal, total
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
   real(8)                 :: emittedFlux
   real(8)                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
@@ -140,7 +141,7 @@ program monteCarloDriver
 !  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
   integer              ::  N, atms_photons, maxThreads, availProcs, numPhotonsProcessed, start, n, ierr
   integer              :: batchesAssigned, batchesCompleted
-  integer(8)           ::  totalNumPhotons = 0
+  integer(8)           ::  totalNumPhotons = 0, counter
   integer              :: currentFreq(1)
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
@@ -608,6 +609,8 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
     END DO
 
 		! after the initial round of batches to processors there probably be work left to do. Allow workers to come to you for  more tasks. Listen for a query message
+    counter = 1
+    prevTotal = cpuTime0 
     DO WHILE(batchesCompleted .lt. batchesAssigned)
 	CALL MPI_RECV(numPhotonsProcessed, 1, MPI_INTEGER, MPI_ANY_SOURCE, PHOTONS, MPI_COMM_WORLD, mpiStatus, ierr)
 	totalNumPhotons = totalNumPhotons + numPhotonsProcessed
@@ -615,6 +618,56 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
 	batchesCompleted = batchesCompleted + 1
 !	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
 !	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
+PRINT *, MOD(batchesCompleted, checkFreq)
+	if(MOD(batchesCompleted, checkFreq) .eq. 0)then
+	     call cpu_time(total) 
+PRINT *, total-prevTotal
+	   if(total-prevTotal .gt. 5.0)then
+		prevTotal = total
+          ! initiate intermediate sum across processes and write
+PRINT *, LEN(outputNetcdfFile), LEN(TRIM(outputNetcdfFile))
+		if(MOD(counter, 2) .eq. 0)then
+               	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 2
+             	else
+             	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 1
+             	end if
+          	counter = counter + 1
+PRINT *, "summing across processes"          
+          	! Pixel-by-pixel fluxes
+          	fluxUpStats(:, :, :)       = sumAcrossProcesses(fluxUpStats)
+          	fluxDownStats(:, :, :)     = sumAcrossProcesses(fluxDownStats)
+          	fluxAbsorbedStats(:, :, :) = sumAcrossProcesses(fluxAbsorbedStats)
+
+          	! Absorption (mean profile and cell-by-cell)
+          	absorbedProfileStats(:, :)      = sumAcrossProcesses(absorbedProfileStats)
+          	absorbedVolumeStats(:, :, :, :) = sumAcrossProcesses(absorbedVolumeStats)
+
+          	! Radiance
+          	if (computeIntensity)then
+                    RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
+PRINT *, "writing checkpoint file"
+               	    call writeResults_netcdf(domainFileName,  totalNumPhotons, batchesCompleted, &
+                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+                                 xPosition, yPosition, zPosition,                 &
+                                 checkpointFile,                                &
+                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
+                                 absorbedProfileStats, absorbedVolumeStats,       &
+                                 intensityMus, intensityPhis, RadianceStats)
+          	else
+PRINT *, "writing checkpoint file"
+                    call writeResults_netcdf(domainFileName,  totalNumPhotons, batchesCompleted, &
+                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+                                 xPosition, yPosition, zPosition,                 &
+                                 checkpointFile,                                &
+                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
+                                 absorbedProfileStats, absorbedVolumeStats)
+          	end if
+          	print *, "Wrote to checkpoint file"
+     	   end if
+	end if
+
+
+
 	if (ANY(freqDistr(:) .gt. 0))then ! if there is still work left to do...
 	     if(freqDistr(currentFreq(1)) .gt. 0)then ! use flag SAME_FREQ. ! are more photons available at the frequency it's currently working on?
 !		PRINT *, 'More work left to do on frequency index', currentFreq, 'Telling rank ', mpiStatus(MPI_SOURCE), 'to keep going'
