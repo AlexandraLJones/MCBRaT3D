@@ -120,20 +120,22 @@ program monteCarloDriver
   character(len=256)   :: namelistFileName
 !  character(len=256)   :: voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
   character(len=256)   :: batch_file, checkpointFile
-  integer              :: nX, nY, nZ, phtn, checkFreq = 5
+  integer              :: nX, nY, nZ, phtn, checkFreq = 100
   integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
   integer              :: numberOfComponents
   logical              :: computeIntensity, ompParallel
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
-  real                 :: prevTotal, total
+  real                 :: prevTotal, total, writeFreq=3600.0
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
   real(8)                 :: emittedFlux
   real(8)                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:), tempExt(:,:,:)
   real(8), allocatable    :: solarSourceFunction(:), centralLambdas(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :), absorbedProfile(:), absorbedVolume(:, :, :), Radiance(:, :, :)
-  real(8), allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :), absorbedProfileStats(:, :), absorbedVolumeStats(:, :, :, :), RadianceStats(:, :, :, :)
+  real(8), allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :), &
+				absorbedProfileStats(:, :), absorbedVolumeStats(:, :, :, :), RadianceStats(:, :, :, :),&
+				dummy2D(:,:), dummy3D(:,:,:), dummy4D1(:,:,:,:), dummy4D2(:,:,:,:)
 !  real, allocatable    :: meanFluxUpByScatOrd(:), meanFluxDownByScatOrd(:)
 !  real, allocatable    :: meanFluxUpByScatOrdStats(:,:), meanFluxDownByScatOrdStats(:,:)
 !  real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
@@ -618,21 +620,21 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
 	batchesCompleted = batchesCompleted + 1
 !	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
 !	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
-PRINT *, MOD(batchesCompleted, checkFreq)
+!PRINT *, MOD(batchesCompleted, checkFreq)
 	if(MOD(batchesCompleted, checkFreq) .eq. 0)then
 	     call cpu_time(total) 
-PRINT *, total-prevTotal
-	   if(total-prevTotal .gt. 5.0)then
+!PRINT *, total-prevTotal
+	   if(total-prevTotal .gt. writeFreq)then
 		prevTotal = total
           ! initiate intermediate sum across processes and write
-PRINT *, LEN(outputNetcdfFile), LEN(TRIM(outputNetcdfFile))
+!PRINT *, LEN(outputNetcdfFile), LEN(TRIM(outputNetcdfFile))
 		if(MOD(counter, 2) .eq. 0)then
                	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 2
              	else
              	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 1
              	end if
           	counter = counter + 1
-PRINT *, "summing across processes"          
+!PRINT *, "summing across processes"          
           	! Pixel-by-pixel fluxes
           	fluxUpStats(:, :, :)       = sumAcrossProcesses(fluxUpStats)
           	fluxDownStats(:, :, :)     = sumAcrossProcesses(fluxDownStats)
@@ -653,6 +655,7 @@ PRINT *, "writing checkpoint file"
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats,       &
                                  intensityMus, intensityPhis, RadianceStats)
+		    RadianceStats(:, :, :, :) = 0.0
           	else
 PRINT *, "writing checkpoint file"
                     call writeResults_netcdf(domainFileName,  totalNumPhotons, batchesCompleted, &
@@ -662,7 +665,9 @@ PRINT *, "writing checkpoint file"
                                  fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
                                  absorbedProfileStats, absorbedVolumeStats)
           	end if
-          	print *, "Wrote to checkpoint file"
+         	print *, "Wrote to checkpoint file"
+		fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
+		absorbedProfilestats(:, :) = 0.0 ;  absorbedVolumeStats(:, :, :, :) = 0.0
      	   end if
 	end if
 
@@ -700,12 +705,14 @@ PRINT *, "writing checkpoint file"
 	! pass to worker the needed info
 	CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, n, EXIT_TAG, MPI_COMM_WORLD, ierr)
     END DO
+!PRINT *, "Done with batches"
 
   else ! must be a worker process
     CALL MPI_RECV(start, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
     CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 !    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
 !!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
+    prevTotal = cpuTime0
     DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
 !	PRINT *, 'Rank ', thisProc, 'will process photons of frequency', currentFreq, 'starting with', start
 	! set the current photon of the appropriate frequency to the starting value
@@ -769,6 +776,26 @@ PRINT *, "writing checkpoint file"
 
 	CALL MPI_SEND(numPhotonsProcessed, 1, MPI_INTEGER, 0, PHOTONS, MPI_COMM_WORLD, ierr)
 	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, 0, SAME_FREQ, MPI_COMM_WORLD, ierr)
+	CALL cpu_time(total)
+	if(total-prevTotal .gt. writeFreq)then
+	   allocate(dummy4D1(nx,ny,nz,2), dummy2D(nz,2), dummy3D(nx,ny,2))
+	   ! Pixel-by-pixel fluxes
+           dummy3D(:, :, :)       = sumAcrossProcesses(fluxUpStats)
+           dummy3D(:, :, :)     = sumAcrossProcesses(fluxDownStats)
+           dummy3D(:, :, :) = sumAcrossProcesses(fluxAbsorbedStats)
+
+          ! Absorption (mean profile and cell-by-cell)
+           dummy2D(:, :)      = sumAcrossProcesses(absorbedProfileStats)
+           dummy4D1(:, :, :, :) = sumAcrossProcesses(absorbedVolumeStats)
+	  deallocate(dummy4D1, dummy2D, dummy3D)
+          ! Radiance
+          if (computeIntensity) &
+	     allocate(dummy4D2(nx,ny,numRadDir, 2))
+             dummy4D2(:, :, :, :) = sumAcrossProcesses(RadianceStats) 
+	     deallocate(dummy4D2)
+	  prevTotal = total
+	end if
+
 	CALL MPI_RECV(start, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
 	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) &
 	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
@@ -795,7 +822,7 @@ PRINT *, "writing checkpoint file"
 !  totalNumPhotons = sumAcrossProcesses(totalNumPhotons)
 
   ! Domain-mean fluxes
-  
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, "about to do final sumAcrossProcesses" 
   meanFluxUpStats(:)       = sumAcrossProcesses(meanFluxUpStats)
   meanFluxDownStats(:)     = sumAcrossProcesses(meanFluxDownStats)
   meanFluxAbsorbedStats(:) = sumAcrossProcesses(meanFluxAbsorbedStats)
@@ -813,10 +840,10 @@ PRINT *, "writing checkpoint file"
   if (computeIntensity) &
     RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
 
-if(MasterProc .and. thisThread .eq. 0)then
+!if(MasterProc .and. thisThread .eq. 0)then
 !  PRINT *, 'Driver: accumulated results.' 
 !  PRINT *, 'RadianceStats=', RadianceStats(1,1,1,1:3)
-end if
+!end if
 !  close(11)
 !  close(12)
 !  close(13)
