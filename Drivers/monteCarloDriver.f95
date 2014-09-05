@@ -116,31 +116,33 @@ program monteCarloDriver
   
 
    ! Local variables
-  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file, batch_file
-  integer              :: nX, nY, nZ, phtn
+  character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file, batch_file, checkpointFile=""
+  integer              :: nX, nY, nZ, phtn, counter
   integer              :: i, j, k, batch, ix, iy, iz
   integer              :: numRadDir
   integer              :: numberOfComponents
-  logical              :: computeIntensity
-  real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
+  logical              :: computeIntensity, checkOn=.true., probe=.false.
+  real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup, prevTotal, total, writeFreq=15.0
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
   real(8)                 :: emittedFlux
   real(8)                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :)
   real(8), allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :)
+  real(8), allocatable    :: fluxUpDummy(:,:,:), fluxDownDummy(:,:,:), fluxAbsDummy(:,:,:), fluxProfDummy(:,:), absProfDummy(:,:), absVolDummy(:,:,:,:)
   real, allocatable    :: absorbedProfile(:), absorbedVolume(:, :, :)
-  real(8), allocatable    :: absorbedVolumeStats(:, :, :, :), absorbedProfileStats(:, :), RadianceStats(:, :, :, :)
+  real(8), allocatable    :: absorbedVolumeStats(:, :, :, :), absorbedProfileStats(:, :), RadianceStats(:, :, :, :), radDummy(:,:,:,:)
   real, allocatable    :: Radiance(:, :, :)
   real, allocatable    :: meanFluxUpByScatOrd(:), meanFluxDownByScatOrd(:)
   real, allocatable    :: meanFluxUpByScatOrdStats(:,:), meanFluxDownByScatOrdStats(:,:)
   real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
   real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
   real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
-  integer              :: atms_photons, N
+  integer              :: atms_photons, N, chckpnt=99, ierr, q, request
   real(8), allocatable    :: cumExt(:,:,:), temps(:,:,:), ssa(:,:,:,:), ext(:,:,:,:)
  real(8), allocatable    :: voxel_weights(:,:,:), col_weights(:,:),level_weights(:)
  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
+ integer, dimension(MPI_STATUS_SIZE)  :: mpiStatus
 
    ! I3RC Monte Carlo code derived type variables
   type(domain)               :: thisDomain
@@ -427,11 +429,13 @@ call printStatus(status)
   if (MasterProc) &
     print *, "Doing ", batchesPerProcessor, " batches on each of ", numProcs, " processors." 
 !PRINT *, "entering batch loop"
+  prevTotal = cpuTime0
+  counter = 1
   batches: do batch = thisProc*batchesPerProcessor + 1, thisProc*batchesPerProcessor + batchesPerProcessor
     ! Seed the random number generator.
     !   Variable randoms holds the state of the random number generator. 
     randoms = new_RandomNumberSequence(seed = (/ iseed, batch /) )
-!PRINT *, batch
+!PRINT *, thisProc, "got randoms for", batch
     ! The initial direction and position of the photons are precomputed and 
     !   stored in an "illumination" object. 
     if(LW_flag >= 0.0)then
@@ -446,10 +450,10 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
                                         randomNumbers = randoms, status = status)
     end if
     call printStatus(status)
-!PRINT *, 'Driver: Initialized photons for batch', batch
+!PRINT *, thisProc, 'Driver: Initialized photons for batch', batch
     ! Now we compute the radiative transfer for this batch of photons. 
     call computeRadiativeTransfer (mcIntegrator, randoms, incomingPhotons, status, voxel_tallys2)
-!PRINT *, 'Driver: COmputed RT for batch', batch
+!PRINT *, thisProc, 'Driver: COmputed RT for batch', batch
      ! Get the radiative quantities:
      !   This particular integrator provides fluxes at the top and bottom 
      !   of the domain for both the domain mean and pixel level fluxes,
@@ -486,8 +490,8 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
 !PRINT *, "mean RadianceStats =", sum (RadianceStats(:, :, 1,1))/real (nX * nY)
       RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + Radiance(:, :, :)**2
     endif
-	
-WRITE(51, '(13E26.16 )') solarFlux, Radiance(1,1,1:4), RadianceStats(1,1,1:4,1), RadianceStats(1,1,1:4,2)
+!PRINT *, thisProc, "accumulated Stats"
+!WRITE(51, '(13E26.16 )') solarFlux, Radiance(1,1,1:4), RadianceStats(1,1,1:4,1), RadianceStats(1,1,1:4,2)
 
    if(recScatOrd) then 
       call reportResults(mcIntegrator, &
@@ -509,12 +513,70 @@ WRITE(51, '(13E26.16 )') solarFlux, Radiance(1,1,1:4), RadianceStats(1,1,1:4,1),
         intensityByScatOrdStats(:,:,:,:,2) = intensityByScatOrdStats(:,:,:,:,2) + ( solarFlux*intensityByScatOrd(:,:,:,:))**2
       end if
    end if
-!PRINT *, 'Driver: Reported results for batch', batch
+!PRINT *, thisProc, 'Driver: Reported results for batch', batch
      ! Release the photon "illumination" object memory
     call finalize_PhotonStream (incomingPhotons)
     call printStatus(status)
+    CALL cpu_time(total)
+!PRINT *, thisProc, "before IPROBE", probe
+    CALL MPI_IPROBE(MPI_ANY_SOURCE, chckpnt, MPI_COMM_WORLD, probe, mpiStatus, ierr)
+!PRINT *, thisProc, "after IPROBE", probe
+    if(probe)CALL MPI_RECV(checkOn, 1, MPI_LOGICAL, MPI_ANY_SOURCE, chckpnt, MPI_COMM_WORLD, mpiStatus, ierr)
+!PRINT *, thisProc, "after RECV", checkOn
+    if(checkOn .and. total-prevTotal .gt. writeFreq)then
+!PRINT *, thisProc, total-prevTotal, batch, counter, total, prevTotal
+	prevTotal=total
+	if(MOD(counter, 2) .eq. 0)then
+       	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 2
+      	else
+      	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 1
+      	end if
+	allocate (fluxUpDummy(nx,ny,2), fluxDownDummy(nx,ny,2),fluxAbsDummy(nx,ny,2),absProfDummy(nz,2), absVolDummy(nx,ny,nz, 2))
+	! Pixel-by-pixel fluxes
+  	fluxUpDummy(:, :, :)       = sumAcrossProcesses(fluxUpStats)
+  	fluxDownDummy(:, :, :)     = sumAcrossProcesses(fluxDownStats)
+  	fluxAbsDummy(:, :, :) = sumAcrossProcesses(fluxAbsorbedStats)
+
+  	! Absorption (mean profile and cell-by-cell)
+  	absProfDummy(:, :)      = sumAcrossProcesses(absorbedProfileStats)
+  	absVolDummy(:, :, :, :) = sumAcrossProcesses(absorbedVolumeStats)
+
+if(MasterProc)PRINT *, thisProc, "writing checkpoint file"
+	if(computeIntensity)then
+	   allocate(radDummy(nx,ny,numRadDir,2))
+	   radDummy(:,:,:,:) = sumAcrossProcesses(radianceStats)
+	   if(MasterProc)CALL writeResults_netcdf(checkpointFile,  numPhotonsPerBatch, numBatches, &
+                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+                                 xPosition, yPosition, zPosition,                 &
+                                 outputNetcdfFile,                                &
+                                 fluxUpDummy, fluxDownDummy, fluxAbsDummy,   &
+                                 absProfDummy, absVolDummy,       &
+                                 intensityMus, intensityPhis, radDummy) 
+	   deallocate(radDummy)
+	else 
+	   if(MasterProc)CALL writeResults_netcdf(checkpointFile,  numPhotonsPerBatch, numBatches, &
+                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+                                 xPosition, yPosition, zPosition,                 &
+                                 outputNetcdfFile,                                &
+                                 fluxUpDummy, fluxDownDummy, fluxAbsDummy,   &
+                                 absProfDummy, absVolDummy)
+	end if
+	deallocate(fluxUpDummy,fluxDownDummy,fluxAbsDummy,absProfDummy,absVolDummy)
+	counter=counter+1
+    end if
   end do batches
 
+!PRINT *, thisProc, "finished batches"
+
+if(checkOn .and. LEN(TRIM(checkpointFile)) .gt. 0)then
+  do q=0, numProcs-1
+     if(q .ne. thisProc)CALL MPI_ISEND(.false., 1, MPI_LOGICAL, q, chckpnt, MPI_COMM_WORLD, request, ierr)
+  end do 
+PRINT *, thisProc, "turned off checkpointing", checkpointFile 
+end if
+
+call synchronizeProcesses
+!if(MasterProc)PRINT *, "synchronized processes at end of batch loop"
   close(51)
   
   if (allocated(voxel_weights)) deallocate (voxel_weights)
@@ -567,6 +629,7 @@ WRITE(51, '(13E26.16 )') solarFlux, Radiance(1,1,1:4), RadianceStats(1,1,1:4,1),
 !  close(17)
 
   call synchronizeProcesses
+!if(MasterProc)PRINT *, "synchronized processes after summing accross processes" 
   call cpu_time(cpuTime2)
   cpuTimeTotal = sumAcrossProcesses(cpuTime2 - cpuTime0)
   call finalizeProcesses
