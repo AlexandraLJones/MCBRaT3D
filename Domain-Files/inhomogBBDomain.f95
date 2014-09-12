@@ -10,16 +10,16 @@ program inhomogBBDomain
   use netcdf  
   implicit none
   
-  character(len=256) :: LGfile,  domfile, domfile_str, component_string, file_list, sourcefile_str, int_str
-  integer ::  ncid, varid, status, nx, ny, nz, i, pEnt,maxz=20, nLG, nlambda, ilambda, isoIndex, source, shapeCode
+  character(len=256) :: LGfile,  domfile, domfile_str, component_string, file_list, sourcefile_str, int_str, SRFfile_str
+  integer ::  ncid, varid, status, nx, ny, nz, i, pEnt,maxz=20, nLG, nlambda, ilambda, isoIndex, source, shapeCode, SRFcode
   integer :: nLegendreCoefficients = 180
-  integer :: nxc,nyc,nzc,xs,ys,zs, xe, ye, ze, i, ncFileId, DimId, ncVarId, nLines
+  integer :: nxc,nyc,nzc,xs,ys,zs, xe, ye, ze, i, ncFileId, DimId, ncVarId, nLines, center
   real(8)    ::  dx, dy, dz, Tb, Tt, concen, SSAs, SSAe, beta_eE, beta_eS 
   real(8) :: s_lambda, dlambda, albedo, Rad1, Rad2, W0, alpha, delta, SRho, y, x, Srange, v0
   real(8), parameter  :: Pi=4*DATAN(1.0_8)
   real     :: re, g
   real, allocatable	 ::  LG(:)
-  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:), lambdas(:), sourceFunc(:) !, Temp(:,:,:)
+  real(8), allocatable    :: Ext(:,:,:), SSA(:,:,:), lambdas(:), sourceFunc(:), SRF(:) !, Temp(:,:,:)
   integer, allocatable	::	pInd(:,:,:), LGind(:)
   integer, dimension(3) ::  dims
   integer, dimension(16) :: ncStatus
@@ -49,6 +49,8 @@ program inhomogBBDomain
   read(*,'(1F)') Rad2
   read(*,'(1I)') shapeCode
   read(*,'(1A)') sourcefile_str
+  read(*,'(1I)') SRFcode
+  read(*,'(1A)') SRFfile_str
   read(*,'(1F)') albedo
   read(*,'(1F)') g
   read(*,'(1I)') nx
@@ -76,6 +78,7 @@ program inhomogBBDomain
   read(*,'(1A)') domfile_str
   read(*,'(1A)') component_string
 
+PRINT *, SRFfile_str
 
   allocate(LG(1:nLG))
 !PRINT *, 'allocated LG'
@@ -235,6 +238,57 @@ PRINT *, 'z=', i+1, commonD%temps(1,1,i+1)
          ncStatus( 3) = nf90_put_var(ncFileId, ncVarId, lambdas)
          ncStatus( 4) = nf90_inq_varid(ncFileId, "SourceFunction", ncVarID)
          ncStatus( 5) = nf90_put_var(ncFileId, ncVarId, sourceFunc)
+         ncStatus( 6) = nf90_close(ncFileId)
+     end if
+  end if
+
+  if (SRFcode .gt. 0)then
+PRINT *, "writing to file: ", SRFfile_str
+     allocate(SRF(1:nLambda))
+     SRF=0.0_8
+     SELECT CASE (SRFcode)
+       CASE(1) ! homogeneous
+	SRF = 1.0_8
+       CASE(2) ! rectangular
+	DO ilambda =1,nLambda
+	   if(DBLE(ilambda) .gt. nLambda/4.0_8 .and. DBLE(ilambda) .le. 3*nLambda/4.0_8)SRF(ilambda)=1.0_8
+	END DO
+       CASE(3) ! increasing
+	DO ilambda =1,nLambda
+	   SRF(ilambda) = DBLE(iLambda)/DBLE(nLambda)
+	END DO
+       CASE(4) ! decreasing
+	DO ilambda =1,nLambda
+	   SRF(ilambda) = DBLE(nLambda-ilambda+1)/DBLE(nLambda)
+	END DO
+       CASE(5) ! triangle
+	center = nLambda/2
+	DO ilambda =1,nLambda
+	   if(ilambda .lt. center)then
+	     SRF(ilambda) = DBLE(ilambda)/DBLE(center)
+	   else if(ilambda .gt. center)then
+	     SRF(ilambda) = DBLE(nlambda-ilambda +1)/DBLE(center)
+	   else ! ilambda = center
+	     SRF(ilambda) = 1.0_8
+	   end if
+        END DO
+       CASE DEFAULT
+	PRINT *, 'no matching case for SRFcode=', SRFcode
+     END SELECT
+     ncStatus(:) = nf90_NoErr
+     ncStatus( 1) = nf90_create(trim(SRFfile_str), nf90_Clobber, ncFileId)
+     ncStatus( 2) = nf90_def_dim(ncFileId, "Lambdas", nLambda, DimId)
+     ncStatus( 3) = nf90_def_var(ncFileId, "Lambdas", nf90_double, DimId, ncVarId)
+     ncStatus( 4) = nf90_def_var(ncFileId, "SRF", nf90_double, DimId, ncVarId)
+
+     if(any(ncStatus(:) /= nf90_NoErr)) &
+         call setStateToFailure(srcstatus, "inhomogBBDomain: error writing SRF file")
+     if(.not. stateIsFailure(srcstatus))then
+         ncStatus( 1) = nf90_EndDef(ncFileId)
+         ncStatus( 2) = nf90_inq_varid(ncFileId, "Lambdas", ncVarID)
+         ncStatus( 3) = nf90_put_var(ncFileId, ncVarId, lambdas)
+         ncStatus( 4) = nf90_inq_varid(ncFileId, "SRF", ncVarID)
+         ncStatus( 5) = nf90_put_var(ncFileId, ncVarId, SRF)
          ncStatus( 6) = nf90_close(ncFileId)
      end if
   end if

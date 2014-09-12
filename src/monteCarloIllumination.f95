@@ -72,7 +72,7 @@ contains
     integer :: i
     
     ! Checks: are input parameters specified correctly? 
-    if(numberOfPhotons <= 0) &
+    if(numberOfPhotons < 0) &
       call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
     if(solarAzimuth < 0. .or. solarAzimuth > 360.) &
       call setStateToFailure(status, "setIllumination: solarAzimuth out of bounds")
@@ -94,7 +94,7 @@ contains
       photons%solarMu( :) = -abs(solarMu)
       photons%solarAzimuth(:) = solarAzimuth * acos(-1.) / 180. 
       photons%currentPhoton = 1
-      
+
       call setStateToSuccess(status)
    end if   
   end function newPhotonStream_Directional
@@ -241,7 +241,7 @@ contains
     if(present(option1))option1=0
 
     ! Checks
-    if(numberOfPhotons <= 0) &
+    if(numberOfPhotons < 0) &
       call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
        
     if(.not. stateIsFailure(status)) then
@@ -256,7 +256,7 @@ contains
       if ( numberOfAtmsPhotons .gt. 0)then
 !PRINT *, "numberOfAtmsPhotons .gt. 0"
           startPhoton = 1
-     
+
           do i = startPhoton,  numberOfAtmsPhotons ! Loop over photons from atms source 
 !           do while (i .le. numberOfPhotoins) 
             ! Random initial positions
@@ -324,7 +324,7 @@ contains
         photons%zPosition(numberOfAtmsPhotons+1:numberOfPhotons) = 0.0_8 ! must be from the sfc. Make sure this value makes sense for how the position is interpretted
      end if
 !PRINT *,  ' photons%solarMu=', photons%solarMu(1)
-      photons%currentPhoton = 1
+     photons%currentPhoton = 1
       call setStateToSuccess(status) 
     end if    
   end function newPhotonStream_LWemission

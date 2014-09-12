@@ -83,7 +83,7 @@ program monteCarloDriver
                           reportAbsorptionProfile = .false. 
   
   ! File names
-  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = ""
+  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = "", instrResponseFile=""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
                           outputNetcdfFile = ""
@@ -111,7 +111,7 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         domainFileList, solarSourceFile, &
+  namelist /fileNames/         domainFileList, solarSourceFile, instrResponseFile, &
                                outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
   
@@ -227,6 +227,7 @@ program monteCarloDriver
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(solarSourceFunction)
      call printStatus(status)
   end if
+
 !automatic assignment of observation angles. If angleFill
 !mu and phi must be specified
   if(angleFill) then
@@ -282,9 +283,12 @@ program monteCarloDriver
   allocate(BBDomain(numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
 !!!!!!!!!! Open list of domain files, then loop over reading them into BBDomain
-  open(unit=22, file=TRIM(domainFileList), status='UNKNOWN')
+!PRINT *, domainFileList
+  open(unit=22, file=TRIM(domainFileList), status='OLD')
 ! first we need to get the dimensions needed to allocate position arrays
-  read(22,'(1A)') domainFileName
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: opened ', domainFileList
+  read(22,'(A)') domainFileName
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: read ', domainFileName
   call read_Common(domainFileName, commonPhysical, status)
   call printStatus(status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
@@ -299,8 +303,7 @@ program monteCarloDriver
 
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
      read(22,'(1A)') domainFileName
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: commonDomain max/mins: ', MAXVAL(commonPhysical%xPosition), MINVAL(commonPhysical%xPosition), MAXVAL(commonPhysical%yPosition), MINVAL(commonPhysical%yPosition), &
-!   MAXVAL(commonPhysical%zPosition), MINVAL(commonPhysical%zPosition), MAXVAL(commonPhysical%temps), MINVAL(commonPhysical%temps)
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Domain: ', i
      call read_Domain(domainFileName, commonPhysical, thisDomain, status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
   !call printStatus(status)
@@ -458,7 +461,7 @@ call printStatus(status)
 !PRINT *, 'retrieved fields for emission weighting'
 !call printStatus(status)
 
-     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, atms_photons, totalFlux=emittedFlux, status=status) 
+     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, atms_photons, totalFlux=emittedFlux, status=status) 
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
@@ -503,7 +506,7 @@ call printStatus(status)
      theseWeights=new_Weights(numLambda=numLambda, status=status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized solar weights'
 call printStatus(status)
-     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
+     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
 call printStatus(status)
      deallocate(solarSourceFunction)
@@ -547,7 +550,7 @@ call printStatus(status)
   call synchronizeProcesses
 !PRINT *, "called synchronizeProcesses"
   cpuTimeSetup = sumAcrossProcesses(cpuTime1 - cpuTime0) 
-if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
 !STOP
   if (MasterProc) &
     print *, "Setup CPU time (secs, approx): ", int(cpuTimeSetup)
@@ -574,15 +577,19 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "cpuTimeSetup=", cpuTimeSetup
     currentFreq = 1								! This is a new variable. Should only range from 1 to nlambda
     n = 1
     allocate(startingPhoton(1:numlambda))               ! This is a new variable. Needs to be initialized to 1
-    startingPhoton = 1
+    startingPhoton = 0
+    WHERE(freqDistr .ne. 0)startingPhoton = 1 
+!PRINT *, startingPhoton
     batchesAssigned = 0
     batchesCompleted = 0
     ! hand out initial work to processes and update photons and currentFreq. !!numProcs must be .le. numLambda!!
     DO WHILE(currentFreq(1) .le. numLambda)
+!PRINT *, "beginning of loop", currentFreq(1), freqDistr(currentFreq(1))
 	DO WHILE(freqDistr(currentFreq(1)) .lt. 1) ! this do while loop let's us skip over empty frequencies
 	  currentFreq = currentFreq + 1
 	  if (currentFreq(1) .gt. numLambda) EXIT
 	END DO	
+!PRINT *, "after skipping", currentFreq(1), freqDistr(currentFreq(1))
 	if (n .le. numLambda .and. n .le. numProcs-1 .and. currentFreq(1) .le. numLambda)then
 	  CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
 	  CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
@@ -675,22 +682,24 @@ PRINT *, "writing checkpoint file"
 
 	if (ANY(freqDistr(:) .gt. 0))then ! if there is still work left to do...
 	     if(freqDistr(currentFreq(1)) .gt. 0)then ! use flag SAME_FREQ. ! are more photons available at the frequency it's currently working on?
-!		PRINT *, 'More work left to do on frequency index', currentFreq, 'Telling rank ', mpiStatus(MPI_SOURCE), 'to keep going'
+!PRINT *, freqDistr(currentFreq(1)), 'Photons left  on frequency index', currentFreq, 'Telling rank ', mpiStatus(MPI_SOURCE), 'to keep going starting with ', startingPhoton(currentFreq)
 		CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), SAME_FREQ, MPI_COMM_WORLD, ierr) 
 		 freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
 		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
 		batchesAssigned = batchesAssigned + 1
 !		PRINT *, 'frequency index ',currentFreq, 'has ', freqDistr(currentFreq), 'remaining photons'
-	     elseif (MINVAL(startingPhoton(:)) .eq. 1)THEN ! There are unassigned frequencies left. use flag NEW_FREQ
-		currentFreq = MINLOC(startingPhoton(:)) ! Returns first location of unassigned frequency
+	     elseif (ANY(startingPhoton(:) .eq. 1))THEN ! There are unassigned frequencies left. use flag NEW_FREQ
+		currentFreq = MINLOC(startingPhoton(:), MASK=startingPhoton .gt. 0) ! Returns first location of unassigned frequency with actual photons to run
+!PRINT *, currentFreq, "frequency was previously unassigned with", freqDistr(currentFreq), "photons left. Starting with photon ", startingPhoton(currentFreq) 
 		CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
 		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr)   ! send the messages containing the needed info
 		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
 		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
 		batchesAssigned = batchesAssigned + 1
 	    else ! assign it to the frequency with the most work left to do. use flag NEW_FREQ
+!PRINT *, "minimum starting photon greater than 0 is ", MINVAL(startingPhoton,  MASK=startingPhoton .gt. 0), "and MINVAL(startingPhoton(:)) .eq. 1 evaluates as ", MINVAL(startingPhoton(:)) .eq. 1
 		currentFreq = MAXLOC(freqDistr(:))
-!		PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency with most remaining photons', currentFreq, freqDistr(currentFreq), 'starting with photon', startingPhoton(currentFreq)
+!PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency with most remaining photons', currentFreq, freqDistr(currentFreq), 'starting with photon', startingPhoton(currentFreq)
 		CALL MPI_SEND(startingPhoton(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
 		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! send the messages containing the needed info
 		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update the book keeping variables

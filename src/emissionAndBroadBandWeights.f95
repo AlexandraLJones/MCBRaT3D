@@ -137,23 +137,32 @@ end if
 
    end subroutine getInfo_Weights
 !---------------------------------------------------------------------------------------------------
-   subroutine solar_Weighting(theseWeights, nLambda, radianceFunction, lambdas, solarMu, totalFlux, status)
+   subroutine solar_Weighting(theseWeights, nLambda, radianceFunction, lambdas, solarMu, fileName, totalFlux, status)
+!     include 'mpif.h'
      type(Weights), intent(inout)                         :: theseWeights
      integer, intent(in)                                  :: nLambda
      real(8), dimension(1:nLambda), intent(in)            :: lambdas, radianceFunction
      real, intent(in)                                     :: solarMu
+     character(len=256), intent(in)                       :: fileName
      real(8), intent(out)                                 :: totalFlux
      type(ErrorMessage), intent(inout)                    :: status
 
+     real(8), dimension(1:nLambda)                        :: spectrRespFunc
      real(8), parameter                                   :: Des = 1.496E8 ! [km] mean earth-sun distance
      real(8), parameter                                   :: Rs = 6.96E5   ! [km] mean radius of sun's photosphere
      real(8), parameter                                   :: Pi=4*DATAN(1.0_8)
      real(8), parameter                                   :: solarSolidAngle=2.0_8*Pi*(1.0_8 - DCOS(DASIN(Rs/(Rs+Des))))
-     integer                                              :: i
+     integer                                              :: i, thisProc, ierr
      real(8)                                              :: dLambda
 
+!     CALL MPI_COMM_RANK(MPI_COMM_WORLD, thisProc, ierr)
      dLambda = lambdas(2)-lambdas(1)
-     theseWeights%totalPowerCDF(1) = dLambda*solarSolidAngle*solarMu*radianceFunction(1)
+     if (LEN(TRIM(fileName)) .gt. 0)then
+	call read_specResponseFunction(fileName, nLambda, spectrRespFunc, status=status)
+	theseWeights%totalPowerCDF(1) = dLambda*solarSolidAngle*solarMu*radianceFunction(1) * spectrRespFunc(1)
+     else
+        theseWeights%totalPowerCDF(1) = dLambda*solarSolidAngle*solarMu*radianceFunction(1)
+     end if
 
      DO i=2, nLambda
         if (i .gt. 1 .and. i .lt. nlambda) then
@@ -163,26 +172,43 @@ end if
         else ! should never end up here
           PRINT *, 'solar_weighting: ended up in error condition of the loop. i = ', i
         end if 
-        theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarSolidAngle*solarMu*radianceFunction(i))
+
+	if (LEN(TRIM(fileName)) .gt. 0)then
+	   theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarSolidAngle*solarMu*radianceFunction(i))* spectrRespFunc(i)
+	else
+           theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarSolidAngle*solarMu*radianceFunction(i))
+	end if
 !PRINT *, 'cumFlux= ', theseWeights%totalPowerCDF(i), 'dLambda= ',dLambda, 'solid angle= ', solarSolidAngle, 'mu= ', solarMu, 'radiance= ', radianceFunction(i)
      END DO
      theseWeights%spectrIntgrFlux = theseWeights%totalPowerCDF(nLambda)
      totalFlux = theseWeights%spectrIntgrFlux
      theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(nLambda)
+!     if (LEN(TRIM(fileName)) .gt. 0)then
+!        call read_specResponseFunction(fileName, nLambda, spectrRespFunc, status=status)
+!if (thisProc .eq. 0)PRINT *, theseWeights%totalPowerCDF
+!	temp(1)=theseWeights%totalPowerCDF(1) * spectrRespFunc(1)
+!	DO i=2, nLambda
+!	    temp(i)=temp(i-1) + (theseWeights%totalPowerCDF(i)-theseWeights%totalPowerCDF(i-1))*spectrRespFunc(i)
+!	END DO
+!        theseWeights%totalPowerCDF = temp
+!if (thisProc .eq. 0)PRINT *, theseWeights%totalPowerCDF
+!     end if
 !PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPowerCDF
    end subroutine solar_Weighting
 !-------------------------------------------------------------------------------------------
-   subroutine emission_weighting(theseDomains, nLambda, theseWeights, sfcTemp, totalPhotons, atmsPhotons, totalFlux, status)
+   subroutine emission_weighting(theseDomains, nLambda, theseWeights, sfcTemp, totalPhotons, fileName, atmsPhotons, totalFlux, status)
 !Computes Planck Radiance for each surface and atmosphere pixel to determine the wieghting for the distribution of photons.
 !Written by ALexandra Jones, University of Illinois, Urbana-Champaign, Fall 2011
 ! Updated Fall 2012 to remove predetermination of number of photons emitted per column
 ! Updated Spring 2013 to work with Broadband code
      implicit none
+!     include 'mpif.h'
 
      type(Domain), dimension(nLambda),intent(in)        :: theseDomains
      type(Weights), intent(inout)                         :: theseWeights
      real(8), intent(in)                                  :: sfcTemp
      integer,  intent(in)                                 :: nLambda, totalPhotons
+     character(len=256),  intent(in)                      :: fileName                     
      integer,  intent(out)                             :: atmsPhotons
 !     real(8), allocatable, dimension(:,:,:,:), intent(out)          :: voxel_weights
 !     real(8), allocatable, dimension(:,:,:), intent(out)          :: col_weights
@@ -190,7 +216,7 @@ end if
      real(8),                                intent(out)  :: totalFlux
      type(ErrorMessage), intent(inout)                         :: status
      !Local variables
-     integer                                           :: ix, iy, iz, ilambda, nx, ny, nz, nComps !, last
+     integer                                           :: ix, iy, iz, ilambda, nx, ny, nz, nComps, thisProc, ierr !, last
      real(8)                                              ::  sfcPlanckRad, sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda, albedo, emiss, dlambda
      real(8), dimension(1:3)                          :: lambda_u
      real(8)                                          :: previous, corr_contrib,corr,temp_sum, prev_exact, tempPower
@@ -199,6 +225,7 @@ end if
      real(8), allocatable, dimension(:,:,:)                         :: cumExt, atmsTemp
      real(8), allocatable, dimension(:,:,:,:)                       :: ssas, ext
      real(8)                                               :: atmsPlanckRad
+     real(8), dimension(1:nLambda)                        :: spectrRespFunc
      
 !     real, dimension(1:nx, 1:ny)                       :: atmsColumn_power
 
@@ -208,7 +235,8 @@ end if
      real(8), parameter                                   :: a=2.0_8*h*c**2.0_8
      real(8), parameter                                   :: Pi=4*DATAN(1.0_8)
 
-
+!     CALL MPI_COMM_RANK(MPI_COMM_WORLD, thisProc, ierr)
+     if (LEN(TRIM(fileName)) .gt. 0) call read_specResponseFunction(fileName, nLambda, spectrRespFunc, status=status)
      call getInfo_Domain(theseDomains(1), numX=nx, numY=ny, numZ=nz, namelistNumLambda=nlambda, &
                          numberOfComponents=nComps, status=status)
 !     allocate(voxel_weights(1:nx,1:ny,1:nz,1:nlambda), col_weights(1:ny,1:nz,1:nlambda), &
@@ -330,7 +358,11 @@ end if
 		theseWeights%fracAtmsPower(ilambda) = atmsPower/(atmsPower + sfcPower)
           end if
 !PRINT *, 'emission weighting: ilambda= ', ilambda,  ' atmosPower= ', atmsPower, ' fractAtmosPower= ', theseWeights%fracAtmsPower(ilambda)
-	  theseWeights%totalPowerCDF(ilambda) = tempPower + atmsPower + sfcPower
+	  if (LEN(TRIM(fileName)) .gt. 0)then
+	     theseWeights%totalPowerCDF(ilambda) = tempPower + (atmsPower + sfcPower)*spectrRespFunc(ilambda)
+          else
+	     theseWeights%totalPowerCDF(ilambda) = tempPower + atmsPower + sfcPower
+          end if
 	  tempPower = theseWeights%totalPowerCDF(ilambda)
 !PRINT *, 'level_weights= ', level_weights, 'col_weights= ', col_weights
      END DO
@@ -347,6 +379,14 @@ end if
 
        atmsPhotons=ceiling(SUM(totalPhotons * theseWeights%fracAtmsPower(:)))
        theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(nlambda)
+!PRINT *, "before srf:", theseWeights%totalPowerCDF
+!       if (LEN(TRIM(fileName)) .gt. 0)then
+!           call read_specResponseFunction(fileName, nLambda, spectrRespFunc, status=status)
+!if (thisProc .eq. 0)PRINT *, "before srf", theseWeights%totalPowerCDF
+!           theseWeights%totalPowerCDF = theseWeights%totalPowerCDF * spectrRespFunc
+!if (thisProc .eq. 0)PRINT *, "after srf", theseWeights%totalPowerCDF
+       !end if
+!PRINT *, "after srf:", theseWeights%totalPowerCDF
 !PRINT *, "emission_weighting: fraction of atmos power ", theseWeights%fracAtmsPower
 !PRINT *, "emission_weighting: total power CDF ", theseWeights%totalPowerCDF
      end if
@@ -409,8 +449,35 @@ end if
 ! IT WOULD BE NICE TO BE ABLE TO CHECK THE LAMBDA VALUES HERE AGAINST THE DOMAIN FILE VALUES, BUT THAT MEANS IT WOULD HAVE TO BE CALLED LATER AFTER THE DOMAINS ARE ALL READ IN
 
     if(.not. stateIsFailure(status)) call setStateToSuccess(status) 
-      
+ end subroutine read_SolarSource      
+!-------------------------------------------------------------------
+ SUBROUTINE read_specResponseFunction(fileName, nLambda, srf, status)
+    character(len = *), intent(in   ) :: fileName
+    integer, intent(in)               :: nLambda
+    real(8), dimension(1:nLambda), intent(out)   :: srf
+    type(ErrorMessage), intent(inout) :: status
 
-   end subroutine read_SolarSource
+    integer                           :: dims, ncFileID, ncDimID, ncVarID
+    integer, dimension(16)            :: ncStatus
+
+    ncStatus(:) = nf90_NoErr
+    if(nf90_open(trim(fileName), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
+      call setStateToFailure(status, "read_specResponseFunction: Can't open file " // trim(fileName))
+    end if
+
+    if(.not. stateIsFailure(status)) then
+      ncStatus( 1) = nf90_inq_dimid(ncFileId, "Lambdas", ncDimId)
+      ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = dims)
+      if(dims .ne. nLambda) &
+        call setStateToFailure(status, "read_specResponseFunction: " // trim(fileName) // &
+                               " dimension of spectral response function does not match numLambdas from namelist.")
+      ncStatus( 3) = nf90_inq_varid(ncFileId, "SRF", ncVarId)
+      ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, srf)
+!PRINT *, 'Radmax=', MAXVAL(sourceFunc), 'Radmin=', MINVAL(sourceFunc)
+      if(any(ncStatus(:) /= nf90_NoErr)) &
+        call setStateToFailure(status, "read_specResponseFunction: " // trim(fileName) // &
+                               " doesn't look a spectral response function file.")
+    end if
+ end subroutine read_specResponseFunction
 
 end module emissionAndBBWeights
