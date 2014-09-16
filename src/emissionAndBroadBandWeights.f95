@@ -137,21 +137,21 @@ end if
 
    end subroutine getInfo_Weights
 !---------------------------------------------------------------------------------------------------
-   subroutine solar_Weighting(theseWeights, nLambda, radianceFunction, lambdas, solarMu, fileName, totalFlux, status)
+   subroutine solar_Weighting(theseWeights, nLambda, solarSourceFunction, lambdas, solarMu, fileName, totalFlux, status)
 !     include 'mpif.h'
      type(Weights), intent(inout)                         :: theseWeights
      integer, intent(in)                                  :: nLambda
-     real(8), dimension(1:nLambda), intent(in)            :: lambdas, radianceFunction
+     real(8), dimension(1:nLambda), intent(in)            :: lambdas, solarSourceFunction
      real, intent(in)                                     :: solarMu
      character(len=256), intent(in)                       :: fileName
      real(8), intent(out)                                 :: totalFlux
      type(ErrorMessage), intent(inout)                    :: status
 
      real(8), dimension(1:nLambda)                        :: spectrRespFunc
-     real(8), parameter                                   :: Des = 1.496E8 ! [km] mean earth-sun distance
-     real(8), parameter                                   :: Rs = 6.96E5   ! [km] mean radius of sun's photosphere
-     real(8), parameter                                   :: Pi=4*DATAN(1.0_8)
-     real(8), parameter                                   :: solarSolidAngle=2.0_8*Pi*(1.0_8 - DCOS(DASIN(Rs/(Rs+Des))))
+!     real(8), parameter                                   :: Des = 1.496E8 ! [km] mean earth-sun distance
+!     real(8), parameter                                   :: Rs = 6.96E5   ! [km] mean radius of sun's photosphere
+!     real(8), parameter                                   :: Pi=4*DATAN(1.0_8)
+!     real(8), parameter                                   :: solarSolidAngle=2.0_8*Pi*(1.0_8 - DCOS(DASIN(Rs/(Rs+Des))))
      integer                                              :: i, thisProc, ierr
      real(8)                                              :: dLambda
 
@@ -159,9 +159,9 @@ end if
      dLambda = lambdas(2)-lambdas(1)
      if (LEN(TRIM(fileName)) .gt. 0)then
 	call read_specResponseFunction(fileName, nLambda, spectrRespFunc, status=status)
-	theseWeights%totalPowerCDF(1) = dLambda*solarSolidAngle*solarMu*radianceFunction(1) * spectrRespFunc(1)
+	theseWeights%totalPowerCDF(1) = dLambda*solarMu*solarSourceFunction(1) * spectrRespFunc(1)
      else
-        theseWeights%totalPowerCDF(1) = dLambda*solarSolidAngle*solarMu*radianceFunction(1)
+        theseWeights%totalPowerCDF(1) = dLambda*solarMu*solarSourceFunction(1)
      end if
 
      DO i=2, nLambda
@@ -174,9 +174,9 @@ end if
         end if 
 
 	if (LEN(TRIM(fileName)) .gt. 0)then
-	   theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarSolidAngle*solarMu*radianceFunction(i))* spectrRespFunc(i)
+	   theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarMu*solarSourceFunction(i))* spectrRespFunc(i)
 	else
-           theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarSolidAngle*solarMu*radianceFunction(i))
+           theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarMu*solarSourceFunction(i))
 	end if
 !PRINT *, 'cumFlux= ', theseWeights%totalPowerCDF(i), 'dLambda= ',dLambda, 'solid angle= ', solarSolidAngle, 'mu= ', solarMu, 'radiance= ', radianceFunction(i)
      END DO
