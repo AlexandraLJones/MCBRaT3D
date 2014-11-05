@@ -83,7 +83,7 @@ program monteCarloDriver
                           reportAbsorptionProfile = .false. 
   
   ! File names
-  character(len=256)   :: SSPFileName = "", SSPFileList = "", solarSourceFile = "", instrResponseFile="", physicalDomainFile=""
+  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = "", instrResponseFile=""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
                           outputNetcdfFile = ""
@@ -111,8 +111,8 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         SSPFileList, solarSourceFile, instrResponseFile, &
-                               physicalDomainFile, outputRadFile, outputFluxFile, &
+  namelist /fileNames/         domainFileList, solarSourceFile, instrResponseFile, &
+                               outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
   
 
@@ -280,80 +280,57 @@ program monteCarloDriver
   ! -----------------------------------------
   !  Read the domain file
   !
-!  allocate(BBDomain(numLambda))
-  call read_Common(physicalDomainFile, commonPhysical, status)
-  call printStatus(status)
-  call getInfo_Common(commonPhysical, numX = nx, numY = ny, numZ = nZ, status)
-  call printStatus(status)
+  allocate(BBDomain(numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
 !!!!!!!!!! Open list of domain files, then loop over reading them into BBDomain
 !PRINT *, domainFileList
-  open(unit=22, file=TRIM(SSPFileList), status='OLD')
+  open(unit=22, file=TRIM(domainFileList), status='OLD')
 ! first we need to get the dimensions needed to allocate position arrays
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: opened ', domainFileList
-  read(22,'(A)') SSPFileName
+  read(22,'(A)') domainFileName
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: read ', domainFileName
-  call new_SSP(SSPFileName, SSPtable, status)
-  call printStatus(status)
-  call read_SSP(SSPFileName, SSPtable, status)
+  call read_Common(domainFileName, commonPhysical, status)
   call printStatus(status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
-!  call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
-!  call printStatus(status)
+  call read_Domain(domainFileName, commonPhysical, thisDomain, status)
+  call printStatus(status)
+  call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
+  call printStatus(status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got dimensions from intial domain'
   REWIND(22)
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
-  allocate(CDF(1:numLambda))
 !  allocate(commonPhysical%xPosition(nx+1), commonPhysical%yPosition(ny+1), commonPhysical%zPosition(nz+1), commonPhysical%temps(nx,ny,nz))
 
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
-     read(22,'(1A)') SSPFileName
+     read(22,'(1A)') domainFileName
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Domain: ', i
-     call read_SSP(SSPFileName, SSPtable, lambda, status)
+     call read_Domain(domainFileName, commonPhysical, thisDomain, status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
      call printStatus(status)
-     call construct_Domain(thisDomain, SSPtable, commonPhysical, status)
-     call printStatus(status)
+   
      call getInfo_Domain(thisDomain, lambda = lambda, lambdaIndex = lambdaI,  &
                       xPosition = xPosition, yPosition = yPosition, &
                       zPosition = zPosition, numberOfComponents=numberOfComponents, status = status) 
-     
-     if(LW_flag >= 0.0)then
-         theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, status=status)
-         call printStatus(status)
-	 call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, atms_photons, totalFlux=emittedFlux, status=status)
-	 call printStatus(status)
-	 CDF(i)=SUM(CDF(1:i))+emittedFlux
-     else
-	 theseWeights=new_Weights(status=status)
-         call printStatus(status)
-	 call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
-	 call printStatus(status)
-	 CDF(i)=SUM(CDF(1:i))+emittedFlux
-!	 deallocate(centralLambdas)
-     end if
-     CDF=CDF/CDF(numLambda)
-     CDF(numLambda)= 1.0_8
+
 !PRINT *, lambda, lambdaI
-!     BBDomain(lambdaI)=thisDomain
+     BBDomain(lambdaI)=thisDomain
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got info for Domain: ', i
-!      call printStatus(status)
+      call printStatus(status)
   END DO
-  deallocate(solarSourceFunction)
-!  call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
+  call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
-!  call printStatus(status)
+  call printStatus(status)
 
   close(22)
 
-!allocate(tempExt(nx,ny,nz))
-!DO i = 1, numLambda 
-!	call getInfo_Domain(BBDomain(i), lambda=lambda, totalExt=tempExt, status=status)
+allocate(tempExt(nx,ny,nz))
+DO i = 1, numLambda 
+	call getInfo_Domain(BBDomain(i), lambda=lambda, totalExt=tempExt, status=status)
 !	if(MasterProc .and. thisThread .eq. 0)PRINT *, 'lambda=', lambda, 'Ext=', tempExt(1,1,1)
-!END DO
-!deallocate(tempExt)
+END DO
+deallocate(tempExt)
 !
 !  I MAY WANT TO IMPLEMENT AN EXPLICIT CHECK HERE TO MAKE SURE CERTAIN COMPONENTS OF ALL THE DOMAINS ARE CONSISTENT WITH EACHOTHER
 !
@@ -475,16 +452,16 @@ program monteCarloDriver
    ! The initial direction and position of the photons are precomputed and 
    !   stored in an "illumination" object.
 !PRINT *, 'solarFlux=', solarFlux
-!  if(LW_flag >= 0.0)then
-!     theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=numLambda, status=status)
+  if(LW_flag >= 0.0)then
+     theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=numLambda, status=status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal weights'
-!call printStatus(status)
+call printStatus(status)
 !     allocate (voxel_weights(nX,nY,nZ,numLambda),col_weights(nY,nZ,numLambda), level_weights(nZ,numLambda))
 !     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
 !PRINT *, 'retrieved fields for emission weighting'
 !call printStatus(status)
 
-!     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, atms_photons, totalFlux=emittedFlux, status=status) 
+     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, atms_photons, totalFlux=emittedFlux, status=status) 
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
@@ -501,18 +478,18 @@ program monteCarloDriver
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux
-!call printStatus(status)
+call printStatus(status)
 !PRINT *, 'Driver: calculated emission weighting'
-!     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
+     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
 !if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
  !!$OMP DO SCHEDULE(static, 1) PRIVATE(thisThread)
-!     DO i = 1, numLambda
+     DO i = 1, numLambda
 !PRINT *, 'numThreads=', numThreads, 'thisThread=', thisThread
-!        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms(thisThread), status=status)
+        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms(thisThread), status=status)
 !	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
-!     END DO
+     END DO
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
-!call printStatus(status)
+call printStatus(status)
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
 !    DO k = 1, nZ
  !     DO j = 1, nY
@@ -525,14 +502,14 @@ program monteCarloDriver
 !PRINT *, 'initialized single photon'
 !call printStatus(status)
 !PRINT *, 'Driver: initialized single photon'
-!  else
-!     theseWeights=new_Weights(numLambda=numLambda, status=status)
+  else
+     theseWeights=new_Weights(numLambda=numLambda, status=status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized solar weights'
-!call printStatus(status)
-!     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
+call printStatus(status)
+     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
-!call printStatus(status)
-!     deallocate(solarSourceFunction)
+call printStatus(status)
+     deallocate(solarSourceFunction)
      deallocate(centralLambdas)
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
@@ -544,13 +521,13 @@ program monteCarloDriver
      END DO
 !PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized SW photon stream'
-!call printStatus(status)
+call printStatus(status)
 !     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
 !                                      numberOfPhotons = 1,   &
 !                                      randomNumbers = randoms, status=status)
 !call printStatus(status)
 !PRINT *, 'initialized SW test photon'     
-!  end if
+  end if
   call finalize_Weights(theseWeights)
 
   solarFlux = emittedFlux
