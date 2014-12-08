@@ -23,9 +23,9 @@ module emissionAndBBWeights
 
 
   
-!  interface xxxxx
-
-!  end interface xxxxx
+  interface emission_weighting 
+   module procedure emission_weightingOLD, emission_weightingNEW
+  end interface emission_weighting
 
   public :: weights
 
@@ -196,7 +196,7 @@ end if
 !PRINT *, "solar_weighting: totalFlux and CDF ", totalFlux, theseWeights%totalPowerCDF
    end subroutine solar_Weighting
 !-------------------------------------------------------------------------------------------
-   subroutine emission_weighting(theseDomains, nLambda, theseWeights, sfcTemp, totalPhotons, fileName, atmsPhotons, totalFlux, status)
+   subroutine emission_weightingOLD(theseDomains, nLambda, theseWeights, sfcTemp, totalPhotons, fileName, atmsPhotons, totalFlux, status)
 !Computes Planck Radiance for each surface and atmosphere pixel to determine the wieghting for the distribution of photons.
 !Written by ALexandra Jones, University of Illinois, Urbana-Champaign, Fall 2011
 ! Updated Fall 2012 to remove predetermination of number of photons emitted per column
@@ -391,7 +391,144 @@ end if
 !PRINT *, "emission_weighting: total power CDF ", theseWeights%totalPowerCDF
      end if
      deallocate(xPosition, yPosition)
-   end subroutine emission_weighting
+   end subroutine emission_weightingOLD
+
+   subroutine emission_weightingNEW(thisDomain, nLambda, iLambda, theseWeights, sfcTemp, totalPhotons, fileName, status)
+     implicit none
+
+     type(Domain), intent(in)                             :: thisDomain
+     type(Weights), intent(inout)                         :: theseWeights
+     real(8), intent(in)                                  :: sfcTemp
+     integer,  intent(in)                                 :: nLambda, totalPhotons
+     integer, dimension(1), intent(in)                    :: iLambda
+     character(len=256),  intent(in)                      :: fileName
+!     integer,  intent(out)                             :: atmsPhotons
+!     real(8),                                intent(out)  :: totalFlux
+     type(ErrorMessage), intent(inout)                         :: status
+     !Local variables
+     integer                                           :: ix, iy, iz, nx, ny, nz, nComps, thisProc, ierr !, last
+     real(8)                                              ::  sfcPlanckRad,sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda, albedo, emiss,dlambda
+!     real(8), dimension(1:3)                          :: lambda_u
+     real(8)                                          :: previous,corr_contrib,corr,temp_sum, prev_exact, tempPower, totalFlux
+     real(8), allocatable, dimension(:)                             :: dx, dy,dz
+     real(8), allocatable, dimension(:)                             ::xPosition, yPosition, zPosition
+     real(8), allocatable, dimension(:,:,:)                         :: cumExt,atmsTemp
+     real(8), allocatable, dimension(:,:,:,:)                       :: ssas, ext
+     real(8)                                               :: atmsPlanckRad
+     real(8), dimension(1:nLambda)                        :: spectrRespFunc
+
+     real(8), parameter                                   :: h=6.62606957e-34 !planck's constant [Js]
+     real(8), parameter                                   :: c=2.99792458e+8 !speed of light [ms^-1]
+     real(8), parameter                                   :: k=1.3806488e-23 !boltzman constant [J/K molecule]
+     real(8), parameter                                   :: a=2.0_8*h*c**2.0_8
+     real(8), parameter                                   :: Pi=4*DATAN(1.0_8)
+
+!     CALL MPI_COMM_RANK(MPI_COMM_WORLD, thisProc, ierr)
+     if (LEN(TRIM(fileName)) .gt. 0) call read_specResponseFunction(fileName,nLambda, spectrRespFunc, status=status)
+     call getInfo_Domain(thisDomain, numX=nx, numY=ny, numZ=nz,namelistNumLambda=nlambda, &
+                         numberOfComponents=nComps, status=status)
+     allocate(xPosition(1:nx+1), yPosition(1:ny+1), zPosition(1:nz+1), dz(1:nz),&
+              dy(1:ny), dx(1:nx), atmsTemp(1:nx,1:ny,1:nz),ssas(1:nx,1:ny,1:nz,1:nComps),&
+              ext(1:nx,1:ny,1:nz,1:nComps), cumExt(1:nx,1:ny,1:nz))
+     call getInfo_Domain(thisDomain, xPosition=xPosition,yPosition=yPosition, &
+                         temps=atmsTemp, zPosition=zPosition, status=status)
+
+     dz(1:nz)=zPosition(2:nz+1)-zPosition(1:nz)
+     dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
+     dx(1:nx)=xPosition(2:nx+1)-xPosition(1:nx)
+
+
+     tempPower = 0.0_8
+!     lambda_u = 0.0_8
+
+!     DO ilambda = 1, nlambda
+         !!$OMP ORDERED
+!        if (ilambda .gt. 1 .and. ilambda .lt. nlambda) then ! this if block has to be executed in order
+!          call getInfo_Domain(theseDomains(ilambda+1), lambda=lambda_u(3),status=status)
+!          dlambda = (lambda_u(3)-lambda_u(1))/2.0_8 ! half points between ilambda and the adjacent values
+!          lambda = lambda_u(2)
+!          lambda_u(1) = lambda_u(2)
+!          lambda_u(2) = lambda_u(3)
+!        elseif (ilambda .eq. 1) then
+!          call getInfo_Domain(theseDomains(ilambda), lambda=lambda_u(1),status=status)
+!          call getInfo_Domain(theseDomains(ilambda+1), lambda=lambda_u(2),status=status)
+!          dlambda = lambda_u(2)-lambda_u(1)
+!          lambda = lambda_u(1)
+!        elseif (ilambda .eq. nlambda) then
+!         PRINT *, ilambda
+!          dlambda = lambda_u(2)-lambda_u(1)
+!          lambda = lambda_u(2)
+!        else ! should never end up here
+!          PRINT *, 'emission_weighting: ended up in error condition of the loop. ilambda = ', ilambda
+!        end if
+         !!$OMP END ORDERED
+        call getInfo_Domain(thisDomain, lambda=lambda, status=status)
+        call getInfo_Domain(thisDomain, albedo=albedo, ssa=ssas,ext=ext, totalExt=cumExt, status=status)
+
+        emiss = (1.0_8 - albedo)
+        lambda=lambda/(10.0_8**6.0_8) ! convert lambda from micrometers to meters
+!        dlambda = dlambda/(10.0_8**6.0_8)
+        b=h*c/(k*lambda)
+
+     if (emiss .eq. 0.0_8 .or. sfcTemp .eq. 0.0_8)then
+        sfcPower=0.0_8
+     else
+!        sfcPlanckRad=dlambda*(a/((lambda**5.0_8)*(exp(b/sfcTemp)-1.0_8))) ! for broadband quantity we have to factor in discretization width, dlambda
+        sfcPlanckRad=(a/((lambda**5.0_8)*(exp(b/sfcTemp)-1.0_8)))/(10.0_8**6.0_8)! the 10^-6 factor converts it from Wsr^-1m^-3 to Wm^-2sr^-1micron^-1
+        sfcPower = Pi*emiss*sfcPlanckRad*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8) ! [W] factor of 1000^2 needed to convert area from km to m
+     end if
+
+     atmsPower = 0.0_8
+     previous=0.0_8
+     corr_contrib=0.0_8
+     temp_sum=0.0_8
+     corr=0.0_8
+     prev_exact=0.0_8
+
+    if(COUNT(atmsTemp .le. 0.0_8) .eq. 0)then
+     do iz = 1, nz
+       do iy = 1, ny
+         do ix = 1, nx
+!           atmsPlanckRad=dlambda*(a/((lambda**5.0_8)*(exp(b/atmsTemp(ix,iy,iz))-1.0_8))) ! for broadband quantity we have to factor in discretization width, dlambda
+           atmsPlanckRad=(a/((lambda**5.0_8)*(exp(b/atmsTemp(ix,iy,iz))-1.0_8)))/(10.0_8**6.0_8)! the 10^-6 factor converts it from Wsr^-1m^-3 to Wm^-2sr^-1micron^-1
+           totalAbsCoef=cumExt(ix,iy,iz)-sum(ssas(ix,iy,iz,:) * ext(ix,iy,iz,:))
+           corr_contrib = (4.0_8*Pi* atmsPlanckRad * totalAbsCoef*dz(iz))-corr ! [Wm^-2]
+           temp_sum = previous + corr_contrib
+           corr = (temp_sum - previous)-corr_contrib
+           previous = temp_sum
+           theseWeights%voxelWeights(ix,iy,iz,1) = previous
+           prev_exact=prev_exact + dble(1.0_8/(nx*ny*nz))
+         end do
+       end do
+     end do  
+    end if
+          if (theseWeights%voxelWeights(nx,ny,nz,1) .gt. 0.0_8) then
+               atmsPower = theseWeights%voxelWeights(nx,ny,nz,1)*(xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)/dble(nx*ny) ! [W] total power emitted by atmosphere. Factor of 1000^2 is to convert dx and  dy from km to m
+               theseWeights%voxelWeights(:,:,:,1)=theseWeights%voxelWeights(:,:,:,1)/theseWeights%voxelWeights(nx,ny,nz,1)! normalized
+               theseWeights%voxelWeights(nx,ny,nz,1)=1.0_8     ! need this to be 1 for algorithm used to select emitting voxel
+                theseWeights%fracAtmsPower(1) = atmsPower/(atmsPower + sfcPower)
+          end if
+          if (LEN(TRIM(fileName)) .gt. 0)then
+             theseWeights%totalPowerCDF(1) = tempPower + (atmsPower + sfcPower)*spectrRespFunc(iLambda(1))
+          else
+             theseWeights%totalPowerCDF(1) = tempPower + atmsPower + sfcPower
+          end if
+          tempPower = theseWeights%totalPowerCDF(1)
+     
+     deallocate( zPosition, dz, dy, dx, atmsTemp, ssas, ext, cumExt)
+
+     if (theseWeights%totalPowerCDF(1) .eq. 0.0_8)then
+        CALL setStateToFailure(status, 'emission_weighting: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
+     else
+       totalFlux=theseWeights%totalPowerCDF(1)/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)) ! We want the units to be [Wm^-2] but the x and y positions are in km
+       theseWeights%spectrIntgrFlux = totalFlux  ! in this routine this value is actually the monochromatic flux--the spectral width is not taken into account
+
+!       atmsPhotons=ceiling(totalPhotons * theseWeights%fracAtmsPower(1))
+       theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(1)
+     end if
+     deallocate(xPosition, yPosition)
+
+   end subroutine emission_weightingNEW
 
    subroutine getFrequencyDistr(theseWeights, totalPhotons, randomNumbers, distribution)
      implicit none

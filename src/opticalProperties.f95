@@ -993,7 +993,7 @@ contains
       ncStatus( 3) = nf90_get_att(ncFileID, nf90_Global,  "numberOfLambdas", nlambda)
       ncStatus( 4) = nf90_get_att(ncFileID, nf90_Global,  "surfaceAlbedo", albedo)
 
-      call finalize_Domain(thisDomain)
+!      call finalize_Domain(thisDomain)
 !      thisDomain = new_Domain(xEdges, yEdges, zEdges, lambda, lambdaI, nlambda, albedo, temps, status)
 !PRINT *, 'read_Domain: commonD max/mins ', MAXVAL(commonD%xPosition), MINVAL(commonD%xPosition), MAXVAL(commonD%yPosition), MINVAL(commonD%yPosition), MAXVAL(commonD%zPosition), MINVAL(commonD%zPosition), MAXVAL(commonD%temps), MINVAL(commonD%temps)
       thisDomain = new_Domain(commonD, lambda, lambdaI, nlambda, albedo, status)

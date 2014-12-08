@@ -18,7 +18,8 @@ module monteCarloIllumination
   use RandomNumbers
   use emissionAndBBWeights
   use numericUtilities
- 
+  use CharacterUtils
+
   implicit none
   private
 
@@ -45,7 +46,7 @@ module monteCarloIllumination
   !------------------------------------------------------------------------------------------
   interface new_PhotonStream
     module procedure newPhotonStream_Directional, newPhotonStream_RandomAzimuth, newPhotonStream_BBEmission, &
-                     newPhotonStream_Flux, newPhotonStream_Spotlight, newPhotonStream_LWemission
+                     newPhotonStream_Flux, newPhotonStream_Spotlight, newPhotonStream_LWemission !, newPhotonStream_LWemissionNEW
   end interface new_PhotonStream
   !------------------------------------------------------------------------------------------
   ! What is visible? 
@@ -113,7 +114,7 @@ contains
     integer :: i
     
     ! Checks: are input parameters specified correctly? 
-    if(numberOfPhotons <= 0) &
+    if(numberOfPhotons < 0) &
       call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
     if(abs(solarMu) > 1. .or. abs(solarMu) <= tiny(solarMu)) &
       call setStateToFailure(status, "setIllumination: solarMu out of bounds")
@@ -151,7 +152,7 @@ contains
     integer :: i
     
     ! Checks
-    if(numberOfPhotons <= 0) &
+    if(numberOfPhotons < 0) &
       call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
      
     if(.not. stateIsFailure(status)) then
@@ -186,7 +187,7 @@ contains
     type(photonStream)                        :: photons
         
     ! Checks: are input parameters specified correctly? 
-    if(numberOfPhotons <= 0) &
+    if(numberOfPhotons < 0) &
       call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
     if(solarAzimuth < 0. .or. solarAzimuth > 360.) &
       call setStateToFailure(status, "setIllumination: solarAzimuth out of bounds")
@@ -329,6 +330,102 @@ contains
     end if    
   end function newPhotonStream_LWemission
 !-------------------------------------------------------------------------------------------
+! function newPhotonStream_LWemissionNEW(theseWeights, iLambda, numberOfPhotons,randomNumbers, status, option1) result(photons)
+!        implicit none
+
+!        type(Weights), intent(in)                               :: theseWeights
+!        integer, intent(in)                                     :: numberOfPhotons, iLambda
+!        type(randomNumberSequence), intent(inout)               :: randomNumbers
+!        type(ErrorMessage), intent(inout)                       :: status
+!        integer, dimension(:,:,:), optional, intent(out)        :: option1
+!        type(photonStream)                                      :: photons
+!
+!        real(8)                                                 :: fracAtmsPower
+!        real(8), allocatable, dimension(:)                      :: levelWeights
+!        real(8), allocatable, dimension(:,:)                    :: colWeights
+!        real(8), allocatable, dimension(:,:,:)                  :: voxelWeights
+!        real                                                    :: RN
+!        integer                                                 :: numX, numY,numZ, i, ii, ij, ik, sfcTally, atmsTally, k, j
+
+!    sfcTally = 0; atmsTally = 0
+!    ! Checks
+!        if(numberOfPhotons <= 0) &
+!          call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
+!        if(.not. stateIsFailure(status)) then
+!          call getInfo_Weights(theseWeights=theseWeights, iLambda=1, numX=numX, numY=numY, numZ=numZ, status=status)
+!          if(present(option1))then
+!!            allocate(option1(1:numX,1:numY,1:numZ))
+!            option1=0
+!          end if
+!          allocate(photons%xPosition(numberOfPhotons),photons%yPosition(numberOfPhotons), &
+!               photons%zPosition(numberOfPhotons), &
+!               photons%solarMu(numberOfPhotons), photons%solarAzimuth(numberOfPhotons))
+
+        ! get relevant theseWeights values    !!!!!!!BUT i REALLY ONLY HAVE TO
+        ! DO THIS FOR THE ATMOSPHERE SO SHOULD IT GO IN A DIFFERENT SUBROUTINE,
+        ! MAYBE IN THE EMISSIONbbwEIGHTS MODULE?????
+!          allocate(levelWeights(1:numZ), colWeights(1:numY,1:numZ),voxelWeights(1:numX,1:numY,1:numZ))
+!          call getInfo_weights(theseWeights=theseWeights, iLambda=1,fracAtmsPower=fracAtmsPower, levelWeights=levelWeights, colWeights=colWeights,voxelWeights=voxelWeights, status=status)
+!!    write(32,"(36F12.8)") levelWeights(:)
+!!    DO k = 1, numZ
+!!      write(33,"(100F12.8)") colWeights(:,k)
+!!      DO j = 1, numY
+!!        write(31,"(100F12.8)") voxelWeights(:,j,k)
+!!      end do
+!!    end do
+!!    close(31)
+!!    close(32)
+!!    close(33)
+!
+!          DO i = 1, numberOfPhotons
+!          ! determine if it's emitting from the surface or atmosphere
+!            RN = getRandomReal(randomNumbers)
+!            if (RN .gt. fracAtmsPower) then ! must be from surface
+!                photons%xPosition(   i) = getRandomReal(randomNumbers) !Assuming the surface temperature and emissivities are the same everywhere the x,y values don't need to be weighted
+!                photons%yPosition(   i) = getRandomReal(randomNumbers)
+!                DO
+!                  photons%solarMu(     i) = sqrt(getRandomReal(randomNumbers))
+! This formula is from section 10.5 of '3D radiative trasnfer in cloudy
+! atmospheres'. These angles will stay the same...truly random numbers, since LW
+! emission is isotropic. But the Mu has to be positive for a sfc source. The
+! name "solarMu" should really just be "sourceMu"
+!                  if(abs(photons%solarMu(i)) > 2 * tiny(photons%solarMu(i)))exit  ! This ensures that there is some vertical component to the photon trajectory, so the photon doesn't get permanently stuck in the lowest layer. this is especially bad when there is no atmospheric extinction because then the photon will never leave the domain or hit the surface or become extinct. Thus we enter an infinite loop
+!                END DO
+!                sfcTally = sfcTally + 1
+!                photons%solarAzimuth(i) = getRandomReal(randomNumbers) * 2. * acos(-1.)
+!                photons%zPosition(i) = 0.0_8
+!            else  ! must be from atmos
+!                RN = getRandomReal(randomNumbers)
+!                ik = findCDFIndex(RN, levelWeights)
+!                ij = findCDFIndex(RN, colWeights(:,ik))
+!                ii = findCDFIndex(RN, voxelWeights(:,ij,ik))
+!
+!                photons%zPosition(i) = ((ik-1)*(1.0_8)/numZ) + dble(getRandomReal(randomNumbers)/numZ) ! The first term represents the fractional position of the layer bottom in the column, such that ik=1 corresponds to a position of 0. The second term respresents the position within the layer.
+!                if(ik .eq. 1 .and. photons%zPosition(i) .eq. 0.0_8) photons%zPosition(i)=0.0_8+spacing(1.0_8)
+!                if(ik .eq. numZ .and. photons%zPosition(i) .gt. 1.0_8-2.0_8*spacing(1.0_8)) photons%zPosition(i)=photons%zPosition(i) -(2.0_8*spacing(1.0_8))
+!                photons%xPosition(i) = ((ii -1)*1.0_8/numX) + dble(getRandomReal(randomNumbers)*(1.0/numX))
+ !               photons%yPosition(i) = ((ij -1)*1.0_8/numY) + dble(getRandomReal(randomNumbers)*(1.0/numY))
+!                DO
+!                  photons%solarMu(i) = 1-(2.*getRandomReal(randomNumbers))    !This formula is from section 10.5 of '3D radiative transfer in cloudy atmospheres'. These angles will stay the same...truly random numbers, since LW emission is isotropic. But the Mu no longer has to be negative. The name "solarMu" should really just be "sourceMu"
+!                  if(abs(photons%solarMu(i)) > 2 * tiny(photons%solarMu(i)))exit  ! This ensures that there is some vertical component to the photon trajectory, so the photon doesn't get permanently stuck in the layer it's initialized in
+!                END DO
+!                photons%solarAzimuth(i) = getRandomReal(randomNumbers) * 2. * acos(-1.)
+!                atmsTally = atmsTally + 1
+!                if(present(option1))then
+!                  option1(ii,ij,ik)=option1(ii,ij,ik)+1
+!                end if
+!            end if
+!          END DO
+!deallocate (levelWeights, colWeights, voxelWeights)
+!PRINT *, atmsTally, sfcTally
+!          photons%currentPhoton = 1
+!          call setStateToSuccess(status)
+!        end if
+!  end function newPhotonStream_LWemissionNEW
+
+
+
+!------------------------------------------------------------------------------------------
   function newPhotonStream_BBEmission(theseWeights, iLambda, numberOfPhotons, randomNumbers, status, option1) result(photons)
 	implicit none
 
@@ -348,8 +445,8 @@ contains
 
     sfcTally = 0; atmsTally = 0
     ! Checks
-        if(numberOfPhotons <= 0) &
-          call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons.")
+        if(numberOfPhotons < 0) &
+          call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons: " // trim(intToChar(numberOfPhotons)))
 
         if(.not. stateIsFailure(status)) then
 	  call getInfo_Weights(theseWeights=theseWeights, iLambda=iLambda, numX=numX, numY=numY, numZ=numZ, status=status)
@@ -412,7 +509,7 @@ contains
 	    end if
 	  END DO
 deallocate (levelWeights, colWeights, voxelWeights)
-PRINT *, atmsTally, sfcTally
+PRINT *, 'newPhotonStream_BBEmission: for index ', iLambda, 'photons are slpit between atmos and surface as ', atmsTally, sfcTally
 	  photons%currentPhoton = 1
 	  call setStateToSuccess(status)
  	end if
