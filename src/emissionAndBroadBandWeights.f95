@@ -432,6 +432,7 @@ end if
               ext(1:nx,1:ny,1:nz,1:nComps), cumExt(1:nx,1:ny,1:nz))
      call getInfo_Domain(thisDomain, xPosition=xPosition,yPosition=yPosition, &
                          temps=atmsTemp, zPosition=zPosition, status=status)
+PRINT *, "emissionWeightingNEW: max temp = ", MAXVAL(atmsTemp)
 
      dz(1:nz)=zPosition(2:nz+1)-zPosition(1:nz)
      dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
@@ -463,7 +464,9 @@ end if
 !        end if
          !!$OMP END ORDERED
         call getInfo_Domain(thisDomain, lambda=lambda, status=status)
+PRINT *, "emissionWeightingNew: lambda = ", lambda
         call getInfo_Domain(thisDomain, albedo=albedo, ssa=ssas,ext=ext, totalExt=cumExt, status=status)
+PRINT *, "emissionWeightingNew: max totalExt=", MAXVAL(cumExt), "max Ext=", MAXVAL(ext)
 
         emiss = (1.0_8 - albedo)
         lambda=lambda/(10.0_8**6.0_8) ! convert lambda from micrometers to meters
@@ -518,7 +521,7 @@ end if
      deallocate( zPosition, dz, dy, dx, atmsTemp, ssas, ext, cumExt)
 
      if (theseWeights%totalPowerCDF(1) .eq. 0.0_8)then
-        CALL setStateToFailure(status, 'emission_weighting: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
+        CALL setStateToFailure(status, 'emission_weightingNEW: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
      else
        totalFlux=theseWeights%totalPowerCDF(1)/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)) ! We want the units to be [Wm^-2] but the x and y positions are in km
        theseWeights%spectrIntgrFlux = totalFlux  ! in this routine this value is actually the monochromatic flux--the spectral width is not taken into account

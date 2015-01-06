@@ -83,7 +83,7 @@ program monteCarloDriver
                           reportAbsorptionProfile = .false. 
   
   ! File names
-  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = "", instrResponseFile=""
+  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = "", instrResponseFile="", SSPfilename=""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
                           outputNetcdfFile = ""
@@ -111,7 +111,7 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         domainFileList, solarSourceFile, instrResponseFile, &
+  namelist /fileNames/         domainFileList, solarSourceFile, instrResponseFile, SSPfilename,&
                                outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
   
@@ -152,7 +152,7 @@ program monteCarloDriver
   integer, parameter     :: EXIT_TAG = 99, NEW_FREQ = 1, SAME_FREQ = 2, PHOTONS = 4
 
    ! I3RC Monte Carlo code derived type variables
-  type(commonDomain)         :: commonPhysical
+  type(commonDomain)         :: commonPhysical, commonConcen
   type(domain)               :: thisDomain
   type(domain), allocatable, dimension(:) :: BBDomain
   type(ErrorMessage)         :: status
@@ -537,6 +537,9 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
   solarFlux = emittedFlux
 if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
+ call read_Common("./Domain-Files/SSPtest_physicalDomain_1_1_1.dom", commonConcen, status)
+ call printStatus(status)
+
 !  call finalize_Domain(thisDomain)
  !!$OMP END PARALLEL
 !STOP
@@ -724,13 +727,16 @@ PRINT *, "writing checkpoint file"
     CALL MPI_RECV(left, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
     CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 !    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
+!!!!!!!!!!!!!!TODO read appropriate SSPs from file and construct domain !!!!!!!!!!!!!!!
+        CALL read_SSPTable(SSPfilename, currentFreq(1), commonConcen, thisDomain, status)
+
     DO i=0,numThreads-1
        randoms(thisThread)=new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
     END DO
     if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
         theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
         CALL printStatus(status)
-        CALL emission_weighting(BBDomain(currentFreq(1)), numLambda, currentFreq, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, status=status)
+        CALL emission_weighting(thisDomain, numLambda, currentFreq, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, status=status)
         CALL printStatus(status)
 	incomingPhotons=new_PhotonStream(theseWeights=theseWeights,iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
 PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
@@ -753,7 +759,7 @@ PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPe
 !	    randoms(i) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
 !	END DO
 	! Now we compute the radiative transfer for this batch of photons.
-	call computeRadiativeTransfer (mcIntegrator, BBDomain(currentFreq(1)), randoms(thisThread), incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status)
+	call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status)
 	call printStatus(status)
 	! get contribution arrays from integrator
 	!   This particular integrator provides fluxes at the top and bottom
@@ -831,11 +837,13 @@ PRINT *, 'Rank', thisProc, 'entered the sumAcrossprocesses block'
 	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
 	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) then
 	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
+	    CALL finalize_Domain(thisDomain)
+	    CALL read_SSPTable(SSPfilename, currentFreq(1), commonConcen, thisDomain, status) !!!! TODO !!!!
 	    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
 		CALL finalize_Weights(theseWeights)
 		theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
 	        CALL printStatus(status)
-        	CALL emission_weighting(BBDomain(currentFreq(1)), numLambda, currentFreq, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, status=status)
+        	CALL emission_weighting(thisDomain, numLambda, currentFreq, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, status=status)
 	        CALL printStatus(status)
 	    end if
 	end if

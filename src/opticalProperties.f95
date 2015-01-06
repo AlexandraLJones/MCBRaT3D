@@ -24,6 +24,7 @@ module opticalProperties
   
   integer, parameter :: maxNameLength = 256
   real,    parameter :: Pi = 3.14159265358979312 
+  real(8),    parameter :: light_spd = 2.99792458E8 ![m/s]
   !------------------------------------------------------------------------------------------
   ! Type (object) definitions
   !------------------------------------------------------------------------------------------
@@ -64,6 +65,7 @@ module opticalProperties
     real(8), allocatable          :: yPosition(:) 
     real(8), allocatable          :: zPosition(:) 
     real(8), allocatable          :: temps(:,:,:) 
+    real(8), allocatable          :: numConc(:,:,:,:) ! component, x, y, z
 
   end type commonDomain
 
@@ -128,10 +130,137 @@ module opticalProperties
             addOpticalComponent, deleteOpticalComponent, replaceOpticalComponent,   &
             getOpticalPropertiesByComponent, finalize_Matrix, new_Matrix,           &
             accumulateExtinctionAlongPath, tabulateInversePhaseFunctions,           &
-            tabulateForwardPhaseFunctions, read_Common!,  getAverageOpticalProperties
+            tabulateForwardPhaseFunctions, read_Common, read_SSPTable !,  getAverageOpticalProperties
             
 
 contains
+
+   subroutine read_SSPTable(filename, lambdaIndex, commonD, thisDomain, status)
+    character(len = *), intent(in   ) :: fileName
+    integer,            intent(in)    :: lambdaIndex
+    type(commonDomain), intent(in)    :: commonD
+    type(Domain), intent(out)         :: thisDomain
+    type(ErrorMessage), intent(inout) :: status
+
+    integer, dimension(25)            :: ncStatus
+    type(phaseFunctionTable)          :: table
+    logical                           :: horizontallyUniform, fillsVerticalDomain
+    character(len = maxNameLength)    :: name
+    integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length
+    real(8)                           :: lambda, albedo, freq
+    integer                           :: nDims, ncVarID, ncDimId, ncFileId, zGridDimId
+    integer, dimension(3)             :: dimIds
+    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:)
+    integer, allocatable              :: phaseFunctionIndex(:,:,:)
+
+    nXEdges = size(commonD%xPosition)
+    nYEdges = size(commonD%yPosition)
+    nZEdges = size(commonD%zPosition) 
+
+    ncStatus(:) = nf90_NoErr
+    if(nf90_open(trim(fileName), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
+      call setStateToFailure(status, "read_SSPTable: Can't open file " // trim(fileName))
+    end if
+
+    ncStatus( 1) = nf90_inq_dimid(ncFileId, "f_grid_nelem", ncDimId)
+    ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nLambda)
+    ncStatus( 3) = nf90_inq_varid(ncFileId, "freq_grid", ncVarId)
+    ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, freq, start = (/lambdaIndex/))
+    lambda = (light_spd * (10**6))/freq  ![microns] 
+    ncStatus( 5) = nf90_inq_varid(ncFileId, "surfaceAlbedo", ncVarId)
+    ncStatus( 6) = nf90_get_var(ncFileID, ncVarId, albedo, start = (/lambdaIndex/))
+    ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-Grid", zGridDimId)
+    ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
+
+    if(any(ncStatus(:) .ne. nf90_NoErr)) &
+        call setStateToFailure(status, "read_SSPTable: " // trim(fileName) // &
+                               " doesn't look an optical properties file.")
+    thisDomain = new_Domain(commonD, lambda, lambdaIndex, nlambda, albedo, status)
+
+    ncStatus( 9) = nf90_get_att(ncFileID, nf90_Global, "numberOfComponents", nComponents)
+      do i = 1, nComponents
+        ncStatus(10) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "Name", name)
+        ncStatus(11) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "zLevelBase", zLevelBase)
+        !
+        ! Read in the profile of absorption cross section
+        !
+	allocate(xsec(1:nZGrid))
+        ncStatus(12) = nf90_inq_varid(ncFileId, "xsec", ncVarId)
+        ncStatus(13) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1, lambdaIndex/))
+        ncStatus(22) =  nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
+        do j =1, nDims
+	   ncStatus(22+j) =  nf90_Inquire_Dimension(ncFileId, dimIds(j), len = length)
+	   PRINT *, "read_SSPTable dimension ", j, "has length ", length
+        end do
+PRINT*, "read_SSPTable lambdaIndex= ", lambdaIndex, "nDims= ", ndims  
+        !
+        ! Is the component horizontally homogeneous? Does it fill the entire domain vertically?
+        !
+        ncStatus(14) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
+        ncStatus(15) = nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
+PRINT *, "read_SSPTable nDims=", nDims
+        horizontallyUniform = (ndims == 1)
+        fillsVerticalDomain = (dimIds(ndims) == zGridDimId)
+        if(fillsVerticalDomain) then
+          nZGrid = nZEdges - 1
+        else
+          ncStatus(16) = nf90_inq_dimId(ncFileId, trim(makePrefix(i)) // "z-Grid", ncDimId)
+          ncStatus(17) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZGrid)
+        end if
+        !
+        ! Read in the scalar 3D or 1D fields
+        !
+        if(horizontallyUniform) then
+          allocate(extinction(1,1,nZGrid),singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid))
+	  extinction(1,1,:) = xsec * commonD%numConc(1,1,1,:) 
+          ncStatus(18) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
+          ncStatus(19) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(1, 1, :))
+          ncStatus(20) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex", ncVarId)
+          ncStatus(21) = nf90_get_var(ncFileId, ncVarId, phaseFunctionIndex(1, 1, :))
+        else
+          allocate(extinction(nXEdges - 1, nYEdges - 1, nZGrid), &
+                       singleScatteringAlbedo(nXEdges - 1, nYEdges - 1, nZGrid), &
+                       phaseFunctionIndex(nXEdges - 1, nYEdges - 1, nZGrid))
+	  extinction(:,:,:) = spread(spread(xsec*commonD%numConc(1,1,1,:),  &
+                                                           1, nCopies = nXEdges-1), 2, nCopies = nYEdges-1)
+          ncStatus(18) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
+          ncStatus(19) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(:, :, :))
+          ncStatus(20) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex", ncVarId)
+          ncStatus(21) = nf90_get_var(ncFileId, ncVarId, phaseFunctionIndex(:, :, :))
+        end if
+PRINT *, "read_SSPTable: got vars for component ", i, "ncstatus=", ncStatus(:)
+        if(any(ncStatus(:) .ne. nf90_NoErr)) then
+PRINT *, "read_SSPTable: Error reading scalar fields from file"
+          call setStateToFailure(status, "read_SSPTable: Error reading scalar fields from file " // trim(fileName))
+	else
+	  PRINT *, "read_SSPTable: no problem reading scalar fields, ", ncStatus(:)
+        end if
+        !
+        ! Read in the phase function table(s)
+        !
+        if(.not. stateIsFailure(status)) &
+          call read_PhaseFunctionTable(fileId = ncFileId, table = table,                  &
+                                       prefix = "Component" // trim(IntToChar(i)) // "_", &
+                                       status = status)
+
+        !
+        ! Add the new component to the domain.
+        !
+        if(.not. stateIsFailure(status)) then
+
+!PRINT *, "read_Domain: extinction size ", size(extinction, 1), size(extinction, 2), size(extinction, 3)
+          call addOpticalComponent(thisDomain, name, extinction, singleScatteringAlbedo, &
+                                   phaseFunctionIndex, table, zLevelBase = zLevelBase,   &
+                                   status = status)
+        else
+          call setStateToFailure(status, "read_SSPTable: Error reading phase function table.")
+        end if
+        deallocate(extinction, singleScatteringAlbedo, phaseFunctionIndex)
+      end do
+      if(.not. stateIsFailure(status))  call getOpticalPropertiesByComponent(thisDomain, status)
+      if(.not. stateIsFailure(status)) call setStateToSuccess(status)
+
+   end subroutine read_SSPTable
 
    subroutine read_Common(filename, commonD, status)
     character(len = *), intent(in   ) :: fileName
@@ -139,7 +268,7 @@ contains
     type(ErrorMessage), intent(inout) :: status
 
     integer, dimension(16)             :: ncStatus
-    integer                           :: ncFileID, ncDimID, zGridDimID, nXEdges, nYEdges, nZEdges, nZGrid, ncVarID
+    integer                           :: ncFileID, ncDimID, zGridDimID, nXEdges, nYEdges, nZEdges, nZGrid, ncVarID, nComponents, i
 
     ncStatus(:) = nf90_NoErr
     if(nf90_open(trim(fileName), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
@@ -155,25 +284,41 @@ contains
       ncStatus( 6) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZEdges)
       ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-Grid", zGridDimId)
       ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
+      ncStatus( 9) = nf90_get_att(ncFileID, nf90_Global, "numberOfComponents", nComponents) 
+      if(any(ncStatus(:) /= nf90_NoErr)) &
+        call setStateToFailure(status, "read_Common: " // trim(fileName) // &
+                               " problem reading dimensions.")
       allocate(commonD%xPosition(nXEdges), commonD%yPosition(nYEdges), commonD%zPosition(nZEdges), commonD%temps(nXEdges-1,nYEdges-1,nZEdges-1))
-      ncStatus( 9) = nf90_inq_varid(ncFileId, "x-Edges", ncVarId)
-      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, commonD%xPosition)
-      ncStatus(11) = nf90_inq_varid(ncFileId, "y-Edges", ncVarId)
-      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, commonD%yPosition)
-      ncStatus(13) = nf90_inq_varid(ncFileId, "z-Edges", ncVarId)
-      ncStatus(14) = nf90_get_var(ncFileId, ncVarId, commonD%zPosition)
-      ncStatus(15) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
-      ncStatus(16) = nf90_get_var(ncFileId, ncVarId, commonD%temps)
+      ncStatus( 1) = nf90_inq_varid(ncFileId, "x-Edges", ncVarId)
+      ncStatus( 2) = nf90_get_var(ncFileId, ncVarId, commonD%xPosition)
+      ncStatus( 3) = nf90_inq_varid(ncFileId, "y-Edges", ncVarId)
+      ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, commonD%yPosition)
+      ncStatus( 5) = nf90_inq_varid(ncFileId, "z-Edges", ncVarId)
+      ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, commonD%zPosition)
+      ncStatus( 7) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
+      ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, commonD%temps)
 !      if( COUNT(temps .le. 0.0_8) .gt. 0)PRINT *, 'readDomain: there are temps at or below 0.0 K'
-!PRINT *, 'readDomain: min temp = ', MINVAL(temps)
+!PRINT *, 'read_Common: status before Nc', ncStatus(:)
       if(any(ncStatus(:) /= nf90_NoErr)) then
         call setStateToFailure(status, "read_Common: " // trim(fileName) // &
                                " doesn't look an optical properties file.")
       else
+        ncStatus( 1) = nf90_inq_varid(ncFileId,"Component1_numberConcen", ncVarID)
+
+        if(ncStatus(1) .eq.  nf90_NoErr)then
+ 	  allocate(commonD%numConc(nComponents,nXEdges,nYEdges,nZEdges-1))
+	  do i= 1, nComponents 
+	     ncStatus(2*i) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "numberConcen", ncVarId)
+             ncStatus((2*i)+1) = nf90_get_var(ncFileId, ncVarId, commonD%numConc(i,1,1,:)) 
+	  end do     
+!PRINT *, 'read_Common: status after Nc', ncStatus(:)
+          if(any(ncStatus(:) /= nf90_NoErr)) &
+          call setStateToFailure(status, "read_Common: " // trim(fileName) // &
+                               " problem reading number concentration.") 
+        end if
         call setStateToSuccess(status)
       end if
     end if
-
    end subroutine
   !------------------------------------------------------------------------------------------
   ! Initialization: Routine to create new domains 
