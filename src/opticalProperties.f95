@@ -25,6 +25,8 @@ module opticalProperties
   integer, parameter :: maxNameLength = 256
   real,    parameter :: Pi = 3.14159265358979312 
   real(8),    parameter :: light_spd = 2.99792458E8 ![m/s]
+  real(8), parameter :: Na = 6.022E23 ![mol^-1]
+  real(8), parameter :: Rstar = 8.3143 ![J K^-1 mol^-1]
   !------------------------------------------------------------------------------------------
   ! Type (object) definitions
   !------------------------------------------------------------------------------------------
@@ -268,7 +270,9 @@ PRINT *, "read_SSPTable: Error reading scalar fields from file"
     type(ErrorMessage), intent(inout) :: status
 
     integer, dimension(16)             :: ncStatus
-    integer                           :: ncFileID, ncDimID, zGridDimID, nXEdges, nYEdges, nZEdges, nZGrid, ncVarID, nComponents, i
+    integer                           :: ncFileID, ncDimID, zGridDimID, nXEdges, nYEdges, &
+					 nZEdges, nZGrid, ncVarID, nComponents, i, nDims
+    real(8), allocatable              :: prssr(:,:,:)
 
     ncStatus(:) = nf90_NoErr
     if(nf90_open(trim(fileName), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
@@ -303,18 +307,30 @@ PRINT *, "read_SSPTable: Error reading scalar fields from file"
         call setStateToFailure(status, "read_Common: " // trim(fileName) // &
                                " doesn't look an optical properties file.")
       else
-        ncStatus( 1) = nf90_inq_varid(ncFileId,"Component1_numberConcen", ncVarID)
+        ncStatus( 1) = nf90_inq_varid(ncFileId,"Pressure", ncVarID)
 
         if(ncStatus(1) .eq.  nf90_NoErr)then
- 	  allocate(commonD%numConc(nComponents,nXEdges,nYEdges,nZEdges-1))
-	  do i= 1, nComponents 
-	     ncStatus(2*i) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "numberConcen", ncVarId)
-             ncStatus((2*i)+1) = nf90_get_var(ncFileId, ncVarId, commonD%numConc(i,1,1,:)) 
-	  end do     
+	  allocate(prssr(1:nXEdges-1,1:nYEdges-1,1:nZEdges-1))
+	  allocate(commonD%numConc(nComponents,nXEdges-1,nYEdges-1,nZEdges-1))
+	  ncStatus(2)= nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims)
+	  if (nDims .eq. 3)then
+ 	     ncStatus(3) = nf90_get_var(ncFileId, ncVarId, prssr(:,:,:))
+ 	  else if(nDims .eq. 1)then
+	     ncStatus(3) = nf90_get_var(ncFileId, ncVarId, prssr(1,1,:))
+	     prssr = spread(spread(prssr(1,1,:),1, nCopies=nXEdges-1), 2, nCopies=nYEdges-1)
+	  else
+	     call setStateToFailure(status, "read_Common: " // trim(fileName) // &
+                               " strange number of dimensions for pressure")
+	  end if  
+!	  do i= 1, nComponents THIS BLOCK IS A PLACEHOLDER FOR BRINGING IN MIXING RATIOS OF SOME SORT IF WANTED/NEEDED TO PARTITION THE TOTAL NUMBER CONCENTRATION
+!	     ncStatus(2*i) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "numberConcen", ncVarId)
+!             ncStatus((2*i)+1) = nf90_get_var(ncFileId, ncVarId, commonD%numConc(i,1,1,:)) 
+!	  end do     
 !PRINT *, 'read_Common: status after Nc', ncStatus(:)
+ 	  commonD%numConc(1,:,:,:)=(prssr*Na)/(Rstar*commonD%temps)
           if(any(ncStatus(:) /= nf90_NoErr)) &
           call setStateToFailure(status, "read_Common: " // trim(fileName) // &
-                               " problem reading number concentration.") 
+                               " problem reading PRESSURE.") 
         end if
         call setStateToSuccess(status)
       end if

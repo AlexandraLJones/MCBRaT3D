@@ -83,7 +83,8 @@ program monteCarloDriver
                           reportAbsorptionProfile = .false. 
   
   ! File names
-  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = "", instrResponseFile="", SSPfilename=""
+  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = "", &
+			  instrResponseFile="", SSPfilename="", physDomainFile=""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
                           outputNetcdfFile = ""
@@ -111,7 +112,8 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         domainFileList, solarSourceFile, instrResponseFile, SSPfilename,&
+  namelist /fileNames/         domainFileList, solarSourceFile, instrResponseFile, &
+			       SSPfilename, physDomainFile, &
                                outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
   
@@ -537,7 +539,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
   solarFlux = emittedFlux
 if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
- call read_Common("./Domain-Files/SSPtest_physicalDomain_1_1_1.dom", commonConcen, status)
+ call read_Common(physDomainFile, commonConcen, status)
  call printStatus(status)
 
 !  call finalize_Domain(thisDomain)
