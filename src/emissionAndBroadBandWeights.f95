@@ -357,7 +357,7 @@ end if
 !               level_weights(nz)=1.0_8                               LINES B/C OF POINTERS
 		theseWeights%fracAtmsPower(ilambda) = atmsPower/(atmsPower + sfcPower)
           end if
-!PRINT *, 'emission weighting: ilambda= ', ilambda,  ' atmosPower= ', atmsPower, ' fractAtmosPower= ', theseWeights%fracAtmsPower(ilambda)
+PRINT *, 'emission weighting: ilambda= ', ilambda,  ' atmosPower= ', atmsPower, 'sfcPower= ', sfcPower, 'fractAtmosPower= ', theseWeights%fracAtmsPower(ilambda)
 	  if (LEN(TRIM(fileName)) .gt. 0)then
 	     theseWeights%totalPowerCDF(ilambda) = tempPower + (atmsPower + sfcPower)*spectrRespFunc(ilambda)
           else
@@ -373,7 +373,7 @@ end if
      else
        totalFlux=theseWeights%totalPowerCDF(nlambda)/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
        theseWeights%spectrIntgrFlux = totalFlux     
-
+PRINT *, "emission_weightingOLD: totalFlux=", totalFlux, "theseWeights%totalPowerCDF=", theseWeights%totalPowerCDF
 !PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1)), &
 !         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny), ' expected radiance=', atmsPlanckRad*(1.0_8-exp(-1.0_8*totalAbsCoef*(zPosition(nz+1)-zPosition(1))))
 

@@ -154,7 +154,7 @@ program monteCarloDriver
   integer, parameter     :: EXIT_TAG = 99, NEW_FREQ = 1, SAME_FREQ = 2, PHOTONS = 4
 
    ! I3RC Monte Carlo code derived type variables
-  type(commonDomain)         :: commonPhysical, commonConcen
+  type(commonDomain)         :: commonPhysical!, commonConcen
   type(domain)               :: thisDomain
   type(domain), allocatable, dimension(:) :: BBDomain
   type(ErrorMessage)         :: status
@@ -285,58 +285,25 @@ program monteCarloDriver
   !
   allocate(BBDomain(numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
-!!!!!!!!!! Open list of domain files, then loop over reading them into BBDomain
-!PRINT *, domainFileList
-  open(unit=22, file=TRIM(domainFileList), status='OLD')
-! first we need to get the dimensions needed to allocate position arrays
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: opened ', domainFileList
-  read(22,'(A)') domainFileName
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: read ', domainFileName
-  call read_Common(domainFileName, commonPhysical, status)
+  call read_Common(physDomainFile, commonPhysical, status)
   call printStatus(status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
-  call read_Domain(domainFileName, commonPhysical, thisDomain, status)
-  call printStatus(status)
-  call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, namelistNumLambda=numLambda, domainNumLambda=numLambda, status = status)
-  call printStatus(status)
-  call finalize_Domain(thisDomain)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got dimensions from intial domain'
-  REWIND(22)
-  allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
-!  allocate(commonPhysical%xPosition(nx+1), commonPhysical%yPosition(ny+1), commonPhysical%zPosition(nz+1), commonPhysical%temps(nx,ny,nz))
 
   DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
-     read(22,'(1A)') domainFileName
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Domain: ', i
-     call read_Domain(domainFileName, commonPhysical, thisDomain, status)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read Domain from ', domainFileName  
-  !call printStatus(status)
-  !call write_Domain(thisDomain, 'test_write.dom', status)
+     call read_SSPTable(SSPfilename, i, commonPhysical, BBDomain(i), status)
      call printStatus(status)
-   
-     call getInfo_Domain(thisDomain, lambda = lambda, lambdaIndex = lambdaI,  &
-                      xPosition = xPosition, yPosition = yPosition, &
-                      zPosition = zPosition, numberOfComponents=numberOfComponents, status = status) 
-
-!PRINT *, lambda, lambdaI
-     call printStatus(status)
-     BBDomain(lambdaI)=thisDomain
-     CALL finalize_Domain(thisDomain)
+!     call getInfo_Domain(BBDomain(i), temps=temps, totalExt=totalExt, lambda = lambda, status=status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got info for Domain: ', i
   END DO
-  call getInfo_Domain(BBDomain(numLambda), lambda = lambda, lambdaIndex = lambdaI, status=status)
+
+  call getInfo_Domain(BBDomain(numLambda), numX = nx, numY = ny, numZ = nZ, status=status)
+  call printStatus(status)
+  allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
+  call getInfo_Domain(BBDomain(numLambda), xPosition = xPosition, yPosition = yPosition, &
+                      zPosition = zPosition, numberOfComponents=numberOfComponents, status = status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
   call printStatus(status)
 
-  close(22)
-
-allocate(tempExt(nx,ny,nz))
-DO i = 1, numLambda 
-	call getInfo_Domain(BBDomain(i), lambda=lambda, totalExt=tempExt, status=status)
-!	if(MasterProc .and. thisThread .eq. 0)PRINT *, 'lambda=', lambda, 'Ext=', tempExt(1,1,1)
-END DO
-deallocate(tempExt)
-!
 !  I MAY WANT TO IMPLEMENT AN EXPLICIT CHECK HERE TO MAKE SURE CERTAIN COMPONENTS OF ALL THE DOMAINS ARE CONSISTENT WITH EACHOTHER
 !
 
@@ -483,7 +450,7 @@ call printStatus(status)
 
 !     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
 !PRINT *, 'total atms photons=', atms_photons)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux
+if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux
 call printStatus(status)
 !PRINT *, 'Driver: calculated emission weighting'
      call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
@@ -539,7 +506,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
   solarFlux = emittedFlux
 if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
 !PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
- call read_Common(physDomainFile, commonConcen, status)
+! call read_Common(physDomainFile, commonConcen, status)
  call printStatus(status)
 
 !  call finalize_Domain(thisDomain)
@@ -730,7 +697,7 @@ PRINT *, "writing checkpoint file"
     CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 !    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
 !!!!!!!!!!!!!!TODO read appropriate SSPs from file and construct domain !!!!!!!!!!!!!!!
-        CALL read_SSPTable(SSPfilename, currentFreq(1), commonConcen, thisDomain, status)
+        CALL read_SSPTable(SSPfilename, currentFreq(1), commonPhysical, thisDomain, status)
 
     DO i=0,numThreads-1
        randoms(thisThread)=new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
@@ -840,7 +807,7 @@ PRINT *, 'Rank', thisProc, 'entered the sumAcrossprocesses block'
 	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) then
 	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 	    CALL finalize_Domain(thisDomain)
-	    CALL read_SSPTable(SSPfilename, currentFreq(1), commonConcen, thisDomain, status) !!!! TODO !!!!
+	    CALL read_SSPTable(SSPfilename, currentFreq(1), commonPhysical, thisDomain, status) !!!! TODO !!!!
 	    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
 		CALL finalize_Weights(theseWeights)
 		theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
