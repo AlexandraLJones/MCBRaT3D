@@ -360,7 +360,7 @@ contains
       forall(k = 1:numZ)  &
         thisIntegrator%volumeAbsorption(:, :, k) =      &
           thisIntegrator%volumeAbsorption(:, :, k) /    &
-               (numPhotonsPerColumn(:, :) * (thisIntegrator%zPosition(k+1) - thisIntegrator%zPosition(k)) )
+               (numPhotonsPerColumn(:, :) * (thisIntegrator%zPosition(k+1) - thisIntegrator%zPosition(k))*1000.0 ) ! since physical positions are provided in km and totalFlux is calculatted or provided in Wm^-2 we need to use a factor of 1000 to get the units to make sense for flux divergence. result will be Wm^-3
   
       !
       ! Intensity is also normalized by the average number of photons per column. 

@@ -14,9 +14,11 @@
 ### Netcdf-specific entries
 
  NetcdfHome = ${NETCDF_DIR}
-#NetcdfHome = /home1/00478/tg457444/netcdf4.1.3
+
+# NetcdfHome = /scratch/staff/straka/netcdf/netcdf-4.3.2
  Netcdf_IncludeDir = ${NetcdfHome}/include 
  NetcdfLibs = -L${NetcdfHome}/lib -lnetcdf 
+# NetcdfLibs = -L${NetcdfHome}/liblib/.libs
 #NetcdfLibs = -L$(NetcdfHome)/lib -lnetcdf -lnetcdff
 
 ### General compiler macros 
@@ -36,7 +38,7 @@ Libs        =
 
 # Macros are available for ifort, g95, xlf, absoft, ftn
  compiler=ftn
- debug=yes
+ debug=no
 
 ifeq (${compiler},ftn)
 #   fortran compiler on Blue Waters
@@ -44,13 +46,15 @@ ifeq (${compiler},ftn)
    F77         = ftn
   ifeq (${debug},no)
   #optimization flags
+#     F95Flags = -h omp${Modules}
      F95Flags = -h omp -dynamic${Modules} 
      FFlags =
   else
-     F95Flags = -h omp -g -O fp0 -Rb -Rc -Rp -rm -dynamic${Modules}
+#      F95Flags = -h omp -g -O fp0 -Rb -Rc -Rp -rm${Modules}
+     F95Flags = -h omp -h msgs -g -O fp0 -Rb -Rc -Rp -rm -dynamic${Modules}
 #     F95Flags = -g -O0 -dynamic${Modules}
 #     FFlags = -g -O0
-     FFlags = -g -O fp0 -rm
+     FFlags = -h msgs -g -O fp0 -rm
   endif
 endif
 

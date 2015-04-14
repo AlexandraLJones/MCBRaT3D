@@ -47,6 +47,7 @@ program monteCarloDriver
   use UserInterface
   use surfaceProperties
   use emissionAndBBWeights
+  use netcdf
 
   implicit none
  
@@ -54,9 +55,9 @@ program monteCarloDriver
 
   ! Input parameters
   !   Radiative transfer 
-  real(8)                 :: solarFlux = 1., surfaceAlbedo = 0.
+  real(8)                 :: surfaceAlbedo = 0.
   real                 :: solarMu = 1., solarAzimuth = 0.,  LW_flag = -1. 
-  real(8)                 :: lambda = 6.0, surfaceTemp = 300.0       ! added by Alexandra Jones Fall 2011. lambda in microns and surface temp in K
+  real(8)                 :: surfaceTemp = 300.0       ! added by Alexandra Jones Fall 2011. lambda in microns and surface temp in K
   integer, parameter   :: maxNumRad = 648 !18mus*36phis , oldVal:72
   real                 :: intensityMus(maxNumRad)  = 0., &
                           intensityPhis(maxNumRad) = 0.
@@ -83,7 +84,7 @@ program monteCarloDriver
                           reportAbsorptionProfile = .false. 
   
   ! File names
-  character(len=256)   :: domainFileName = "", domainFileList = "", solarSourceFile = "", &
+  character(len=256)   :: domainFileName = "", solarSourceFile = "", &
 			  instrResponseFile="", SSPfilename="", physDomainFile=""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
@@ -97,7 +98,7 @@ program monteCarloDriver
   character(len=256)   :: auxhist01_radFile=""
   character(len=256)   :: auxhist01_fluxFile=""
 
-  namelist /radiativeTransfer/ solarFlux, solarMu, solarAzimuth, surfaceTemp, &
+  namelist /radiativeTransfer/ solarMu, solarAzimuth, surfaceTemp, &
                                intensityMus, intensityPhis, angleFill, thetaFill, phiFill, LW_flag, numLambda
   
   namelist /monteCarlo/        numPhotonsPerBatch, numBatches, iseed, nPhaseIntervals
@@ -112,7 +113,7 @@ program monteCarloDriver
                                recScatOrd, numRecScatOrd, &
                                auxhist01_fluxFile, auxhist01_radFile
   
-  namelist /fileNames/         domainFileList, solarSourceFile, instrResponseFile, &
+  namelist /fileNames/         solarSourceFile, instrResponseFile, &
 			       SSPfilename, physDomainFile, &
                                outputRadFile, outputFluxFile, &
                                outputAbsProfFile, outputAbsVolumeFile, outputNetcdfFile
@@ -130,10 +131,10 @@ program monteCarloDriver
   real                 :: cpuTime0, cpuTime1, cpuTime2, cpuTimeTotal, cpuTimeSetup
   real                 :: prevTotal, total, writeFreq=3600.0
   real                 :: meanFluxUp, meanFluxDown, meanFluxAbsorbed
-  real(8)                 :: emittedFlux
+  real(8)                 :: solarFlux, emittedFlux, lambda, lambdaAbove, lambdaBelow, dLambda, corr, tempSum, corrContr
   real(8)                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:), tempExt(:,:,:)
-  real(8), allocatable    :: solarSourceFunction(:), centralLambdas(:)
+  real(8), allocatable    :: solarSourceFunction(:), centralLambdas(:), fluxCDF(:)
   real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :), absorbedProfile(:), absorbedVolume(:, :, :), Radiance(:, :, :)
   real(8), allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :), &
 				absorbedProfileStats(:, :), absorbedVolumeStats(:, :, :, :), RadianceStats(:, :, :, :),&
@@ -147,6 +148,7 @@ program monteCarloDriver
   integer              :: batchesAssigned, batchesCompleted
   integer(8)           ::  totalNumPhotons = 0, counter
   integer              :: currentFreq(1)
+  integer              :: SSPfileID, err
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
   integer, allocatable   ::  freqDistr(:), startingPhoton(:)
@@ -155,8 +157,7 @@ program monteCarloDriver
 
    ! I3RC Monte Carlo code derived type variables
   type(commonDomain)         :: commonPhysical!, commonConcen
-  type(domain)               :: thisDomain
-  type(domain), allocatable, dimension(:) :: BBDomain
+  type(domain)               :: thisDomain, tempDomain
   type(ErrorMessage)         :: status
   type(randomNumberSequence), allocatable, dimension(:) :: randoms
 !  type(photonStream)         :: incomingPhotons
@@ -168,7 +169,8 @@ program monteCarloDriver
   ! Variables related to splitting up the job across processors
   integer            :: thisProc, thisThread            ! ID OF CURRENT PROCESSOR; default 0
   integer            :: numProcs, numThreads            ! TOTAL NUMBER OF PROCESSORS USED; default 1
-  integer            :: batchesPerProcessor
+  integer            :: batchesPerProcessor, lambdaPerProc
+
 
   ! -----------------------------------------
   ! Start communications among multiple processes.
@@ -221,15 +223,6 @@ program monteCarloDriver
   read (1, nml = output);            rewind(1)
   read (1, nml = fileNames);         rewind(1)
   close (1)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, domainFileList, solarSourceFile
-! if Solar simulation we want to read in the arrays to store solar spectrum from the netCDF file
-  if (LW_flag .lt. 0) then
-     allocate(solarSourceFunction(1:numLambda))
-     allocate(centralLambdas(1:numLambda))
-     call read_SolarSource(solarSourceFile, numLambda, solarSourceFunction, centralLambdas, status=status)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Radmax= ', MAXVAL(solarSourceFunction), ' Radmin= ', MINVAL(solarSourceFunction)
-     call printStatus(status)
-  end if
 
 !automatic assignment of observation angles. If angleFill
 !mu and phi must be specified
@@ -283,33 +276,168 @@ program monteCarloDriver
   ! -----------------------------------------
   !  Read the domain file
   !
-  allocate(BBDomain(numLambda))
+!  allocate(BBDomain(numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
   call read_Common(physDomainFile, commonPhysical, status)
   call printStatus(status)
+  allocate(freqDistr(1:numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
 
-  DO i = 1, numLambda  !!!!!!!!!!! CAN I PARALLELIZE THIS LOOP? !!!!!!!!!!!!!!!!!!!!!!!!
-     call read_SSPTable(SSPfilename, i, commonPhysical, BBDomain(i), status)
-     call printStatus(status)
-!     call getInfo_Domain(BBDomain(i), temps=temps, totalExt=totalExt, lambda = lambda, status=status)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: got info for Domain: ', i
-  END DO
+  if (LW_flag .ge. 0.0)then
+     allocate(fluxCDF(1:numLambda))
+     fluxCDF=0
+     lambdaPerProc = CEILING(DBLE(numLambda/numProcs))
+     err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
+     if(err /= nf90_NoErr) then
+	PRINT *, "Driver: error opening file ", err, trim(nf90_strerror(err))
+	STOP
+     end if
+     DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1  
+PRINT *, "in LW loop at iteration ", i
+        call read_SSPTable(SSPfileID, i, commonPhysical, thisDomain, status) ! domain is initialized within this routine
+        call printStatus(status)
+	call getInfo_Domain(thisDomain, lambda=lambda, status=status)
+        call printStatus(status)
 
-  call getInfo_Domain(BBDomain(numLambda), numX = nx, numY = ny, numZ = nZ, status=status)
-  call printStatus(status)
+        if (i .eq. thisProc*lambdaPerProc+1)then
+           call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status=status)
+           call printStatus(status)
+
+	   call read_SSPTable(SSPfileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine   
+	   call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
+           call printStatus(status)
+	   if (i .gt. 1) then ! we have a more accurate way to calculate dLambda
+	      call read_SSPTable(SSPfileID, i-1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
+              call getInfo_Domain(tempDomain, lambda=lambdaBelow, status=status)
+              call printStatus(status)
+	      dLambda=ABS((lambdaAbove-lambdaBelow)/2.0_8)
+	   else
+	       dLambda = ABS(lambdaAbove-lambda) ! best we can do for i = 1
+	   end if
+	   lambdaBelow=lambda
+	   lambda=lambdaAbove
+	elseif(i .gt. thisProc*lambdaPerProc+1 .and. i .lt. numLambda)then
+	   call finalize_Domain(tempDomain)
+	   call read_SSPTable(SSPfileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
+           call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
+           call printStatus(status)
+	   dLambda=ABS((lambdaAbove-lambdaBelow)/2.0_8)
+	   lambdaBelow=lambda
+           lambda=lambdaAbove
+	else !i must equal numLambda
+	   dLambda=ABS(lambda-lambdaBelow)
+	   call finalize_Domain(tempDomain)
+        end if
+
+        theseWeights = new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=1, status=status)
+        call printStatus(status)
+        call emission_weighting(thisDomain, numLambda, i, theseWeights, surfaceTemp, instrResponseFile, dLambda=dLambda, totalFlux=emittedFlux, status=status)
+        call printStatus(status)
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
+
+!    write(32,"(36F12.8)") level_weights(:,1)
+!    DO k = 1, nZ
+!      write(33,"(100F12.8)") col_weights(:,k,1)
+!      DO j = 1, nY
+!        write(31,"(100F12.8)") voxel_weights(:,j,k,1)
+!      end do
+!    end do
+!    close(31)
+!    close(32)
+!    close(33)
+
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux
+
+ !!$OMP DO SCHEDULE(static, 1) PRIVATE(thisThread)
+!     DO i = 1, numLambda
+!PRINT *, 'numThreads=', numThreads, 'thisThread=', thisThread
+!        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms(thisThread), status=status)
+!       voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1
+!     END DO
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
+!call printStatus(status)
+!    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
+!    DO k = 1, nZ
+ !     DO j = 1, nY
+  !      write(12,"(100I12)") voxel_tallys1_sum(:,j,k)
+ !     end do
+!    end do
+!    close(12)
+	fluxCDF(i)=emittedFlux
+	call finalize_Weights(theseWeights)
+     END DO
+     err=nf90_close(SSPfileId)
+     fluxCDF(:) = sumAcrossProcesses(fluxCDF)
+
+!     DO i = numLambda, 1, -1
+!	fluxCDF(i)=SUM(fluxCDF(1:i))
+!     END DO
+
+     corr = 0.0_8
+     DO i = 2,numLambda
+	corrContr = fluxCDF(i)-corr
+	tempSum = fluxCDF(i-1)+corrContr
+	corr = (tempSum-fluxCDF(i-1))-corrContr
+	fluxCDF(i)=tempSum
+     END DO
+
+     solarFlux = fluxCDF(numLambda)
+     fluxCDF=fluxCDF/solarFlux
+     fluxCDF(numLambda)=1.0_8
+
+     thisThread = OMP_GET_THREAD_NUM()
+!PRINT *, 'thisThread=', thisThread
+  !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
+     randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
+     call getFrequencyDistr(numLambda, fluxCDF, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
+     deallocate(fluxCDF)
+  else
+if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPfilename
+     err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
+     if(err /= nf90_NoErr) then
+        PRINT *, "Driver: error opening file ", err, trim(nf90_strerror(err))
+        STOP
+     end if
+     call read_SSPTable(SSPfileID, 1, commonPhysical, thisDomain, status) ! domain is initialized within this routine
+     call printStatus(status)
+     err=nf90_close(SSPfileId)
+     call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status=status)
+     call printStatus(status)
+     theseWeights=new_Weights(numLambda=numLambda, status=status)
+     call printStatus(status)
+     allocate(solarSourceFunction(1:numLambda))
+     allocate(centralLambdas(1:numLambda))
+     call read_SolarSource(solarSourceFile, numLambda, solarSourceFunction, centralLambdas, status=status)
+     call printStatus(status) 
+     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
+!     if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
+     call printStatus(status)
+     solarFlux = emittedFlux
+     deallocate(centralLambdas)
+     deallocate(solarSourceFunction)
+
+     thisThread = OMP_GET_THREAD_NUM()
+!PRINT *, 'thisThread=', thisThread
+  !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
+     randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
+     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
+     call finalize_Weights(theseWeights)
+  end if
+
+  if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
+  if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
+  if(MasterProc .and. thisThread .eq. 0)PRINT*, 'number of non-zero frequencies:', COUNT(freqDistr .gt. 0)
+
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
-  call getInfo_Domain(BBDomain(numLambda), xPosition = xPosition, yPosition = yPosition, &
+  call getInfo_Domain(thisDomain, xPosition = xPosition, yPosition = yPosition, &
                       zPosition = zPosition, numberOfComponents=numberOfComponents, status = status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'retrieved Domain info for ', lambda, lambdaI, numLambda
   call printStatus(status)
 
-!  I MAY WANT TO IMPLEMENT AN EXPLICIT CHECK HERE TO MAKE SURE CERTAIN COMPONENTS OF ALL THE DOMAINS ARE CONSISTENT WITH EACHOTHER
-!
-
   ! Set up the integrator object. It only grabs information from the domain that is consistent between all of them so I only need to pass any one domain
-  mcIntegrator = new_Integrator(BBDomain(1), status = status)     
+  mcIntegrator = new_Integrator(thisDomain, status = status)     
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized Integrator'
+  call finalize_Domain(thisDomain)
   call printStatus(status)					 ! CAN I MOVE THIS SECTION INITIALIZING THE INTEGRATOR TO BEFORE THE LOOP RADING IN ALL THE DOMAINS BUT AFTER READING IN THE FIRST DOMAIN SO THAT I CAN JUST PARALLELIZE THE REST? 
 !  call finalize_Domain(thisDomain)                               !
 
@@ -408,119 +536,6 @@ program monteCarloDriver
 !    end if
 !  end if
 
-  ! --------------------------------------------------------------------------
-  ! Compute radiative transfer with a trivial number of photons. 
-  !   This checks to see if the integrator is properly set up before 
-  !   running all the batches, and also allows the integrator to 
-  !   do any internal pre-computation. 
-
-  ! Seed the random number generator.
-  thisThread = OMP_GET_THREAD_NUM()
-!PRINT *, 'thisThread=', thisThread
-  !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
-  randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
-  !!$OMP SINGLE
-!  allocate (freqDistr(1:numLambda), incomingBBPhotons(1:numLambda))
-  allocate (freqDistr(1:numLambda))
-   ! The initial direction and position of the photons are precomputed and 
-   !   stored in an "illumination" object.
-!PRINT *, 'solarFlux=', solarFlux
-  if(LW_flag >= 0.0)then
-     theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=numLambda, status=status)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal weights'
-call printStatus(status)
-!     allocate (voxel_weights(nX,nY,nZ,numLambda),col_weights(nY,nZ,numLambda), level_weights(nZ,numLambda))
-!     call getInfo_Domain(thisDomain, temps=temps, ssa=ssa, totalExt=cumExt, ext=ext, status=status)
-!PRINT *, 'retrieved fields for emission weighting'
-!call printStatus(status)
-
-     call emission_weighting(BBDomain, numLambda, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, atms_photons, totalFlux=emittedFlux, status=status) 
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
-
-!    write(32,"(36F12.8)") level_weights(:,1)
-!    DO k = 1, nZ
-!      write(33,"(100F12.8)") col_weights(:,k,1)
-!      DO j = 1, nY
-!        write(31,"(100F12.8)") voxel_weights(:,j,k,1)
-!      end do
-!    end do
-!    close(31)
-!    close(32)
-!    close(33)
-
-!     solarFlux=31.25138117141156822262   !!!MAKE SURE TO COMMENT OUT THIS LINE. DIAGNOSTICE PURPOSES ONLY!!!
-!PRINT *, 'total atms photons=', atms_photons)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'emittedFlux=', emittedFlux
-call printStatus(status)
-!PRINT *, 'Driver: calculated emission weighting'
-     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
-if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
- !!$OMP DO SCHEDULE(static, 1) PRIVATE(thisThread)
-!     DO i = 1, numLambda
-!PRINT *, 'numThreads=', numThreads, 'thisThread=', thisThread
-!        incomingBBPhotons(i) = new_PhotonStream (theseWeights=theseWeights, iLambda=i, numberOfPhotons=freqDistr(i),randomNumbers=randoms(thisThread), status=status)
-!	voxel_tallys1_sum = voxel_tallys1_sum + voxel_tallys1 
-!     END DO
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized thermal BB photon stream'
-!call printStatus(status)
-!    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
-!    DO k = 1, nZ
- !     DO j = 1, nY
-  !      write(12,"(100I12)") voxel_tallys1_sum(:,j,k)
- !     end do
-!    end do
-!    close(12)
-!     incomingPhotons = new_PhotonStream (numberOfPhotons=1, atms_photons=atms_photons, voxel_weights=voxel_weights(:,:,:,1), col_weights=col_weights(:,:,1), level_weights=level_weights(:,1), nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=status)  
-!PRINT *, 'LW', ' incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
-!PRINT *, 'initialized single photon'
-!call printStatus(status)
-!PRINT *, 'Driver: initialized single photon'
-  else
-     theseWeights=new_Weights(numLambda=numLambda, status=status)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized solar weights'
-call printStatus(status)
-     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
-call printStatus(status)
-     deallocate(solarSourceFunction)
-     deallocate(centralLambdas)
-     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, freqDistr
- !!$OMP DO SCHEDULE(static, 1)
-!     DO i = 1, numLambda
-!       incomingBBPhotons(i) = new_PhotonStream (solarMu, solarAzimuth, &
-!                                      numberOfPhotons = freqDistr(i),   &
-!                                      randomNumbers = randoms(thisThread), status=status)
-!     END DO
-!PRINT *, 'not LW', 'incomingPhotons%SolarMu=', incomingPhotons%solarMu(1)
-!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'initialized SW photon stream'
-!call printStatus(status)
-!     incomingPhotons = new_PhotonStream (solarMu, solarAzimuth, &
-!                                      numberOfPhotons = 1,   &
-!                                      randomNumbers = randoms, status=status)
-!call printStatus(status)
-!PRINT *, 'initialized SW test photon'     
-  end if
-  call finalize_Weights(theseWeights)
-
-  solarFlux = emittedFlux
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
-!PRINT *, 'incomingPhotons%solarMu=', incomingPhotons%solarMu(1)
-! call read_Common(physDomainFile, commonConcen, status)
- call printStatus(status)
-
-!  call finalize_Domain(thisDomain)
- !!$OMP END PARALLEL
-!STOP
-
-  ! Now we compute the radiative transfer for a single photon 
-!  if(.not. isReady_Integrator (mcIntegrator)) stop 'Integrator is not ready.'
-!  call computeRadiativeTransfer (mcIntegrator,thisDomain, randoms, incomingPhotons, status)
-!PRINT *, 'Computed RT for a single photon'
-!  call printStatus(status) 
-!  call finalize_PhotonStream (incomingPhotons)
-!PRINT *, 'Driver: succesfully tested photon initialization'
-
   call cpu_time(cpuTime1)
 !PRINT *, "called cpu_time"
   call synchronizeProcesses
@@ -547,7 +562,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
  
 !  if (MasterProc) &
 !    print *, "Doing ", batchesPerProcessor, " batches on each of ", numProcs, " processors." 
-PRINT *, "entering batch loop"
+!PRINT *, "entering batch loop"
 !  batches: do batch = thisProc*batchesPerProcessor + 1, thisProc*batchesPerProcessor + batchesPerProcessor
   if(MasterProc)then  ! must be master process
     currentFreq = 1								! This is a new variable. Should only range from 1 to nlambda
@@ -601,58 +616,59 @@ PRINT *, "entering batch loop"
 	totalNumPhotons = totalNumPhotons + numPhotonsProcessed
 	CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, MPI_ANY_SOURCE, SAME_FREQ, MPI_COMM_WORLD, mpiStatus, ierr)
 	batchesCompleted = batchesCompleted + 1
-!	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
-	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
+	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
+!	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
 !PRINT *, MOD(batchesCompleted, checkFreq)
-	if(MOD(batchesCompleted, checkFreq) .eq. 0)then
-	     call cpu_time(total) 
-!PRINT *, total-prevTotal
-	   if(total-prevTotal .gt. writeFreq)then
-		prevTotal = total
-          ! initiate intermediate sum across processes and write
-!PRINT *, LEN(outputNetcdfFile), LEN(TRIM(outputNetcdfFile))
-		if(MOD(counter, 2) .eq. 0)then
-               	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 2
-             	else
-             	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 1
-             	end if
-          	counter = counter + 1
+!	if(MOD(batchesCompleted, checkFreq) .eq. 0)then
+!	     call cpu_time(total) 
+!PRINT *, "time to check write Frequency", total-prevTotal
+!	   if(total-prevTotal .gt. writeFreq)then
+!		prevTotal = total
+!          ! initiate intermediate sum across processes and write
+!!PRINT *, LEN(outputNetcdfFile), LEN(TRIM(outputNetcdfFile))
+!PRINT *, "time to write checkpoint file"
+!		if(MOD(counter, 2) .eq. 0)then
+!               	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 2
+!             	else
+!             	   write(checkpointFile, '(A,I1)') TRIM(outputNetcdfFile), 1
+!             	end if
+!          	counter = counter + 1
 !PRINT *, "summing across processes"          
-          	! Pixel-by-pixel fluxes
-          	fluxUpStats(:, :, :)       = sumAcrossProcesses(fluxUpStats)
-          	fluxDownStats(:, :, :)     = sumAcrossProcesses(fluxDownStats)
-          	fluxAbsorbedStats(:, :, :) = sumAcrossProcesses(fluxAbsorbedStats)
-
-          	! Absorption (mean profile and cell-by-cell)
-          	absorbedProfileStats(:, :)      = sumAcrossProcesses(absorbedProfileStats)
-          	absorbedVolumeStats(:, :, :, :) = sumAcrossProcesses(absorbedVolumeStats)
-
-          	! Radiance
-          	if (computeIntensity)then
-                    RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
-PRINT *, "writing checkpoint file"
-               	    call writeResults_netcdf(domainFileName,  totalNumPhotons, batchesCompleted, &
-                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
-                                 checkpointFile,                                &
-                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
-                                 absorbedProfileStats, absorbedVolumeStats,       &
-                                 intensityMus, intensityPhis, RadianceStats)
-		    RadianceStats(:, :, :, :) = 0.0
-          	else
-PRINT *, "writing checkpoint file"
-                    call writeResults_netcdf(domainFileName,  totalNumPhotons, batchesCompleted, &
-                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
-                                 xPosition, yPosition, zPosition,                 &
-                                 checkpointFile,                                &
-                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
-                                 absorbedProfileStats, absorbedVolumeStats)
-          	end if
-         	print *, "Wrote to checkpoint file"
-		fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
-		absorbedProfilestats(:, :) = 0.0 ;  absorbedVolumeStats(:, :, :, :) = 0.0
-     	   end if
-	end if
+!          	! Pixel-by-pixel fluxes
+!          	fluxUpStats(:, :, :)       = sumAcrossProcesses(fluxUpStats)
+!          	fluxDownStats(:, :, :)     = sumAcrossProcesses(fluxDownStats)
+!          	fluxAbsorbedStats(:, :, :) = sumAcrossProcesses(fluxAbsorbedStats)
+!
+!          	! Absorption (mean profile and cell-by-cell)
+!          	absorbedProfileStats(:, :)      = sumAcrossProcesses(absorbedProfileStats)
+!          	absorbedVolumeStats(:, :, :, :) = sumAcrossProcesses(absorbedVolumeStats)
+!
+!          	! Radiance
+!          	if (computeIntensity)then
+!                    RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
+!PRINT *, "writing checkpoint file"
+!               	    call writeResults_netcdf(domainFileName,  totalNumPhotons, batchesCompleted, &
+!                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+!                                 xPosition, yPosition, zPosition,                 &
+!                                 checkpointFile,                                &
+!                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
+!                                 absorbedProfileStats, absorbedVolumeStats,       &
+!                                 intensityMus, intensityPhis, RadianceStats)
+!		    RadianceStats(:, :, :, :) = 0.0
+!          	else
+!PRINT *, "writing checkpoint file"
+!                    call writeResults_netcdf(domainFileName,  totalNumPhotons, batchesCompleted, &
+!                                 solarFlux, solarMu, solarAzimuth, surfaceAlbedo, &
+!                                 xPosition, yPosition, zPosition,                 &
+!                                 checkpointFile,                                &
+!                                 fluxUpStats, fluxDownStats, fluxAbsorbedStats,   &
+!                                 absorbedProfileStats, absorbedVolumeStats)
+!          	end if
+!         	print *, "Wrote to checkpoint file"
+!		fluxUpStats(:, :, :) = 0.0  ; fluxDownStats(:, :, :) = 0.0  ; fluxAbsorbedStats(:, :, :) = 0.0
+!		absorbedProfilestats(:, :) = 0.0 ;  absorbedVolumeStats(:, :, :, :) = 0.0
+!     	   end if
+!	end if
 
 
 
@@ -682,7 +698,7 @@ PRINT *, "writing checkpoint file"
 		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
 		batchesAssigned = batchesAssigned + 1
 	    END IF
-	    PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency', currentFreq, 'starting with photon', startingPhoton(currentFreq)-numPhotonsPerBatch, 'which now has', freqDistr(currentFreq), 'photons remaining'
+!	    PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency', currentFreq, 'starting with photon', startingPhoton(currentFreq)-numPhotonsPerBatch, 'which now has', freqDistr(currentFreq), 'photons remaining'
 	END IF
     END DO
 
@@ -690,35 +706,44 @@ PRINT *, "writing checkpoint file"
 	! pass to worker the needed info
 	CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, n, EXIT_TAG, MPI_COMM_WORLD, ierr)
     END DO
-!PRINT *, "Done with batches"
+PRINT *, "Done with batches"
 
   else ! must be a worker process
     CALL MPI_RECV(left, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
     CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 !    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
 !!!!!!!!!!!!!!TODO read appropriate SSPs from file and construct domain !!!!!!!!!!!!!!!
-        CALL read_SSPTable(SSPfilename, currentFreq(1), commonPhysical, thisDomain, status)
-
+	err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
+        if(err /= nf90_NoErr) then
+           PRINT *, "Driver:initial batches: error opening file ", err, trim(nf90_strerror(err))
+           STOP
+        end if
+        CALL read_SSPTable(SSPFileID, currentFreq(1), commonPhysical, thisDomain, status)
+	err = nf90_close(SSPFileID)
+	if(err /= nf90_NoErr) then
+           PRINT *, "Driver:initial batches: error closing file ", err, trim(nf90_strerror(err))
+           STOP
+        end if
     DO i=0,numThreads-1
        randoms(thisThread)=new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
     END DO
     if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
         theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
         CALL printStatus(status)
-        CALL emission_weighting(thisDomain, numLambda, currentFreq, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, status=status)
+        CALL emission_weighting(thisDomain, numLambda, currentFreq(1), theseWeights, surfaceTemp, instrResponseFile, status=status)
         CALL printStatus(status)
 	incomingPhotons=new_PhotonStream(theseWeights=theseWeights,iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
-PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
+!PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
         CALL printStatus(status)
     else
 	incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
-	PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
+!	PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
         CALL printStatus(status)  
     end if
 !!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
     prevTotal = cpuTime0
     DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
-	PRINT *, 'Rank ', thisProc, 'recieved this tag:', mpiStatus(MPI_TAG), 'and will process photons of frequency', currentFreq, 'which has', left, 'photons left'
+!	PRINT *, 'Rank ', thisProc, 'recieved this tag:', mpiStatus(MPI_TAG), 'and will process photons of frequency', currentFreq, 'which has', left, 'photons left'
 	! set the current photon of the appropriate frequency to the starting value
 !	call setCurrentPhoton(incomingBBPhotons(currentFreq(1)), start, status)
 !	call printStatus(status)
@@ -780,66 +805,68 @@ PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPe
 
 	CALL MPI_SEND(numPhotonsProcessed, 1, MPI_INTEGER, 0, PHOTONS, MPI_COMM_WORLD, ierr)
 	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, 0, SAME_FREQ, MPI_COMM_WORLD, ierr)
-	CALL cpu_time(total)
-	if(total-prevTotal .gt. writeFreq)then
-PRINT *, 'Rank', thisProc, 'entered the sumAcrossprocesses block'
-	   allocate(dummy4D1(nx,ny,nz,2), dummy2D(nz,2), dummy3D(nx,ny,2))
-	   ! Pixel-by-pixel fluxes
-           dummy3D(:, :, :)       = sumAcrossProcesses(fluxUpStats)
-           dummy3D(:, :, :)     = sumAcrossProcesses(fluxDownStats)
-           dummy3D(:, :, :) = sumAcrossProcesses(fluxAbsorbedStats)
-
-          ! Absorption (mean profile and cell-by-cell)
-           dummy2D(:, :)      = sumAcrossProcesses(absorbedProfileStats)
-           dummy4D1(:, :, :, :) = sumAcrossProcesses(absorbedVolumeStats)
-	  deallocate(dummy4D1, dummy2D, dummy3D)
-          ! Radiance
-          if (computeIntensity) then
-	     allocate(dummy4D2(nx,ny,numRadDir, 2))
-             dummy4D2(:, :, :, :) = sumAcrossProcesses(RadianceStats) 
-	     deallocate(dummy4D2)
-	  end if
-	  prevTotal = total
-	end if
+!	CALL cpu_time(total)
+!	if(total-prevTotal .gt. writeFreq)then
+!PRINT *, 'Rank', thisProc, 'entered the sumAcrossprocesses block', total-prevTotal
+!	   allocate(dummy4D1(nx,ny,nz,2), dummy2D(nz,2), dummy3D(nx,ny,2))
+!	   ! Pixel-by-pixel fluxes
+!           dummy3D(:, :, :)       = sumAcrossProcesses(fluxUpStats)
+!           dummy3D(:, :, :)     = sumAcrossProcesses(fluxDownStats)
+!           dummy3D(:, :, :) = sumAcrossProcesses(fluxAbsorbedStats)
+!
+!          ! Absorption (mean profile and cell-by-cell)
+!           dummy2D(:, :)      = sumAcrossProcesses(absorbedProfileStats)
+!           dummy4D1(:, :, :, :) = sumAcrossProcesses(absorbedVolumeStats)
+!	  deallocate(dummy4D1, dummy2D, dummy3D)
+!          ! Radiance
+!          if (computeIntensity) then
+!	     allocate(dummy4D2(nx,ny,numRadDir, 2))
+!             dummy4D2(:, :, :, :) = sumAcrossProcesses(RadianceStats) 
+!	     deallocate(dummy4D2)
+!	  end if
+!	  prevTotal = total
+!	end if
 
 	CALL MPI_RECV(left, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
 	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
 	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) then
 	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 	    CALL finalize_Domain(thisDomain)
-	    CALL read_SSPTable(SSPfilename, currentFreq(1), commonPhysical, thisDomain, status) !!!! TODO !!!!
+	    err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
+     	    if(err /= nf90_NoErr) then
+        	PRINT *, "Driver:batches: error opening file ", err, trim(nf90_strerror(err))
+        	STOP
+     	    end if
+	    CALL read_SSPTable(SSPfileID, currentFreq(1), commonPhysical, thisDomain, status) !!!! TODO !!!!
+	    err = nf90_close(SSPfileID)
 	    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
 		CALL finalize_Weights(theseWeights)
 		theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
 	        CALL printStatus(status)
-        	CALL emission_weighting(thisDomain, numLambda, currentFreq, theseWeights, surfaceTemp, numPhotonsPerBatch, instrResponseFile, status=status)
+        	CALL emission_weighting(thisDomain, numLambda, currentFreq(1), theseWeights, surfaceTemp, instrResponseFile, status=status)
 	        CALL printStatus(status)
 	    end if
 	end if
 
 	if(LW_flag >= 0.0)then
 	   incomingPhotons=new_PhotonStream(theseWeights=theseWeights, iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
-	   PRINT *, 'Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons and recieved tag: ', mpiStatus(MPI_TAG)
+!	   PRINT *, 'Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons and recieved tag: ', mpiStatus(MPI_TAG)
 	   CALL printStatus(status)
 	else
 	   incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
-	   PRINT *, 'Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons and recieved tag: ', mpiStatus(MPI_TAG)
+!	   PRINT *, 'Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons and recieved tag: ', mpiStatus(MPI_TAG)
 	   CALL printStatus(status)
 	end if    
 !	PRINT *, 'rank ', thisProc, 'recieved message ', mpiStatus(MPI_TAG)
     END DO
 !PRINT *, 'thisProc=', thisProc,  'RadianceStatsSums=', RadianceStats(1,1,1,1:3)
   end if !  end do batches
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
   deallocate(freqDistr)
   if (allocated(startingPhoton)) deallocate(startingPhoton)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: about to finalize photon stream'
+!if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: about to finalize photon stream'
 !close(51)
   call finalize_PhotonStream (incomingPhotons)
-if(MasterProc .and. thisThread .eq. 0)PRINT *, 'about to finalize domain'
-  DO i=1, numLambda
-    call finalize_Domain(BBDomain(i))
-  END DO
   !
   ! Accumulate statistics from across all the processors
   !
@@ -868,7 +895,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, 'about to finalize domain'
     RadianceStats(:, :, :, :) = sumAcrossProcesses(RadianceStats)
 
 if(MasterProc .and. thisThread .eq. 0)then
-  PRINT *, 'Driver: accumulated results.' 
+!  PRINT *, 'Driver: accumulated results.' 
 !  PRINT *, 'RadianceStats=', RadianceStats(1,1,1,1:3)
 end if
 !  close(11)
@@ -1303,7 +1330,7 @@ contains
 !    ncStatus(23) = nf90_put_att(ncFileId, NF90_GLOBAL, "Highest_recorded_scattering_order", numRecScatOrd)
 !    end if
 
-    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Attributes ", ncStatus(:19)
+!    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Attributes ", ncStatus(:19)
 
     !
     ! Dimensions
@@ -1390,7 +1417,7 @@ contains
 !    end if
 
     ncStatus(31) = nf90_EndDef(ncFileId)
-    if(any(ncStatus(:) /= nf90_NoErr)) print *, ncStatus(:31)
+!    if(any(ncStatus(:) /= nf90_NoErr)) print *, ncStatus(:31)
     ! ----------------------
     ! File is set up - now write each variable
     ! 
@@ -1404,7 +1431,7 @@ contains
       ncStatus( 5) = nf90_inq_varid(ncFileId, "z", ncVarId)
       ncStatus( 6) = nf90_put_var(ncFileId, ncVarId, (zPosition(:numZ) + ZPosition(2:))/2)
     end if 
-    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Position", ncStatus(:6)
+!    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Position", ncStatus(:6)
     ncstatus(:) = nf90_NoErr
     !
     ! Upward flux
@@ -1413,7 +1440,7 @@ contains
     ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, fluxUpStats(:, :,1))
     ncStatus( 3) = nf90_inq_varid(ncFileId, "fluxUp_StdErr", ncVarId)
     ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, fluxUpStats(:, :,2))
-    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux up", ncStatus(:4)
+!    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux up", ncStatus(:4)
 
     !
     ! Downward flux
@@ -1422,7 +1449,7 @@ contains
     ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, fluxDownStats(:, :,1))
     ncStatus( 3) = nf90_inq_varid(ncFileId, "fluxDown_StdErr", ncVarId)
     ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, fluxDownStats(:, :,2))
-    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux down", ncStatus(:4)
+!    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux down", ncStatus(:4)
 
     !
     ! Absorbed flux
@@ -1431,7 +1458,7 @@ contains
     ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, fluxAbsorbedStats(:, :,1))
     ncStatus( 3) = nf90_inq_varid(ncFileId, "fluxAbsorbed_StdErr", ncVarId)
     ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, fluxAbsorbedStats(:, :,2))
-    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux absorbed", ncStatus(:4)
+!    if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux absorbed", ncStatus(:4)
 
     !
     ! Absorption profile
@@ -1441,7 +1468,7 @@ contains
       ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, absorbedProfileStats(:,1))
       ncStatus( 3) = nf90_inq_varid(ncFileId, "absorptionProfile_StdErr", ncVarId)
       ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, absorbedProfileStats(:,2))
-      if(any(ncStatus(:) /= nf90_NoErr)) print *, "Absorption profile", ncStatus(:4)
+!      if(any(ncStatus(:) /= nf90_NoErr)) print *, "Absorption profile", ncStatus(:4)
     end if 
     
     !
@@ -1452,7 +1479,7 @@ contains
       ncStatus( 2) = nf90_put_var(ncFileId, ncVarId, absorbedVolumeStats(:, :, :,1))
       ncStatus( 3) = nf90_inq_varid(ncFileId, "absorbedVolume_StdErr", ncVarId)
       ncStatus( 4) = nf90_put_var(ncFileId, ncVarId, absorbedVolumeStats(:, :, :,2))
-      if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux convergence", ncStatus(:4)
+!      if(any(ncStatus(:) /= nf90_NoErr)) print *, "Flux convergence", ncStatus(:4)
     end if 
     
     !
@@ -1467,7 +1494,7 @@ contains
       ncStatus( 6) = nf90_put_var(ncFileId, ncVarId, RadianceStats(:, :, :,1))
       ncStatus( 7) = nf90_inq_varid(ncFileId, "intensity_StdErr", ncVarId)
       ncStatus( 8) = nf90_put_var(ncFileId, ncVarId, RadianceStats(:, :, :,2))
-      if(any(ncStatus(:) /= nf90_NoErr)) print *, "Intensity", ncStatus(:8)
+!      if(any(ncStatus(:) /= nf90_NoErr)) print *, "Intensity", ncStatus(:8)
     end if
 
 !    if(recScatOrd) then
@@ -1494,7 +1521,7 @@ contains
 !    end if
 
     ncStatus( 1) = nf90_close(ncFileId)
-    if(any(ncStatus(:) /= nf90_NoErr)) print *, ncStatus(:1)
+!    if(any(ncStatus(:) /= nf90_NoErr)) print *, ncStatus(:1)
 
   end subroutine writeResults_netcdf
 ! -------------------------------------------------------------------------------

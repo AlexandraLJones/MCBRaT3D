@@ -1154,9 +1154,9 @@ contains
       ncStatus( :) = nf90_NoErr
       ncStatus( 1) = nf90_open(trim(fileName), nf90_NoWrite, ncFileID)
       ncStatus( 2) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", storageType)
-	PRINT*, 'ncstatus:', ncstatus(:)
-        PRINT *, NF90_STRERROR(ncStatus(1))
- 	PRINT *, NF90_STRERROR(ncStatus(2))
+!	PRINT*, 'ncstatus:', ncstatus(:)
+!        PRINT *, NF90_STRERROR(ncStatus(1))
+! 	PRINT *, NF90_STRERROR(ncStatus(2))
       if(any(ncStatus(1:2) /= nf90_noErr)) then
 PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncStatus(1:2) 
         call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " is not a phase function table file.")
@@ -1165,7 +1165,7 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
       ncStatus( :) = nf90_NoErr
       ncFileId = fileId
       ncStatus( 1) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", storageType)
-      PRINT *, "read_PhaseFunctionTable: ncstatus after get type ", ncstatus(:), 'noerror=', nf90_noErr
+!      PRINT *, "read_PhaseFunctionTable: ncstatus after get type ", ncstatus(:), 'noerror=', nf90_noErr
       if(ncStatus(  1) /= nf90_noErr) & 
         call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " doesn't contain this phase function.")
     end if
@@ -1173,7 +1173,7 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
     ! Read the data from the file
     ncStatus(:) = nf90_NoErr
     if(.not. stateIsFailure(status)) then
-PRINT *, "read_PhaseFunctionTable: about to read data"
+!PRINT *, "read_PhaseFunctionTable: about to read data"
       ! What's common to all the possible file formats? 
       ncStatus( 1) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "phaseFunctionNumber", ncDimId)
       ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nEntries)
@@ -1189,7 +1189,7 @@ PRINT *, "read_PhaseFunctionTable: about to read data"
         description = ""
         ncStatus( 9) = nf90_NoErr
       end if
-PRINT *, "read_PhaseFunctionTable: halfway through read data ", ncstatus(1:9)      
+!PRINT *, "read_PhaseFunctionTable: halfway through read data ", ncstatus(1:9)      
       if(index(trim(storageType), "Angle-Value") == 1) then
         ncStatus(10) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "scatteringAngle", ncDimId)
         ncStatus(11) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nAngles)
@@ -1214,7 +1214,7 @@ PRINT *, "read_PhaseFunctionTable: halfway through read data ", ncstatus(1:9)
       else
         call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " is of unknown format.")
       end if
-PRINT *, "read_phaseFunctionTable: ncstatus after getting the vars", ncStatus(:)
+!PRINT *, "read_phaseFunctionTable: ncstatus after getting the vars", ncStatus(:)
       !
       ! If the name was supplied we're writing a stand-alone file, so it's time to close it
       !
@@ -1224,7 +1224,7 @@ PRINT *, "read_phaseFunctionTable: ncstatus after getting the vars", ncStatus(:)
       ! Report any netcdf errors in the status variable
       !
       if(any(ncStatus(:) /= nf90_noErr)) then
-PRINT *, "read_PhaseFunctionTable: some errors detected"
+!PRINT *, "read_PhaseFunctionTable: some errors detected"
         do i = 1, size(ncStatus)
           if(ncStatus(i) /= nf90_NoErr) &
             call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(nf90_StrError(ncStatus(i))))
@@ -1235,7 +1235,7 @@ PRINT *, "read_PhaseFunctionTable: some errors detected"
       ! Put the data into the phase function table, depending on how it was stored
       !
       if(.not. stateIsFailure(status)) then
-PRINT *, "read_PhaseFunctionTable: about to create new phasefunction"
+!PRINT *, "read_PhaseFunctionTable: about to create new phasefunction"
         if(index(trim(storageType), "Angle-Value") == 1) then
           table = new_PhaseFunctionTable(scatteringAngle, phaseFunctionArray,     &
                                         key, extinction, singleScatteringAlbedo, &
@@ -1246,10 +1246,10 @@ PRINT *, "read_PhaseFunctionTable: about to create new phasefunction"
             phaseFunctions(i) = new_PhaseFunction(legendreCoefficients(start(i):(start(i) + length(i) - 1)), &
                                                   extinction(i), singleScatteringAlbedo(i), status = status)
           end do
-if(StateIsFailure(status)) PRINT*, "read_phaseFunction: state is failure after new_PhaseFunction"
+!if(StateIsFailure(status)) PRINT*, "read_phaseFunction: state is failure after new_PhaseFunction"
 
           if(.not. StateIsFailure(status)) then
-PRINT*, "read_PhaseFunctionTable: about to create new table"
+!PRINT*, "read_PhaseFunctionTable: about to create new table"
             table = new_PhaseFunctionTable(phaseFunctions, key, tableDescription = description, status = status)
           end if
 
@@ -1264,7 +1264,7 @@ PRINT*, "read_PhaseFunctionTable: about to create new table"
       if(.not. stateIsFailure(status))then
 	 call setStateToSuccess(status)
       else
-PRINT *, "read_PhaseFunctionTable: state is failure at the end of the routine"
+!PRINT *, "read_PhaseFunctionTable: state is failure at the end of the routine"
       end if
     end if
   end subroutine read_PhaseFunctionTable

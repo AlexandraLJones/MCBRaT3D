@@ -27,6 +27,10 @@ module emissionAndBBWeights
    module procedure emission_weightingOLD, emission_weightingNEW
   end interface emission_weighting
 
+  interface getFrequencyDistr
+   module procedure getFrequencyDistrOLD, getFrequencyDistrNEW
+  end interface getFrequencyDistr
+
   public :: weights
 
   public :: new_Weights, finalize_Weights, emission_weighting, getFrequencyDistr, getInfo_weights, read_SolarSource, solar_Weighting !, xxxxx
@@ -156,7 +160,7 @@ end if
      real(8)                                              :: dLambda
 
 !     CALL MPI_COMM_RANK(MPI_COMM_WORLD, thisProc, ierr)
-     dLambda = lambdas(2)-lambdas(1)
+     dLambda = ABS(lambdas(2)-lambdas(1))
      if (LEN(TRIM(fileName)) .gt. 0)then
 	call read_specResponseFunction(fileName, nLambda, spectrRespFunc, status=status)
 	theseWeights%totalPowerCDF(1) = dLambda*solarMu*solarSourceFunction(1) * spectrRespFunc(1)
@@ -166,9 +170,9 @@ end if
 
      DO i=2, nLambda
         if (i .gt. 1 .and. i .lt. nlambda) then
-          dLambda = (lambdas(i+1)-lambdas(i-1))/2.0_8 ! half points between ilambda and the adjacent values
+          dLambda = ABS((lambdas(i+1)-lambdas(i-1))/2.0_8) ! half points between ilambda and the adjacent values
         elseif (i .eq. nlambda) then
-          dLambda = lambdas(i)-lambdas(i-1)
+          dLambda = ABS(lambdas(i)-lambdas(i-1))
         else ! should never end up here
           PRINT *, 'solar_weighting: ended up in error condition of the loop. i = ', i
         end if 
@@ -280,7 +284,7 @@ end if
 	  dlambda = lambda_u(2)-lambda_u(1)
 	  lambda = lambda_u(2)
 	else ! should never end up here
-	  PRINT *, 'emission_weighting: ended up in error condition of the loop. ilambda = ', ilambda
+	  PRINT *, 'emission_weightingOLD: ended up in error condition of the loop. ilambda = ', ilambda
         end if
          !!$OMP END ORDERED
 
@@ -357,7 +361,7 @@ end if
 !               level_weights(nz)=1.0_8                               LINES B/C OF POINTERS
 		theseWeights%fracAtmsPower(ilambda) = atmsPower/(atmsPower + sfcPower)
           end if
-PRINT *, 'emission weighting: ilambda= ', ilambda,  ' atmosPower= ', atmsPower, 'sfcPower= ', sfcPower, 'fractAtmosPower= ', theseWeights%fracAtmsPower(ilambda)
+!PRINT *, 'emission weightingOLD: ilambda= ', ilambda,  ' atmosPower= ', atmsPower, 'sfcPower= ', sfcPower, 'fractAtmosPower= ', theseWeights%fracAtmsPower(ilambda)
 	  if (LEN(TRIM(fileName)) .gt. 0)then
 	     theseWeights%totalPowerCDF(ilambda) = tempPower + (atmsPower + sfcPower)*spectrRespFunc(ilambda)
           else
@@ -369,11 +373,11 @@ PRINT *, 'emission weighting: ilambda= ', ilambda,  ' atmosPower= ', atmsPower, 
      deallocate( zPosition, dz, dy, dx, atmsTemp, ssas, ext, cumExt)    
 
      if (theseWeights%totalPowerCDF(nlambda) .eq. 0.0_8)then
-        CALL setStateToFailure(status, 'emission_weighting: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
+        CALL setStateToFailure(status, 'emission_weightingOLD: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
      else
        totalFlux=theseWeights%totalPowerCDF(nlambda)/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
        theseWeights%spectrIntgrFlux = totalFlux     
-PRINT *, "emission_weightingOLD: totalFlux=", totalFlux, "theseWeights%totalPowerCDF=", theseWeights%totalPowerCDF
+!PRINT *, "emission_weightingOLD: totalFlux=", totalFlux, "theseWeights%totalPowerCDF=", theseWeights%totalPowerCDF
 !PRINT *, 'atmsPower= ',atmsPower, 'sfcPower= ', sfcPower, ' totalFlux=', totalFlux, ' totalArea=', (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1)), &
 !         ' average column area=', (SUM(dx)/dble(nx))*(SUM(dy)/dble(ny)), (xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))/dble(nx*ny), ' expected radiance=', atmsPlanckRad*(1.0_8-exp(-1.0_8*totalAbsCoef*(zPosition(nz+1)-zPosition(1))))
 
@@ -393,23 +397,24 @@ PRINT *, "emission_weightingOLD: totalFlux=", totalFlux, "theseWeights%totalPowe
      deallocate(xPosition, yPosition)
    end subroutine emission_weightingOLD
 
-   subroutine emission_weightingNEW(thisDomain, nLambda, iLambda, theseWeights, sfcTemp, totalPhotons, fileName, status)
+   subroutine emission_weightingNEW(thisDomain, nLambda, iLambda, theseWeights, sfcTemp, fileName, dLambda, totalFlux, status)
      implicit none
 
      type(Domain), intent(in)                             :: thisDomain
      type(Weights), intent(inout)                         :: theseWeights
      real(8), intent(in)                                  :: sfcTemp
-     integer,  intent(in)                                 :: nLambda, totalPhotons
-     integer, dimension(1), intent(in)                    :: iLambda
+     integer,  intent(in)                                 :: nLambda
+!     integer, dimension(1), intent(in)                    :: iLambda
+     integer, intent(in)		                  :: iLambda
      character(len=256),  intent(in)                      :: fileName
 !     integer,  intent(out)                             :: atmsPhotons
-!     real(8),                                intent(out)  :: totalFlux
+     real(8), optional, intent(in)			  :: dlambda
+     real(8), optional, intent(out)                       :: totalFlux
      type(ErrorMessage), intent(inout)                         :: status
      !Local variables
      integer                                           :: ix, iy, iz, nx, ny, nz, nComps, thisProc, ierr !, last
-     real(8)                                              ::  sfcPlanckRad,sfcPower,  atmsPower, totalPower, totalAbsCoef, b, lambda, albedo, emiss,dlambda
-!     real(8), dimension(1:3)                          :: lambda_u
-     real(8)                                          :: previous,corr_contrib,corr,temp_sum, prev_exact, tempPower, totalFlux
+     real(8)                                              ::  sfcPlanckRad,sfcPower,  atmsPower, totalPower, totalAbsCoef, b, albedo, emiss
+     real(8)                                          :: previous,corr_contrib,corr,temp_sum, prev_exact, tempPower, lambda
      real(8), allocatable, dimension(:)                             :: dx, dy,dz
      real(8), allocatable, dimension(:)                             ::xPosition, yPosition, zPosition
      real(8), allocatable, dimension(:,:,:)                         :: cumExt,atmsTemp
@@ -432,7 +437,7 @@ PRINT *, "emission_weightingOLD: totalFlux=", totalFlux, "theseWeights%totalPowe
               ext(1:nx,1:ny,1:nz,1:nComps), cumExt(1:nx,1:ny,1:nz))
      call getInfo_Domain(thisDomain, xPosition=xPosition,yPosition=yPosition, &
                          temps=atmsTemp, zPosition=zPosition, status=status)
-PRINT *, "emissionWeightingNEW: max temp = ", MAXVAL(atmsTemp)
+!PRINT *, "emissionWeightingNEW: max temp = ", MAXVAL(atmsTemp)
 
      dz(1:nz)=zPosition(2:nz+1)-zPosition(1:nz)
      dy(1:ny)=yPosition(2:ny+1)-yPosition(1:ny)
@@ -440,33 +445,11 @@ PRINT *, "emissionWeightingNEW: max temp = ", MAXVAL(atmsTemp)
 
 
      tempPower = 0.0_8
-!     lambda_u = 0.0_8
-
-!     DO ilambda = 1, nlambda
-         !!$OMP ORDERED
-!        if (ilambda .gt. 1 .and. ilambda .lt. nlambda) then ! this if block has to be executed in order
-!          call getInfo_Domain(theseDomains(ilambda+1), lambda=lambda_u(3),status=status)
-!          dlambda = (lambda_u(3)-lambda_u(1))/2.0_8 ! half points between ilambda and the adjacent values
-!          lambda = lambda_u(2)
-!          lambda_u(1) = lambda_u(2)
-!          lambda_u(2) = lambda_u(3)
-!        elseif (ilambda .eq. 1) then
-!          call getInfo_Domain(theseDomains(ilambda), lambda=lambda_u(1),status=status)
-!          call getInfo_Domain(theseDomains(ilambda+1), lambda=lambda_u(2),status=status)
-!          dlambda = lambda_u(2)-lambda_u(1)
-!          lambda = lambda_u(1)
-!        elseif (ilambda .eq. nlambda) then
-!         PRINT *, ilambda
-!          dlambda = lambda_u(2)-lambda_u(1)
-!          lambda = lambda_u(2)
-!        else ! should never end up here
-!          PRINT *, 'emission_weighting: ended up in error condition of the loop. ilambda = ', ilambda
-!        end if
          !!$OMP END ORDERED
         call getInfo_Domain(thisDomain, lambda=lambda, status=status)
-PRINT *, "emissionWeightingNew: lambda = ", lambda
+!PRINT *, "emissionWeightingNew: lambda = ", lambda
         call getInfo_Domain(thisDomain, albedo=albedo, ssa=ssas,ext=ext, totalExt=cumExt, status=status)
-PRINT *, "emissionWeightingNew: max totalExt=", MAXVAL(cumExt), "max Ext=", MAXVAL(ext)
+!PRINT *, "emissionWeightingNew: max totalExt=", MAXVAL(cumExt), "max Ext=", MAXVAL(ext)
 
         emiss = (1.0_8 - albedo)
         lambda=lambda/(10.0_8**6.0_8) ! convert lambda from micrometers to meters
@@ -512,7 +495,7 @@ PRINT *, "emissionWeightingNew: max totalExt=", MAXVAL(cumExt), "max Ext=", MAXV
                 theseWeights%fracAtmsPower(1) = atmsPower/(atmsPower + sfcPower)
           end if
           if (LEN(TRIM(fileName)) .gt. 0)then
-             theseWeights%totalPowerCDF(1) = tempPower + (atmsPower + sfcPower)*spectrRespFunc(iLambda(1))
+             theseWeights%totalPowerCDF(1) = tempPower + (atmsPower + sfcPower)*spectrRespFunc(iLambda)
           else
              theseWeights%totalPowerCDF(1) = tempPower + atmsPower + sfcPower
           end if
@@ -523,17 +506,42 @@ PRINT *, "emissionWeightingNew: max totalExt=", MAXVAL(cumExt), "max Ext=", MAXV
      if (theseWeights%totalPowerCDF(1) .eq. 0.0_8)then
         CALL setStateToFailure(status, 'emission_weightingNEW: Neither surface nor atmosphere will emitt photons since total power is 0. Not a valid solution')
      else
-       totalFlux=theseWeights%totalPowerCDF(1)/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)) ! We want the units to be [Wm^-2] but the x and y positions are in km
-       theseWeights%spectrIntgrFlux = totalFlux  ! in this routine this value is actually the monochromatic flux--the spectral width is not taken into account
-
-!       atmsPhotons=ceiling(totalPhotons * theseWeights%fracAtmsPower(1))
+       theseWeights%spectrIntgrFlux = theseWeights%totalPowerCDF(1)/((xPosition(nx+1)-xPosition(1))*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)) ! We want the units to be [Wm^-2] but the x and y positions are in km. Here this value is actually the monochromatic flux--the spectral width is not taken into account
        theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(1)
+       if(present(totalFlux) .and. present(dLambda))then ! We want to take into account spectral width and report total flux back to the calling routine
+	  theseWeights%spectrIntgrFlux=theseWeights%spectrIntgrFlux*dLambda !Here the spectral width is taken into account
+        totalFlux=theseWeights%spectrIntgrFlux
+       elseif(present(totalFlux) .or. present(dLambda))then
+          PRINT *, 'emission_weightingNEW: must supply both totalFlux holder and dLambda'
+       end if
      end if
      deallocate(xPosition, yPosition)
 
    end subroutine emission_weightingNEW
 
-   subroutine getFrequencyDistr(theseWeights, totalPhotons, randomNumbers, distribution)
+   subroutine getFrequencyDistrNEW(numLambda, CDF, totalPhotons, randomNumbers, distribution)
+     implicit none
+
+     integer, intent(in)                           :: numLambda, totalPhotons
+     real(8), dimension(1:numLambda), intent(in)   :: CDF
+     type(randomNumberSequence), intent(inout)     :: randomNumbers
+     integer, dimension(1:numLambda), intent(out)  :: distribution
+
+     integer                                       :: i, n
+     real                                          :: RN
+
+    
+     distribution = 0.0_8
+
+     DO n = 1, totalPhotons
+        RN = getRandomReal(randomNumbers)
+        i = findCDFIndex(RN, CDF)
+        distribution(i) = distribution(i)+1
+     END DO
+   end subroutine getFrequencyDistrNEW
+
+
+   subroutine getFrequencyDistrOLD(theseWeights, totalPhotons, randomNumbers, distribution)
      implicit none
 
      type(Weights), intent(in)                     :: theseWeights
@@ -554,7 +562,7 @@ PRINT *, "emissionWeightingNew: max totalExt=", MAXVAL(cumExt), "max Ext=", MAXV
 	i = findCDFIndex(RN, theseWeights%totalPowerCDF)
 	distribution(i) = distribution(i)+1
      END DO
-   end subroutine getFrequencyDistr
+   end subroutine getFrequencyDistrOLD
 !---------------------------------------------------------------------------------
    subroutine read_SolarSource(fileName, nLambda, sourceFunc, lambdas, status)
     character(len = *), intent(in   ) :: fileName

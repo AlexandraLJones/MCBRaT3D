@@ -509,7 +509,7 @@ contains
 	    end if
 	  END DO
 deallocate (levelWeights, colWeights, voxelWeights)
-PRINT *, 'newPhotonStream_BBEmission: for index ', iLambda, 'photons are slpit between atmos and surface as ', atmsTally, sfcTally
+!PRINT *, 'newPhotonStream_BBEmission: for index ', iLambda, 'photons are slpit between atmos and surface as ', atmsTally, sfcTally
 	  photons%currentPhoton = 1
 	  call setStateToSuccess(status)
  	end if
