@@ -48,7 +48,7 @@ program monteCarloDriver
   use surfaceProperties
   use emissionAndBBWeights
   use netcdf
-
+  use numericUtilities
   implicit none
  
   real, parameter :: Pi = dacos(-1.0_8)
@@ -145,15 +145,17 @@ program monteCarloDriver
 !  real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
 !  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
   integer              ::  N, atms_photons, maxThreads, availProcs, numPhotonsProcessed, left, n, ierr
+  integer              :: eindex, nonempty, counts, totalPhotonsProcessed
+  integer, allocatable :: indexes(:), tempFreqs(:), left(:)
   integer              :: batchesAssigned, batchesCompleted
   integer(8)           ::  totalNumPhotons = 0, counter
   integer              :: currentFreq(1)
   integer              :: SSPfileID, err
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
-  integer, allocatable   ::  freqDistr(:), startingPhoton(:)
+  integer, allocatable   ::  freqDistr(:), startingPhoton(:), photonCDF(:)
   integer, dimension(MPI_STATUS_SIZE)  :: mpiStatus
-  integer, parameter     :: EXIT_TAG = 99, NEW_FREQ = 1, SAME_FREQ = 2, PHOTONS = 4
+  integer, parameter     :: EXIT_TAG = 99, NEW_FREQ = 1, SAME_FREQ = 2, FIRST_FREQ=3, PHOTONS = 4
 
    ! I3RC Monte Carlo code derived type variables
   type(commonDomain)         :: commonPhysical!, commonConcen
@@ -280,7 +282,7 @@ program monteCarloDriver
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
   call read_Common(physDomainFile, commonPhysical, status)
   call printStatus(status)
-  allocate(freqDistr(1:numLambda))
+  allocate(freqDistr(1:numLambda), photonCDF(1:numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: Read common domain'
 
   if (LW_flag .ge. 0.0)then
@@ -427,6 +429,11 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
   if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
   if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
   if(MasterProc .and. thisThread .eq. 0)PRINT*, 'number of non-zero frequencies:', COUNT(freqDistr .gt. 0)
+  
+  photonCDF(1) = freqDistr(1)
+  DO i = 2, numLambda
+     photonCDF(i)= photonCDF(i-1)+freqDistr(i)
+  END DO
 
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
   call getInfo_Domain(thisDomain, xPosition = xPosition, yPosition = yPosition, &
@@ -566,55 +573,71 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
 !  batches: do batch = thisProc*batchesPerProcessor + 1, thisProc*batchesPerProcessor + batchesPerProcessor
   if(MasterProc)then  ! must be master process
     currentFreq = 1								! This is a new variable. Should only range from 1 to nlambda
-    n = 1
-    allocate(startingPhoton(1:numlambda))               ! This is a new variable. Needs to be initialized to 1
-    startingPhoton = 0
-    WHERE(freqDistr .ne. 0)startingPhoton = 1 
+!    n = 1
+!    allocate(startingPhoton(1:numlambda))               ! This is a new variable. Needs to be initialized to 1
+!    startingPhoton = 0
+!    WHERE(freqDistr .ne. 0)startingPhoton = 1 
 !PRINT *, startingPhoton
     batchesAssigned = 0
     batchesCompleted = 0
     ! hand out initial work to processes and update photons and currentFreq. !!numProcs must be .le. numLambda!!
-    DO WHILE(currentFreq(1) .le. numLambda)
+    DO n = 1, numProcs-1
 !PRINT *, "beginning of loop", currentFreq(1), freqDistr(currentFreq(1))
 	DO WHILE(freqDistr(currentFreq(1)) .lt. 1) ! this do while loop let's us skip over empty frequencies
 	  currentFreq = currentFreq + 1
 	  if (currentFreq(1) .gt. numLambda) EXIT
 	END DO	
 !PRINT *, "after skipping", currentFreq(1), freqDistr(currentFreq(1))
-	if (n .le. numLambda .and. n .le. numProcs-1 .and. currentFreq(1) .le. numLambda)then
-	  CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
-	  CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
+	if (freqDistr(currentFreq(1)).ge. numPhotonsPerBatch)then
+	  CALL MPI_SEND(numPhotonsPerBatch, 1, MPI_INTEGER, n, FIRST_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
+	  CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, FIRST_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
+ 	else
 	  ! update the variables for the next proc
-	  freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
-	  startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
-	  batchesAssigned = batchesAssigned + 1
+!	  freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
+!	  startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+!	  batchesAssigned = batchesAssigned + 1
 !	  PRINT *, 'MasterProc=', thisProc, 'sending photons of frequency index ', currentFreq, 'which has', freqDistr(currentFreq), 'photons remaining, to rank ', n
-	else
-          EXIT
+!	else
+!          EXIT
+	  eindex = findCDFIndex(numPhotonsPerBatch, photonCDF)
+	  nonempty = COUNT(freqDistr(currentFreq(1):eindex).gt.0) ! how many indeses in that range actually have photons? 
+	  allocate(indexes(1:nonempty),tempFreqs(1:nonempty))
+	  DO i = currentFreq(1), eindex
+	     if(freqDistr(i).gt.0)then
+		indexes(i-currentFreq(1)+1) = i
+		tempFreqs(i-currentFreq(1)+1) = freqDistr(i)
+	     end if  
+	  END DO
+	  CALL MPI_SEND(tempFreqs, nonempty, MPI_INTEGER, n, FIRST_FREQ, MPI_COMM_WORLD, ierr)
+	  CALL MPI_SEND(indexes, nonempty, MPI_INTEGER, n, FIRST_FREQ, MPI_COMM_WORLD, ierr)
+	  deallocate(indexes,tempFreqs)
+	  currentFreq=eindex
         end if
-	n = n + 1
-	currentFreq = currentFreq + 1			! so that next proc will be assigned a dif freq
+	batchesAssigned = batchesAssigned + 1
+	photonCDF=photonCDF-numPhotonsPerBatch
+!	n = n + 1
+!	currentFreq = currentFreq + 1			! so that next proc will be assigned a dif freq
     END DO
 
-    DO WHILE (n .le. numProcs-1) ! if there are any procs left that don't have tasks
-	currentFreq = MAXLOC(freqDistr(:))
-	CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
-        CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
+!    DO WHILE (n .le. numProcs-1) ! if there are any procs left that don't have tasks
+!	currentFreq = MAXLOC(freqDistr(:))
+!	CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
+!        CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
         ! update the variables for the next proc
-        freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
-        startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
-        batchesAssigned = batchesAssigned + 1
+!        freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
+!        startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+!        batchesAssigned = batchesAssigned + 1
 !        PRINT *, 'MasterProc=', thisProc, 'sending photons of frequency index ', currentFreq, 'which has', freqDistr(currentFreq), 'photons remaining, to rank ', n
-	n = n + 1
-    END DO
+!	n = n + 1
+!    END DO
 
 		! after the initial round of batches to processors there probably be work left to do. Allow workers to come to you for  more tasks. Listen for a query message
     counter = 1
     prevTotal = cpuTime0 
     DO WHILE(batchesCompleted .lt. batchesAssigned)
 	CALL MPI_RECV(numPhotonsProcessed, 1, MPI_INTEGER, MPI_ANY_SOURCE, PHOTONS, MPI_COMM_WORLD, mpiStatus, ierr)
+	n =  mpiStatus(MPI_SOURCE)
 	totalNumPhotons = totalNumPhotons + numPhotonsProcessed
-	CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, MPI_ANY_SOURCE, SAME_FREQ, MPI_COMM_WORLD, mpiStatus, ierr)
 	batchesCompleted = batchesCompleted + 1
 	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
 !	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
@@ -672,32 +695,58 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
 
 
 
-	if (ANY(freqDistr(:) .gt. 0))then ! if there is still work left to do...
-	     if(freqDistr(currentFreq(1)) .gt. 0)then ! use flag SAME_FREQ. ! are more photons available at the frequency it's currently working on?
+	if (photonCDF(numLambda).gt.0)then ! if there is still work left to do...
+	   if (freqDistr(currentFreq(1)).ge. numPhotonsPerBatch)then
+        	CALL MPI_SEND(numPhotonsPerBatch, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
+          	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
+           else
+          ! update the variables for the next proc
+!         freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch
+!         startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+!         batchesAssigned = batchesAssigned + 1
+!         PRINT *, 'MasterProc=', thisProc, 'sending photons of frequency index ', currentFreq, 'which has', freqDistr(currentFreq), 'photons remaining, to rank ', n
+!       else
+!          EXIT
+          	eindex = findCDFIndex(numPhotonsPerBatch, photonCDF)
+          	nonempty = COUNT(freqDistr(currentFreq(1):eindex).gt.0) ! how many indeses in that range actually have photons?
+          	allocate(indexes(1:nonempty),tempFreqs(1:nonempty))
+          	DO i = currentFreq(1), eindex
+             	   if(freqDistr(i).gt.0)then
+                   	indexes(i-currentFreq(1)+1) = i
+                   	tempFreqs(i-currentFreq(1)+1) = freqDistr(i)
+             	   end if
+          	END DO
+          	CALL MPI_SEND(tempFreqs, nonempty, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr)
+          	CALL MPI_SEND(indexes, nonempty, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr)
+          	currentFreq=eindex
+           end if
+           batchesAssigned = batchesAssigned + 1
+           photonCDF=photonCDF-numPhotonsPerBatch   
+!	     if(freqDistr(currentFreq(1)) .gt. 0)then ! use flag SAME_FREQ. ! are more photons available at the frequency it's currently working on?
 !PRINT *, freqDistr(currentFreq(1)), 'Photons left  on frequency index', currentFreq, 'Telling rank ', mpiStatus(MPI_SOURCE), 'to keep going starting with ', startingPhoton(currentFreq)
-		CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), SAME_FREQ, MPI_COMM_WORLD, ierr) 
-		 freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
-		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
-		batchesAssigned = batchesAssigned + 1
+!		CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), SAME_FREQ, MPI_COMM_WORLD, ierr) 
+!		 freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
+!		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+!		batchesAssigned = batchesAssigned + 1
 !		PRINT *, 'frequency index ',currentFreq, 'has ', freqDistr(currentFreq), 'remaining photons'
-	     elseif (ANY(startingPhoton(:) .eq. 1))THEN ! There are unassigned frequencies left. use flag NEW_FREQ
-		currentFreq = MINLOC(startingPhoton(:), MASK=startingPhoton .gt. 0) ! Returns first location of unassigned frequency with actual photons to run
+!	     elseif (ANY(startingPhoton(:) .eq. 1))THEN ! There are unassigned frequencies left. use flag NEW_FREQ
+!		currentFreq = MINLOC(startingPhoton(:), MASK=startingPhoton .gt. 0) ! Returns first location of unassigned frequency with actual photons to run
 !PRINT *, currentFreq, "frequency was previously unassigned with", freqDistr(currentFreq), "photons left. Starting with photon ", startingPhoton(currentFreq) 
-		CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
-		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr)   ! send the messages containing the needed info
-		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
-		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
-		batchesAssigned = batchesAssigned + 1
-	    else ! assign it to the frequency with the most work left to do. use flag NEW_FREQ
+!		CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
+!		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr)   ! send the messages containing the needed info
+!		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update book keeping variables
+!		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+!		batchesAssigned = batchesAssigned + 1
+!	    else ! assign it to the frequency with the most work left to do. use flag NEW_FREQ
 !PRINT *, "minimum starting photon greater than 0 is ", MINVAL(startingPhoton,  MASK=startingPhoton .gt. 0), "and MINVAL(startingPhoton(:)) .eq. 1 evaluates as ", MINVAL(startingPhoton(:)) .eq. 1
-		currentFreq = MAXLOC(freqDistr(:))
+!		currentFreq = MAXLOC(freqDistr(:))
 !PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency with most remaining photons', currentFreq, freqDistr(currentFreq), 'starting with photon', startingPhoton(currentFreq)
-		CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
-		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! send the messages containing the needed info
-		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update the book keeping variables
-		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
-		batchesAssigned = batchesAssigned + 1
-	    END IF
+!		CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send tag so it knows what kind of data to expect
+!		CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, mpiStatus(MPI_SOURCE), NEW_FREQ, MPI_COMM_WORLD, ierr) ! send the messages containing the needed info
+!		freqDistr(currentFreq) = freqDistr(currentFreq) - numPhotonsPerBatch ! update the book keeping variables
+!		startingPhoton(currentFreq) = startingPhoton(currentFreq) + numPhotonsPerBatch
+!		batchesAssigned = batchesAssigned + 1
+!	    END IF
 !	    PRINT *, 'assigned rank ', mpiStatus(MPI_SOURCE), 'to work on frequency', currentFreq, 'starting with photon', startingPhoton(currentFreq)-numPhotonsPerBatch, 'which now has', freqDistr(currentFreq), 'photons remaining'
 	END IF
     END DO
@@ -707,42 +756,72 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
 	CALL MPI_SEND(freqDistr(currentFreq), 1, MPI_INTEGER, n, EXIT_TAG, MPI_COMM_WORLD, ierr)
     END DO
 PRINT *, "Done with batches"
-
+!
+!
+!
+!
+!
+!
+!
+!
   else ! must be a worker process
-    CALL MPI_RECV(left, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
-    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
-!    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
-!!!!!!!!!!!!!!TODO read appropriate SSPs from file and construct domain !!!!!!!!!!!!!!!
-	err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
-        if(err /= nf90_NoErr) then
-           PRINT *, "Driver:initial batches: error opening file ", err, trim(nf90_strerror(err))
-           STOP
-        end if
-        CALL read_SSPTable(SSPFileID, currentFreq(1), commonPhysical, thisDomain, status)
-	err = nf90_close(SSPFileID)
-	if(err /= nf90_NoErr) then
-           PRINT *, "Driver:initial batches: error closing file ", err, trim(nf90_strerror(err))
-           STOP
-        end if
-    DO i=0,numThreads-1
+    err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
+    if(err /= nf90_NoErr) then
+       PRINT *, "Driver:initial batches: error opening file ", err, trim(nf90_strerror(err))
+       STOP
+    end if
+     DO i=0,numThreads-1
        randoms(thisThread)=new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
     END DO
-    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
-        theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
-        CALL printStatus(status)
-        CALL emission_weighting(thisDomain, numLambda, currentFreq(1), theseWeights, surfaceTemp, instrResponseFile, status=status)
-        CALL printStatus(status)
-	incomingPhotons=new_PhotonStream(theseWeights=theseWeights,iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
+    DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
+	CALL MPI_PROBE(0,MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
+	CALL MPI_GET_COUNT(mpiStatus,MPI_INTEGER,counts,ierr)
+	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
+       allocate(left(1:counts), indexes(1:counts))
+    CALL MPI_RECV(left, counts, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
+    CALL MPI_RECV(indexes, counts, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
+!    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
+    totalPhotonsProcessed = 0
+    DO i= 1, counts
+	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ)then
+	   CALL finalize_Domain(thisDomain)
+	   CALL finalize_Weights(theseWeights)
+	end if
+	CALL read_SSPTable(SSPFileID, indexes(i), commonPhysical, thisDomain, status)
+        if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
+           theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
+	   CALL printStatus(status)
+	   CALL emission_weighting(thisDomain, numLambda, indexes(i), theseWeights, surfaceTemp, instrResponseFile, status=status)
+	   CALL printStatus(status)
+	end if
+
+	if(LW_flag >= 0.0)then 
+	     incomingPhotons=new_PhotonStream(theseWeights=theseWeights,iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
 !PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
-        CALL printStatus(status)
-    else
-	incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
+	     CALL printStatus(status)
+        else
+	     incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
 !	PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
-        CALL printStatus(status)  
-    end if
+             CALL printStatus(status)  
+        end if
+
+
+!    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
+!        theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
+!        CALL printStatus(status)
+!        CALL emission_weighting(thisDomain, numLambda, currentFreq(1), theseWeights, surfaceTemp, instrResponseFile, status=status)
+!        CALL printStatus(status)
+!	incomingPhotons=new_PhotonStream(theseWeights=theseWeights,iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
+!PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
+!        CALL printStatus(status)
+!    else
+!	incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
+!	PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
+!        CALL printStatus(status)  
+!    end if
 !!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
     prevTotal = cpuTime0
-    DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
+!    DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
 !	PRINT *, 'Rank ', thisProc, 'recieved this tag:', mpiStatus(MPI_TAG), 'and will process photons of frequency', currentFreq, 'which has', left, 'photons left'
 	! set the current photon of the appropriate frequency to the starting value
 !	call setCurrentPhoton(incomingBBPhotons(currentFreq(1)), start, status)
@@ -753,18 +832,19 @@ PRINT *, "Done with batches"
 !	    randoms(i) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
 !	END DO
 	! Now we compute the radiative transfer for this batch of photons.
-	call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status)
-	call printStatus(status)
+    call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status)
+    call printStatus(status)
+    totalPhotonsProcessed=totalPhotonsProcessed+numPhotonsProcessed
 	! get contribution arrays from integrator
 	!   This particular integrator provides fluxes at the top and bottom
      	!   of the domain for both the domain mean and pixel level fluxes,
      	!   the absorbed flux profile, 3D field of absorbed flux, and
      	!   the pixel level radiances at top and/or bottom of domain.
-	call reportResults (mcIntegrator, &
-	meanFluxUp=meanFluxUp, meanFluxDown=meanFluxDown, meanFluxAbsorbed=meanFluxAbsorbed,   &
-	fluxUp=fluxUp(:, :), fluxDown=fluxDown(:, :), fluxAbsorbed=fluxAbsorbed(:, :), &
-	absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
-	call printStatus(status)
+    call reportResults (mcIntegrator, &
+	 meanFluxUp=meanFluxUp, meanFluxDown=meanFluxDown, meanFluxAbsorbed=meanFluxAbsorbed,   &
+	 fluxUp=fluxUp(:, :), fluxDown=fluxDown(:, :), fluxAbsorbed=fluxAbsorbed(:, :), &
+	 absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
+    call printStatus(status)
 	!
 	! Accumulate the first and second moments of each quantity over the batches
 	!
@@ -800,11 +880,11 @@ PRINT *, "Done with batches"
 	    RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + numPhotonsProcessed*(Radiance(:, :, :)**2.0_8)
 !PRINT *, numPhotonsProcessed, 'numPhotons', solarFlux*FluxUp, '=FluxUp', solarFlux*FluxDown, '=FluxDown', solarFlux*AbsorbedVolume, '=AbsVolume', solarFlux*Radiance(:, :, :), '=Intensity'
 	end if
-
+     END DO
 !WRITE(51, '(E26.16, I10, I4, 4E26.16 )') solarFlux, numPhotonsProcessed, currentFreq, Radiance(1,1,1), RadianceStats(1,1,1,1:2)
 
-	CALL MPI_SEND(numPhotonsProcessed, 1, MPI_INTEGER, 0, PHOTONS, MPI_COMM_WORLD, ierr)
-	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, 0, SAME_FREQ, MPI_COMM_WORLD, ierr)
+     CALL MPI_SEND(totalPhotonsProcessed, 1, MPI_INTEGER, 0, PHOTONS, MPI_COMM_WORLD, ierr)
+     deallocate(left,indexes)
 !	CALL cpu_time(total)
 !	if(total-prevTotal .gt. writeFreq)then
 !PRINT *, 'Rank', thisProc, 'entered the sumAcrossprocesses block', total-prevTotal
@@ -826,39 +906,44 @@ PRINT *, "Done with batches"
 !	  end if
 !	  prevTotal = total
 !	end if
+  END DO
+  err = nf90_close(SSPFileID)
+  if(err /= nf90_NoErr) then
+     PRINT *, "Driver:initial batches: error closing file ", err, trim(nf90_strerror(err))
+     STOP
+  end if
+!	CALL MPI_RECV(left, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
+!	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
+!	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) then
+!	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
+!	    CALL finalize_Domain(thisDomain)
+!	    err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
+ !    	    if(err /= nf90_NoErr) then
+  !      	PRINT *, "Driver:batches: error opening file ", err, trim(nf90_strerror(err))
+   !     	STOP
+    ! 	    end if
+!	    CALL read_SSPTable(SSPfileID, currentFreq(1), commonPhysical, thisDomain, status) !!!! TODO !!!!
+!	    err = nf90_close(SSPfileID)
+!	    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
+!		CALL finalize_Weights(theseWeights)
+!		theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
+!	        CALL printStatus(status)
+ !       	CALL emission_weighting(thisDomain, numLambda, currentFreq(1), theseWeights, surfaceTemp, instrResponseFile, status=status)
+!	        CALL printStatus(status)
+!	    end if
+!	end if
 
-	CALL MPI_RECV(left, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
-	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
-	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) then
-	    CALL MPI_RECV(currentFreq, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
-	    CALL finalize_Domain(thisDomain)
-	    err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
-     	    if(err /= nf90_NoErr) then
-        	PRINT *, "Driver:batches: error opening file ", err, trim(nf90_strerror(err))
-        	STOP
-     	    end if
-	    CALL read_SSPTable(SSPfileID, currentFreq(1), commonPhysical, thisDomain, status) !!!! TODO !!!!
-	    err = nf90_close(SSPfileID)
-	    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
-		CALL finalize_Weights(theseWeights)
-		theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
-	        CALL printStatus(status)
-        	CALL emission_weighting(thisDomain, numLambda, currentFreq(1), theseWeights, surfaceTemp, instrResponseFile, status=status)
-	        CALL printStatus(status)
-	    end if
-	end if
-
-	if(LW_flag >= 0.0)then
-	   incomingPhotons=new_PhotonStream(theseWeights=theseWeights, iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
+!	if(LW_flag >= 0.0)then
+!	   incomingPhotons=new_PhotonStream(theseWeights=theseWeights, iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
 !	   PRINT *, 'Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons and recieved tag: ', mpiStatus(MPI_TAG)
-	   CALL printStatus(status)
-	else
-	   incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
+!	   CALL printStatus(status)
+!	else
+!	   incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
 !	   PRINT *, 'Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons and recieved tag: ', mpiStatus(MPI_TAG)
-	   CALL printStatus(status)
-	end if    
+!	   CALL printStatus(status)
+!	end if    
 !	PRINT *, 'rank ', thisProc, 'recieved message ', mpiStatus(MPI_TAG)
-    END DO
+ !   END DO
 !PRINT *, 'thisProc=', thisProc,  'RadianceStatsSums=', RadianceStats(1,1,1,1:3)
   end if !  end do batches
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
