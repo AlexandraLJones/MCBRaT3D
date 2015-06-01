@@ -1389,7 +1389,7 @@ contains
      
       ! Resonable values for the properties
       if(any(extinction(:, :, :) < 0.)) &
-        call setStateToFailure(status, "validateOpticalComponent: extinction must be >= 0.")
+        call setStateToFailure(status, "validateOpticalComponent: LambdaI= " // IntToChar(thisDomain%lambdaI) // "extinction must be >= 0.")
       if(any(singleScatteringAlbedo(:, :, :) < 0.) .or. any(singleScatteringAlbedo(:, :, :) > 1. )) &
         call setStateToFailure(status, "validateOpticalComponent: singleScatteringAlbedo must be between 0 and 1")
       

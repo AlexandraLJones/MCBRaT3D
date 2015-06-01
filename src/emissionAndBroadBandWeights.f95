@@ -157,7 +157,7 @@ end if
 !     real(8), parameter                                   :: Pi=4*DATAN(1.0_8)
 !     real(8), parameter                                   :: solarSolidAngle=2.0_8*Pi*(1.0_8 - DCOS(DASIN(Rs/(Rs+Des))))
      integer                                              :: i, thisProc, ierr
-     real(8)                                              :: dLambda
+     real(8)                                              :: dLambda, corr, tempSum, corrContr
 
 !     CALL MPI_COMM_RANK(MPI_COMM_WORLD, thisProc, ierr)
      dLambda = ABS(lambdas(2)-lambdas(1))
@@ -167,7 +167,8 @@ end if
      else
         theseWeights%totalPowerCDF(1) = dLambda*solarMu*solarSourceFunction(1)
      end if
-
+!write(31,"(2E30.20)") dLambda, theseWeights%totalPowerCDF(1)
+     corr = 0.0_8
      DO i=2, nLambda
         if (i .gt. 1 .and. i .lt. nlambda) then
           dLambda = ABS((lambdas(i+1)-lambdas(i-1))/2.0_8) ! half points between ilambda and the adjacent values
@@ -178,12 +179,22 @@ end if
         end if 
 
 	if (LEN(TRIM(fileName)) .gt. 0)then
-	   theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarMu*solarSourceFunction(i))* spectrRespFunc(i)
+!	   theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarMu*solarSourceFunction(i))* spectrRespFunc(i)
+	   corrContr = ((dLambda*solarMu*solarSourceFunction(i))* spectrRespFunc(i))-corr
+	   tempSum = theseWeights%totalPowerCDF(i-1)+corrContr
+	   corr = (tempSum-theseWeights%totalPowerCDF(i-1))-corrContr
+	   theseWeights%totalPowerCDF(i) = tempSum
 	else
-           theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarMu*solarSourceFunction(i))
+!           theseWeights%totalPowerCDF(i) = theseWeights%totalPowerCDF(i-1)+ (dLambda*solarMu*solarSourceFunction(i))
+	    corrContr = (dLambda*solarMu*solarSourceFunction(i))-corr
+	    tempSum = theseWeights%totalPowerCDF(i-1)+corrContr
+           corr = (tempSum-theseWeights%totalPowerCDF(i-1))-corrContr
+           theseWeights%totalPowerCDF(i) = tempSum
 	end if
+!write(31,"(2E30.20)") dLambda, theseWeights%totalPowerCDF(i)
 !PRINT *, 'cumFlux= ', theseWeights%totalPowerCDF(i), 'dLambda= ',dLambda, 'solid angle= ', solarSolidAngle, 'mu= ', solarMu, 'radiance= ', radianceFunction(i)
      END DO
+!close(31)
      theseWeights%spectrIntgrFlux = theseWeights%totalPowerCDF(nLambda)
      totalFlux = theseWeights%spectrIntgrFlux
      theseWeights%totalPowerCDF = theseWeights%totalPowerCDF/theseWeights%totalPowerCDF(nLambda)
@@ -589,9 +600,11 @@ end if
       ncStatus( 5) = nf90_inq_varid(ncFileId, "SourceFunction", ncVarId)
       ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, sourceFunc)
 !PRINT *, 'Radmax=', MAXVAL(sourceFunc), 'Radmin=', MINVAL(sourceFunc)
-      if(any(ncStatus(:) /= nf90_NoErr)) &
+      if(any(ncStatus(:) /= nf90_NoErr)) then
+	PRINT *, "read_SolarSource: ncStatus= ", ncstatus(1:6)
         call setStateToFailure(status, "read_SolarSource: " // trim(fileName) // &
                                " doesn't look a solar source function file.")
+      end if
     end if
 
 ! IT WOULD BE NICE TO BE ABLE TO CHECK THE LAMBDA VALUES HERE AGAINST THE DOMAIN FILE VALUES, BUT THAT MEANS IT WOULD HAVE TO BE CALLED LATER AFTER THE DOMAINS ARE ALL READ IN

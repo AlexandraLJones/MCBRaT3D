@@ -120,7 +120,7 @@ program monteCarloDriver
   
 
    ! Local variables
-  character(len=256)   :: namelistFileName
+  character(len=256)   :: namelistFileName!, photon_file, col_file
 !  character(len=256)   :: voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file
   character(len=256)   :: batch_file, checkpointFile
   integer              :: nX, nY, nZ, phtn, checkFreq = 100
@@ -202,18 +202,19 @@ program monteCarloDriver
 !  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
 !  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
 !  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
-  write(batch_file, '(A,I0.4)') "batch.out.", thisProc
+!  write(batch_file, '(A,I0.4)') "batch.out.", thisProc
 
-!  open(unit=31, file=trim(voxel_file) , status='UNKNOWN')
+!   open(unit=34, file=trim(photon_file) , status='UNKNOWN')
+!  open(unit=33, file=trim(voxel_file) , status='UNKNOWN')
 !  open(unit=32, file=trim(level_file) , status='UNKNOWN')
-!  open(unit=33, file=trim(col_file) , status='UNKNOWN')
+!  open(unit=31, file=trim(col_file) , status='UNKNOWN')
 !  open(unit=14, file=trim(row_file) , status='UNKNOWN')
 !  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
 !  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
 !  open(unit=17, file=trim(voxel_file2) , status='UNKNOWN')
 !  open(unit=51, file=trim(batch_file), status='UNKNOWN')
 
-  ! -----------------------------------------
+ ! -----------------------------------------
   ! Get the input variables from the namelist file
   !
   call cpu_time(cpuTime0)
@@ -369,7 +370,8 @@ PRINT *, "in LW loop at iteration ", i
 	call finalize_Weights(theseWeights)
      END DO
      err=nf90_close(SSPfileId)
-     fluxCDF(:) = sumAcrossProcesses(fluxCDF)
+!     fluxCDF(:) = sumAcrossProcesses(fluxCDF)
+     CALL MPI_ALLREDUCE(MPI_IN_PLACE,fluxCDF,numLambda,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
 
 !     DO i = numLambda, 1, -1
 !	fluxCDF(i)=SUM(fluxCDF(1:i))
@@ -390,9 +392,18 @@ PRINT *, "in LW loop at iteration ", i
      thisThread = OMP_GET_THREAD_NUM()
 !PRINT *, 'thisThread=', thisThread
   !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
-     randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
-     call getFrequencyDistr(numLambda, fluxCDF, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
+     randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed,thisProc, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
+     if (MasterProc)then
+	call getFrequencyDistr(numLambda, fluxCDF, &
+	     MOD(numPhotonsPerBatch*numBatches, numProcs-1),&
+	     randoms(thisThread), freqDistr)
+     else
+	call getFrequencyDistr(numLambda, fluxCDF, numPhotonsPerBatch*numBatches/(numProcs-1),randoms(thisThread), freqDistr)
+     end if
+
      deallocate(fluxCDF)
+     call synchronizeProcesses
+     freqDistr(:) = sumAcrossProcesses(freqDistr)
   else
 if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPfilename
      err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
@@ -421,9 +432,17 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
      thisThread = OMP_GET_THREAD_NUM()
 !PRINT *, 'thisThread=', thisThread
   !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
-     randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
-     call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches,randoms(thisThread), freqDistr) ! TECHNICALLY NUMPHOTONSPERBATCH is NOT BE CORRECT but this is just for the set up step so i think its OK
+     randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
+     if (MasterProc)then
+        call getFrequencyDistr(theseWeights, &
+             MOD(numPhotonsPerBatch*numBatches, numProcs-1),&
+             randoms(thisThread), freqDistr)
+     else
+        call getFrequencyDistr(theseWeights, numPhotonsPerBatch*numBatches/(numProcs-1),randoms(thisThread), freqDistr)
+     end if
      call finalize_Weights(theseWeights)
+     call synchronizeProcesses
+     freqDistr(:) = sumAcrossProcesses(freqDistr)
   end if
 
   if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
@@ -431,9 +450,12 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
   if(MasterProc .and. thisThread .eq. 0)PRINT*, 'number of non-zero frequencies:', COUNT(freqDistr .gt. 0)
   
   photonCDF(1) = freqDistr(1)
+!if(MasterProc .and. thisThread .eq. 0) write(34,"(2E30.20, 2I12)") centralLambdas(1), solarSourceFunction(1), photonCDF(1), freqDistr(1)
   DO i = 2, numLambda
      photonCDF(i)= photonCDF(i-1)+freqDistr(i)
+!if(MasterProc .and. thisThread .eq. 0) write(34,"(2E30.20, 2I12)") centralLambdas(i), solarSourceFunction(i), photonCDF(i), freqDistr(i) 
   END DO
+!if(MasterProc .and. thisThread .eq. 0) close(34)
 
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
   call getInfo_Domain(thisDomain, xPosition = xPosition, yPosition = yPosition, &
@@ -811,7 +833,7 @@ PRINT *, "Done with batches"
        DO i= 1, counts
 	  if(mpiStatus(MPI_TAG) .eq. NEW_FREQ)then
 	     CALL finalize_Domain(thisDomain)
-	     CALL finalize_Weights(theseWeights)
+	    if(LW_flag >= 0.0)CALL finalize_Weights(theseWeights)
 	  end if
 	  CALL read_SSPTable(SSPFileID, indexes(i), commonPhysical, thisDomain, status)
           if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
@@ -910,7 +932,8 @@ PRINT *, "Done with batches"
 !WRITE(51, '(E26.16, I10, I4, 4E26.16 )') solarFlux, numPhotonsProcessed, currentFreq, Radiance(1,1,1), RadianceStats(1,1,1,1:2)
 
      CALL MPI_SEND(totalPhotonsProcessed, 1, MPI_INTEGER, 0, PHOTONS, MPI_COMM_WORLD, ierr)
-     deallocate(left,indexes)
+     if(allocated(left))deallocate(left)
+     if(allocated(indexes))deallocate(indexes)
 !	CALL cpu_time(total)
 !	if(total-prevTotal .gt. writeFreq)then
 !PRINT *, 'Rank', thisProc, 'entered the sumAcrossprocesses block', total-prevTotal
@@ -973,7 +996,7 @@ PRINT *, "Done with batches"
 !PRINT *, 'thisProc=', thisProc,  'RadianceStatsSums=', RadianceStats(1,1,1,1:3)
   end if !  end do batches
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
-  deallocate(freqDistr)
+  if(allocated(freqDistr))deallocate(freqDistr)
 !  if (allocated(startingPhoton)) deallocate(startingPhoton)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: about to finalize photon stream'
 !close(51)

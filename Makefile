@@ -38,7 +38,7 @@ Libs        =
 
 # Macros are available for ifort, g95, xlf, absoft, ftn
  compiler=ftn
- debug=no
+ debug=yes
 
 ifeq (${compiler},ftn)
 #   fortran compiler on Blue Waters
@@ -47,11 +47,11 @@ ifeq (${compiler},ftn)
   ifeq (${debug},no)
   #optimization flags
 #     F95Flags = -h omp${Modules}
-     F95Flags = -h omp -dynamic${Modules} 
+     F95Flags = -h omp -h pl=/u/sciteam/aljones4/I3RC/compileLib  -h wp -d wX -dynamic${Modules} 
      FFlags =
   else
 #      F95Flags = -h omp -g -O fp0 -Rb -Rc -Rp -rm${Modules}
-     F95Flags = -h omp -h msgs -g -O fp0 -Rb -Rc -Rp -rm -dynamic${Modules}
+     F95Flags = -h omp -h msgs -g -O fp0 -Rb -Rc -Rp -rm -h pl=/u/sciteam/aljones4/I3RC/compileLib -h wp -d wX -dynamic${Modules}
 #     F95Flags = -g -O0 -dynamic${Modules}
 #     FFlags = -g -O0
      FFlags = -h msgs -g -O fp0 -rm
