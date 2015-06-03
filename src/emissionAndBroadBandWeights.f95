@@ -533,16 +533,17 @@ end if
    subroutine getFrequencyDistrNEW(numLambda, CDF, totalPhotons, randomNumbers, distribution)
      implicit none
 
-     integer, intent(in)                           :: numLambda, totalPhotons
+     integer, intent(in)                           :: numLambda
+     integer(8), intent(in)                        :: totalPhotons
      real(8), dimension(1:numLambda), intent(in)   :: CDF
      type(randomNumberSequence), intent(inout)     :: randomNumbers
-     integer, dimension(1:numLambda), intent(out)  :: distribution
+     integer(8), dimension(1:numLambda), intent(out)  :: distribution
 
      integer                                       :: i, n
      real                                          :: RN
 
     
-     distribution = 0.0_8
+     distribution = 0
 
      DO n = 1, totalPhotons
         RN = getRandomReal(randomNumbers)
@@ -556,9 +557,9 @@ end if
      implicit none
 
      type(Weights), intent(in)                     :: theseWeights
-     integer, intent(in)                           :: totalPhotons
+     integer(8), intent(in)                           :: totalPhotons
      type(randomNumberSequence), intent(inout)     :: randomNumbers
-     integer, dimension(:), intent(out)            :: distribution
+     integer(8), dimension(:), intent(out)            :: distribution
 
      integer                                       :: numLambda, i, n
      real                                          :: RN
@@ -566,7 +567,7 @@ end if
 
      numLambda = size(theseWeights%totalPowerCDF)
 !     allocate(distribution(1:numLambda))
-     distribution = 0.0_8
+     distribution = 0
 
      DO n = 1, totalPhotons
 	RN = getRandomReal(randomNumbers)

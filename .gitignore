@@ -11,4 +11,5 @@
 *.lst
 *.phasetab
 *.gz
+*.mod
 build.log

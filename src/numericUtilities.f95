@@ -16,7 +16,7 @@ module numericUtilities
   end interface
 
   interface findCDFIndex
-     module procedure findCDFIndex_double, findCDFIndex_int
+     module procedure findCDFIndex_double, findCDFIndex_int, findCDFIndex_int8
   end interface
 
   public :: computeLobattoTerms, computeGaussLegendreTerms, &
@@ -379,6 +379,40 @@ contains
 
     findCDFIndex_int = upperBound
   end function findCDFIndex_int
+  !------------------------------------------------------------------------------------------
+  !------------------------------------------------------------------------------------------
+ pure function findCDFIndex_int8(value, table)
+    integer(8),               intent( in) :: value
+    integer(8), dimension(:), intent( in) :: table
+    integer                         :: findCDFIndex_int8
+    !
+    ! Find the index i into the table such that table(i-1) < value <= table(i)
+    !   This is modeled after routine "hunt" from Numerical Recipes, 2nd ed.,
+    !   pg 112. Here we know that the values in the table are always increasing,
+    !   that every value should be spanned by the table entries, and the firstGuess
+    !   always makes sense.
+
+    ! Local variables
+    integer :: lowerBound, upperBound, midPoint
+    integer :: increment
+
+    lowerBound = 0
+    upperBound = size(table)
+
+    ! Bisection: figure out which half of the interval holds the
+    !   desired value, discard the other half, and repeat
+    bisectionLoop: do
+      if(lowerBound .eq. size(table) .or. upperBound .le. lowerBound+1 ) exit bisectionLoop
+      midPoint = (lowerBound + upperBound)/2
+      if(value > table(midPoint)) then
+        lowerBound = midPoint
+      else
+        upperBound = midPoint
+      end if
+    end do bisectionLoop
+
+    findCDFIndex_int8 = upperBound
+  end function findCDFIndex_int8
   !------------------------------------------------------------------------------------------
   pure function findIndexReal(value, table, firstGuess)
     real,               intent( in) :: value

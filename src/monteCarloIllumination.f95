@@ -64,7 +64,7 @@ contains
     ! Create a set of incoming photons with specified initial zenith angle cosine and  
     !   azimuth. 
     real,                       intent(in   ) :: solarMu, solarAzimuth
-    integer                                   :: numberOfPhotons
+    integer(8)                                   :: numberOfPhotons
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(ErrorMessage),         intent(inout) :: status
     type(photonStream)                        :: photons
@@ -430,7 +430,8 @@ contains
 	implicit none
 
 	type(Weights), intent(in)                               :: theseWeights
-	integer, intent(in)                                     :: numberOfPhotons, iLambda
+	integer(8), intent(in)                                 :: numberOfPhotons
+	integer, intent(in)                                     :: iLambda
 	type(randomNumberSequence), intent(inout)               :: randomNumbers
 	type(ErrorMessage), intent(inout)                       :: status
 	integer, dimension(:,:,:), optional, intent(out)        :: option1

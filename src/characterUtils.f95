@@ -13,6 +13,11 @@ module CharacterUtils
   
   integer :: maxStringLength = 25
   public :: CharToInt, IntToChar, CharToReal
+
+  interface IntToChar
+    module procedure Int4ToChar, Int8ToChar
+  end interface
+
 contains
   elemental function CharToInt(inputString)
     character(len = *), intent( in) :: inputString
@@ -32,16 +37,28 @@ contains
     
   end function CharToInt
   ! --------------------------------------------------------------------------------
-  elemental function IntToChar(integerValue)
-    integer,              intent( in) :: integerValue
-    character(len = maxStringLength)  :: IntToChar
+  elemental function Int4ToChar(integerValue)
+    integer(4),              intent( in) :: integerValue
+    character(len = maxStringLength)  :: Int4ToChar
     !
     !   Creates the character representation of an integer.  
     !  
 
-    write(IntToChar, *) integerValue
-    IntToChar = AdjustL(IntToChar)
-  end function IntToChar
+    write(Int4ToChar, *) integerValue
+    Int4ToChar = AdjustL(Int4ToChar)
+  end function Int4ToChar
+  ! --------------------------------------------------------------------------------
+  elemental function Int8ToChar(integerValue)
+    integer(8),              intent( in) :: integerValue
+    character(len = maxStringLength)  :: Int8ToChar
+    !
+    !   Creates the character representation of an integer.
+    !
+
+    write(Int8ToChar, *) integerValue
+    Int8ToChar = AdjustL(Int8ToChar)
+  end function Int8ToChar
+
   ! --------------------------------------------------------------------------------
   elemental function CharToReal(inputString)
     character(len = *), intent( in) :: inputString

@@ -211,8 +211,8 @@ contains
     type(domain),		intent(inout)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons  
-    integer,                    intent(in   ) :: numPhotonsPerBatch
-    integer,                    intent(  out) :: numPhotonsProcessed
+    integer(8),                    intent(in   ) :: numPhotonsPerBatch
+    integer(8),                    intent(  out) :: numPhotonsProcessed
     type(ErrorMessage),         intent(inout) :: status
     integer, dimension(:,:,:), optional, intent(out) :: option2
 
@@ -395,8 +395,8 @@ contains
     type(domain),               intent(in)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
     type(photonStream),         intent(inout) :: incomingPhotons
-    integer,                    intent(in   ) :: numPhotonsPerBatch
-    integer,                    intent(  out) :: numPhotonsProcessed
+    integer(8),                    intent(in   ) :: numPhotonsPerBatch
+    integer(8),                    intent(  out) :: numPhotonsProcessed
     type(ErrorMessage),         intent(inout) :: status
     integer, dimension(:,:,:), optional, intent(out) :: option2
     !
@@ -413,7 +413,8 @@ contains
     real :: tauToTravel, photonWeight, scatteringAngle, tauAccumulated, ssa, maxExtinction
     real :: initialMu, initialPhi
     logical :: useRayTracing, useMaxCrossSection, scatterThisEvent
-    integer :: xIndex, yIndex, zIndex, numX, numY, numZ, numComps, component, phaseFunctionIndex, nPhotons
+    integer :: xIndex, yIndex, zIndex, numX, numY, numZ, numComps, component, phaseFunctionIndex
+    integer(8) :: nPhotons
     integer :: i, p, scatteringOrder 
     integer :: nBad
     real, dimension(3) :: directionCosines
