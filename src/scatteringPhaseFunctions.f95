@@ -1227,7 +1227,7 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
 !PRINT *, "read_PhaseFunctionTable: some errors detected"
         do i = 1, size(ncStatus)
           if(ncStatus(i) /= nf90_NoErr) &
-            call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(nf90_StrError(ncStatus(i))))
+            call setStateToFailure(status, "read_PhaseFunctionTable: ncStatus " // intToChar(i)  // trim(nf90_StrError(ncStatus(i))))
         end do
       end if 
       

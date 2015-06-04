@@ -734,7 +734,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
 
 	if (photonCDF(numLambda).gt.0)then ! if there is still work left to do...
 	   if (freqDistr(currentFreq(1)).ge. numPhotonsPerBatch)then
-        	CALL MPI_SEND(numPhotonsPerBatch, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
+        	CALL MPI_SEND(numPhotonsPerBatch, 1, MPI_INTEGER8, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! first send starting index of photons to work on(this always should be the first type of message received along with tag indicating what type of messages will follow)
           	CALL MPI_SEND(currentFreq, 1, MPI_INTEGER, n, NEW_FREQ, MPI_COMM_WORLD, ierr) ! then send frequency to work on
 		freqDistr(currentFreq(1))=freqDistr(currentFreq(1))-numPhotonsPerBatch
            else
@@ -804,7 +804,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
 
     DO n = 1,numProcs-1	! send exit message to procs				
 	! pass to worker the needed info
-	CALL MPI_SEND(freqDistr(1), 1, MPI_INTEGER, n, EXIT_TAG, MPI_COMM_WORLD, ierr)
+	CALL MPI_SEND(freqDistr(1), 1, MPI_INTEGER8, n, EXIT_TAG, MPI_COMM_WORLD, ierr)
     END DO
 PRINT *, "Done with batches"
 !

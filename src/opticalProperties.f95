@@ -196,7 +196,7 @@ contains
         ! Read in the profile of absorption cross section
         !
 	allocate(xsec(1:nZGrid))
-        ncStatus(12) = nf90_inq_varid(ncFileId, "xsec", ncVarId)
+        ncStatus(12) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "xsec", ncVarId)
         ncStatus(13) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
         ncStatus(22) =  nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
         do j =1, nDims
@@ -223,7 +223,8 @@ contains
         !
         if(horizontallyUniform) then
           allocate(extinction(1,1,nZGrid),singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid))
-	  extinction(1,1,:) = xsec * commonD%numConc(1,1,1,:) * 1000.0 ! xsec should have units of m^2 per molecule and the number concentrations should be in molecules per meter cubed, which means the resulting volume extinction coefficient is in m^-1, however, physical distances are in km and the units need to cancel with volume extinction coefficient, so that means converting to units of km^-1, thus the factor of 1000 multiplication 
+	  extinction(1,1,:) = xsec * commonD%numConc(1,1,1,:) * 1000.0 ! xsec should have units of m^2 per molecule and the number concentrations should be in molecules per meter cubed, which means the resulting volume extinction coefficient is in m^-1, however, physical distances are in km and the units need to cancel with volume extinction coefficient, so that means converting to units of km^-1, thus the factor of 1000 multiplication
+	  deallocate(xsec) 
           ncStatus(18) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
           ncStatus(19) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(1, 1, :))
           ncStatus(20) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex", ncVarId)
@@ -234,6 +235,7 @@ contains
                        phaseFunctionIndex(nXEdges - 1, nYEdges - 1, nZGrid))
 	  extinction(:,:,:) = spread(spread(xsec*commonD%numConc(1,1,1,:)*1000.0,  &
                                                            1, nCopies = nXEdges-1), 2, nCopies = nYEdges-1) ! xsec should have units of m^2 per molecule and the number concentrations should be in molecules per meter cubed, which means the resulting volume extinction coefficient is in m^-1, however, physical distances are in km and the units need to cancel with volume extinction coefficient, so that means converting to units of km^-1, thus the factor of 1000 multiplication
+	  deallocate(xsec)
           ncStatus(18) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedo", ncVarId)
           ncStatus(19) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo(:, :, :))
           ncStatus(20) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "PhaseFunctionIndex", ncVarId)
