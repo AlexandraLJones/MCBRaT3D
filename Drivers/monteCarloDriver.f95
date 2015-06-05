@@ -86,7 +86,8 @@ program monteCarloDriver
   
   ! File names
   character(len=256)   :: domainFileName = "", solarSourceFile = "", &
-			  instrResponseFile="", SSPfilename="", physDomainFile=""
+			  instrResponseFile="", physDomainFile=""
+  character(len=256), dimension(4)  :: SSPfilename=""
   character(len=256)   :: outputFluxFile = "", outputRadFile = "",  &
                           outputAbsProfFile = "", outputAbsVolumeFile = "", &
                           outputNetcdfFile = ""
@@ -145,7 +146,7 @@ program monteCarloDriver
 !  real, allocatable    :: fluxUpByScatOrd(:,:,:), fluxDownByScatOrd(:,:,:)
 !  real, allocatable    :: fluxUpByScatOrdStats(:,:,:,:), fluxDownByScatOrdStats(:,:,:,:)
 !  real, allocatable    :: intensityByScatOrd(:,:,:,:), intensityByScatOrdStats(:,:,:,:,:)
-  integer              ::  N, atms_photons, maxThreads, availProcs, n, ierr
+  integer              :: atms_photons, maxThreads, availProcs, n, ierr
   integer              :: eindex, nonempty, counts, tempIndex
   integer(8)           :: batchSum, totalPhotonsProcessed, numPhotonsProcessed
   integer, allocatable :: indexes(:)
@@ -153,7 +154,8 @@ program monteCarloDriver
   integer              :: batchesAssigned, batchesCompleted
   integer(8)           ::  totalNumPhotons = 0, counter
   integer              :: currentFreq(1)
-  integer              :: SSPfileID, err
+  integer              :: err
+  integer, dimension(4):: SSPFileID=-9999   ! must have number of dimensions equal to SSPfilename
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
   integer(8), allocatable   ::  freqDistr(:), photonCDF(:)
@@ -293,14 +295,19 @@ program monteCarloDriver
      allocate(fluxCDF(1:numLambda))
      fluxCDF=0
      lambdaPerProc = CEILING(DBLE(numLambda/numProcs))
-     err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
-     if(err /= nf90_NoErr) then
-	PRINT *, "Driver: error opening file ", err, trim(nf90_strerror(err))
-	STOP
-     end if
+     n = 1
+     DO
+     	err = nf90_open(trim(SSPfilename(n)), nf90_NoWrite, SSPFileID(n))
+     	if(err /= nf90_NoErr) then
+	   PRINT *, "Driver: error opening file ", SSPfilename(n), trim(nf90_strerror(err))
+	   STOP
+     	end if
+	n=n+1
+	if(len_trim(SSPfilename(n)).le.0)EXIT
+     END DO
      DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1  
 PRINT *, "in LW loop at iteration ", i
-        call read_SSPTable(SSPfileID, i, commonPhysical, thisDomain, status) ! domain is initialized within this routine
+        call read_SSPTable(SSPFileID, i, commonPhysical, thisDomain, status) ! domain is initialized within this routine
         call printStatus(status)
 	call getInfo_Domain(thisDomain, lambda=lambda, status=status)
         call printStatus(status)
@@ -309,11 +316,11 @@ PRINT *, "in LW loop at iteration ", i
            call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status=status)
            call printStatus(status)
 
-	   call read_SSPTable(SSPfileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine   
+	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine   
 	   call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
            call printStatus(status)
 	   if (i .gt. 1) then ! we have a more accurate way to calculate dLambda
-	      call read_SSPTable(SSPfileID, i-1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
+	      call read_SSPTable(SSPFileID, i-1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
               call getInfo_Domain(tempDomain, lambda=lambdaBelow, status=status)
               call printStatus(status)
 	      dLambda=ABS((lambdaAbove-lambdaBelow)/2.0_8)
@@ -324,7 +331,7 @@ PRINT *, "in LW loop at iteration ", i
 	   lambda=lambdaAbove
 	elseif(i .gt. thisProc*lambdaPerProc+1 .and. i .lt. numLambda)then
 	   call finalize_Domain(tempDomain)
-	   call read_SSPTable(SSPfileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
+	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
            call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
            call printStatus(status)
 	   dLambda=ABS((lambdaAbove-lambdaBelow)/2.0_8)
@@ -372,7 +379,16 @@ PRINT *, "in LW loop at iteration ", i
 	fluxCDF(i)=emittedFlux
 	call finalize_Weights(theseWeights)
      END DO
-     err=nf90_close(SSPfileId)
+     n = 1
+     DO
+        err = nf90_close(SSPFileID(n))
+        if(err /= nf90_NoErr) then
+           PRINT *, "Driver: error closing file ", SSPfilename(n), trim(nf90_strerror(err))
+           STOP
+        end if
+        n=n+1
+        if(len_trim(SSPfilename(n)).le.0)EXIT
+     END DO
 !     fluxCDF(:) = sumAcrossProcesses(fluxCDF)
      CALL MPI_ALLREDUCE(MPI_IN_PLACE,fluxCDF,numLambda,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
 
@@ -409,14 +425,28 @@ PRINT *, "in LW loop at iteration ", i
      freqDistr(:) = sumAcrossProcesses(freqDistr)
   else
 if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPfilename
-     err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
-     if(err /= nf90_NoErr) then
-        PRINT *, "Driver: error opening file ", err, trim(nf90_strerror(err))
-        STOP
-     end if
-     call read_SSPTable(SSPfileID, 1, commonPhysical, thisDomain, status) ! domain is initialized within this routine
+     n = 1
+     DO
+        err = nf90_open(trim(SSPfilename(n)), nf90_NoWrite, SSPFileID(n))
+        if(err /= nf90_NoErr) then
+           PRINT *, "Driver: error opening file ", SSPfilename(n), trim(nf90_strerror(err))
+           STOP
+        end if
+        n=n+1
+        if(len_trim(SSPfilename(n)).le.0)EXIT
+     END DO
+     call read_SSPTable(SSPFileID, 1, commonPhysical, thisDomain, status) ! domain is initialized within this routine
      call printStatus(status)
-     err=nf90_close(SSPfileId)
+     n = 1
+     DO
+        err = nf90_close(SSPFileID(n))
+        if(err /= nf90_NoErr) then
+           PRINT *, "Driver: error closing file ", SSPfilename(n), trim(nf90_strerror(err))
+           STOP
+        end if
+        n=n+1
+        if(len_trim(SSPfilename(n)).le.0)EXIT
+     END DO
      call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status=status)
      call printStatus(status)
      theseWeights=new_Weights(numLambda=numLambda, status=status)
@@ -816,11 +846,16 @@ PRINT *, "Done with batches"
 !
 !
   else ! must be a worker process
-    err = nf90_open(trim(SSPfileName), nf90_NoWrite, SSPFileID)
-    if(err /= nf90_NoErr) then
-       PRINT *, "Driver:initial batches: error opening file ", err, trim(nf90_strerror(err))
-       STOP
-    end if
+    n=1
+    DO
+        err = nf90_open(trim(SSPfilename(n)), nf90_NoWrite, SSPFileID(n))
+        if(err /= nf90_NoErr) then
+           PRINT *, "Driver: initial batches: error opening file ", SSPfilename(n), trim(nf90_strerror(err))
+           STOP
+        end if
+        n=n+1
+        if(len_trim(SSPfilename(n)).le.0)EXIT
+     END DO
      DO i=0,numThreads-1
        randoms(thisThread)=new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
     END DO
@@ -959,11 +994,16 @@ PRINT *, "Done with batches"
 !	  prevTotal = total
 !	end if
   END DO
-  err = nf90_close(SSPFileID)
-  if(err /= nf90_NoErr) then
-     PRINT *, "Driver:initial batches: error closing file ", err, trim(nf90_strerror(err))
-     STOP
-  end if
+     n = 1
+     DO
+        err = nf90_close(SSPFileID(n))
+        if(err /= nf90_NoErr) then
+           PRINT *, "Driver: error closing file ", SSPfilename(n), trim(nf90_strerror(err))
+           STOP
+        end if
+        n=n+1
+        if(len_trim(SSPfilename(n)).le.0)EXIT
+     END DO
 !	CALL MPI_RECV(left, 1, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
 !	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
 !	if(mpiStatus(MPI_TAG) .eq. NEW_FREQ) then

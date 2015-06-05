@@ -137,9 +137,10 @@ module opticalProperties
 
 contains
 
-   subroutine read_SSPTable(ncFileId, lambdaIndex, commonD, thisDomain, status)
+   subroutine read_SSPTable(ncFileIds, lambdaIndex, commonD, thisDomain, status)
 !    character(len = *), intent(in   ) :: fileName
-    integer,            intent(in)    :: ncFileId, lambdaIndex
+    integer, dimension(4), intent(in)    :: ncFileIds
+    integer,            intent(in)    :: lambdaIndex
     type(commonDomain), intent(in)    :: commonD
     type(Domain), intent(out)         :: thisDomain
     type(ErrorMessage), intent(inout) :: status
@@ -148,9 +149,9 @@ contains
     type(phaseFunctionTable)          :: table
     logical                           :: horizontallyUniform, fillsVerticalDomain
     character(len = maxNameLength)    :: name
-    integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length
+    integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length, n
     real(8)                           :: lambda, albedo, freq
-    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err
+    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId
     integer, dimension(3)             :: dimIds
     real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:)
     integer, allocatable              :: phaseFunctionIndex(:,:,:)
@@ -161,7 +162,9 @@ contains
     nXEdges = size(commonD%xPosition)
     nYEdges = size(commonD%yPosition)
     nZEdges = size(commonD%zPosition) 
-
+ n=1
+ DO 
+    ncFileId = ncFileIds(n)
     ncStatus(:) = nf90_NoErr
 !    err = nf90_open(trim(fileName), nf90_NoWrite, ncFileID)
 !    if(err /= nf90_NoErr) then
@@ -184,7 +187,7 @@ contains
         call setStateToFailure(status, "read_SSPTable: doesn't look an optical properties file.")
         PRINT *, "read_SSPTable: ncStatus properties file errors ", ncStatus(1:8)
     end if
-    thisDomain = new_Domain(commonD, lambda, lambdaIndex, nlambda, albedo, status)
+    if(n .eq. 1) thisDomain = new_Domain(commonD, lambda, lambdaIndex, nlambda, albedo, status)
 
     ncStatus( 9) = nf90_get_att(ncFileID, nf90_Global, "numberOfComponents", nComponents)
       do i = 1, nComponents
@@ -272,7 +275,9 @@ contains
       end do
       if(.not. stateIsFailure(status))  call getOpticalPropertiesByComponent(thisDomain, status)
       if(.not. stateIsFailure(status)) call setStateToSuccess(status)
-
+      n=n+1
+      if(ncFileIds(n).eq.-9999)EXIT
+ END DO
    end subroutine read_SSPTable
 
    subroutine read_Common(filename, commonD, status)
