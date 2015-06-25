@@ -132,7 +132,7 @@ module opticalProperties
             addOpticalComponent, deleteOpticalComponent, replaceOpticalComponent,   &
             getOpticalPropertiesByComponent, finalize_Matrix, new_Matrix,           &
             accumulateExtinctionAlongPath, tabulateInversePhaseFunctions,           &
-            tabulateForwardPhaseFunctions, read_Common, read_SSPTable !,  getAverageOpticalProperties
+            tabulateForwardPhaseFunctions, read_Common, read_SSPTable, calc_RayleighScattering !,  getAverageOpticalProperties
             
 
 contains
@@ -1889,25 +1889,39 @@ contains
   end function computeNormalization
   !------------------------------------------------------------------------------------------
   subroutine calc_RayleighScattering(absx,lambda,N,ext,ssa,phaseInd,table,status)
-   real(8), dimension(:), intent(in)                   :: absx, N
+   real(8), dimension(:), intent(in)                   :: N
    real(8),               intent(in)                   :: lambda
-   real(8), dimension(:), intent(inout)                :: ext, ssa
+   real(8), dimension(:), intent(inout)                :: ext, ssa, absx
    integer, dimension(:), intent(inout)                :: phaseInd
    type(ErrorMessage),    intent(inout)                :: status
    type(phaseFunctionTable), intent(out)               :: table
    
 
-   real(8)                                             :: mrsq, f=1.060816681_8
+   real(8)                                             :: mrsq, mr1, f=1.060816681_8, rho0=1.275_8
+   real(8), allocatable                                :: absv(:), rho(:)
    real, dimension(2)                                  :: LG
    type(phaseFunction), dimension(1)                   :: phaseFunc
+   integer                                             :: err, ncid, dimid, varid, nz
    
+   allocate(absv(1:size(absx)))
+   absv = absx*N*1000.0_8 
+   absx=absv
+
+   err=nf90_open("/mnt/a/u/sciteam/aljones4/I3RC/Tools/density.nc",nf90_NoWrite, ncid)
+   err=nf90_inq_dimid(ncid, "z-grid", dimid)
+   err=nf90_Inquire_Dimension(ncid, dimid, len=nz)
+   allocate(rho(1:nz))
+   err=nf90_inq_varid(ncid, "density", varid)
+   err=nf90_get_var(ncid, varid, rho)
    
-   mrsq = (1 + 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2)))))**2
-   ext = (8.0E24_8)*f*(Pi**3)*(mrsq-1)**2/(3.0_8*(lambda**4)*(N**2)) 
+!   mrsq = (1 + 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2)))))**2
+!   ext = ((8.0E24_8)*f*(Pi**3)*(mrsq-1)**2)/(3.0_8*(lambda**4)*(N**2)) 
+   mr1 = 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2))))
+   ext = (32.0E27_8)*f*(Pi**3)*(rho**2)*(mr1**2)/(3.0_8*N*(rho0**2)*(lambda**4))
    ssa = ext
-   ext = absx+ext
+   ext = absv+ext
    ssa = ssa/ext
-   ext = ext*N*1000.0_8
+!   ext = ext*N*1000.0_8
    phaseInd = 1
    LG = (/0.0, 0.5/)/(/2.0*1.0+1.0, 2.0*2.0+1.0/)
    phaseFunc(1) = new_PhaseFunction(LG,status=status)
@@ -1915,6 +1929,8 @@ contains
    call finalize_PhaseFunction(phaseFunc(1))
    if(.not. stateIsFailure(status)) call setStateToSuccess(status)
 
+   deallocate(absv)
+   deallocate(rho)
   end subroutine calc_RayleighScattering
   !-----------------------------------------------------------------------------------------
 end module opticalProperties   
