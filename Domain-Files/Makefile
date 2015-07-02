@@ -36,5 +36,5 @@ test: all
 	./inhomogBBDomain
 
 clean::
-	/bin/rm *.lst *.o $(Targets)
+	/bin/rm *.lst *.o *.mod $(Targets)
         

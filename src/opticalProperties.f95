@@ -67,6 +67,7 @@ module opticalProperties
     real(8), allocatable          :: yPosition(:) 
     real(8), allocatable          :: zPosition(:) 
     real(8), allocatable          :: temps(:,:,:) 
+    real(8), allocatable          :: rho(:,:,:)
     real(8), allocatable          :: numConc(:,:,:,:) ! component, x, y, z
 
   end type commonDomain
@@ -212,7 +213,7 @@ contains
 	if (TRIM(calcRayl) .eq. "True")then
 	   zLevelBase=1
 	   allocate(extinction(1,1,nZGrid), singleScatteringAlbedo(1,1,nZGrid), phaseFunctionIndex(1,1,nZGrid))
-	   CALL calc_RayleighScattering(xsec,lambda,commonD%numConc(1,1,1,:), ext=extinction(1,1,:), &
+	   CALL calc_RayleighScattering(xsec,lambda,commonD%rho(1,1,:),commonD%numConc(i,1,1,:), ext=extinction(1,1,:), &
 					ssa=singleScatteringAlbedo(1,1,:), phaseInd=phaseFunctionIndex(1,1,:),&
 					table=table,status=status)
 	   deallocate(xsec)
@@ -264,7 +265,7 @@ contains
         !
         ! Read in the phase function table(s)
         !
-        if(.not. stateIsFailure(status)) &
+        if(.not. stateIsFailure(status) .and. TRIM(calcRayl) .ne. "True") & ! we don't want to try to read a table if we just calculated one for rayleigh scattering
           call read_PhaseFunctionTable(fileId = ncFileId, table = table,                  &
                                        prefix = "Component" // trim(IntToChar(i)) // "_", &
                                        status = status)
@@ -363,7 +364,24 @@ contains
           call setStateToFailure(status, "read_Common: " // trim(fileName) // &
                                " problem reading PRESSURE.") 
         end if
-        call setStateToSuccess(status)
+
+	ncStatus( 1) = nf90_inq_varid(ncFileId,"Density", ncVarID)
+	if(ncStatus(1) .eq.  nf90_NoErr)then
+	   ncStatus( 2) = nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims)
+	   if(ndims.eq.1)then
+		allocate(commonD%rho(1,1,nZEdges-1))
+	   else
+		allocate(commonD%rho(nXEdges-1,nYEdges-1,nZEdges-1))
+	   end if
+	   ncStatus(3) = nf90_get_var(ncFileId, ncVarId,commonD%rho)
+	end if
+
+	if(any(ncStatus(:) /= nf90_NoErr))then
+	   call setStateToFailure(status, "read_Common: " // trim(fileName) // &
+                               " problem reading DENSITY.")
+	else
+	   call setStateToSuccess(status)
+	end if
       end if
     end if
    end subroutine
@@ -1888,31 +1906,31 @@ contains
     end if
   end function computeNormalization
   !------------------------------------------------------------------------------------------
-  subroutine calc_RayleighScattering(absx,lambda,N,ext,ssa,phaseInd,table,status)
-   real(8), dimension(:), intent(in)                   :: N
+  subroutine calc_RayleighScattering(absx,lambda,rho,N,ext,ssa,phaseInd,table,status)
+   real(8), dimension(:), intent(in)                   :: N, absx, rho
    real(8),               intent(in)                   :: lambda
-   real(8), dimension(:), intent(inout)                :: ext, ssa, absx
+   real(8), dimension(:), intent(inout)                :: ext, ssa
    integer, dimension(:), intent(inout)                :: phaseInd
    type(ErrorMessage),    intent(inout)                :: status
    type(phaseFunctionTable), intent(out)               :: table
    
 
-   real(8)                                             :: mrsq, mr1, f=1.060816681_8, rho0=1.275_8
-   real(8), allocatable                                :: absv(:), rho(:)
+   real(8)                                             :: mr1, f=1.060816681_8, rho0=1.275_8
+   real(8), allocatable                                :: absv(:)
    real, dimension(2)                                  :: LG
    type(phaseFunction), dimension(1)                   :: phaseFunc
    integer                                             :: err, ncid, dimid, varid, nz
    
    allocate(absv(1:size(absx)))
    absv = absx*N*1000.0_8 
-   absx=absv
+   
 
-   err=nf90_open("/mnt/a/u/sciteam/aljones4/I3RC/Tools/density.nc",nf90_NoWrite, ncid)
-   err=nf90_inq_dimid(ncid, "z-grid", dimid)
-   err=nf90_Inquire_Dimension(ncid, dimid, len=nz)
-   allocate(rho(1:nz))
-   err=nf90_inq_varid(ncid, "density", varid)
-   err=nf90_get_var(ncid, varid, rho)
+!   err=nf90_open("/mnt/a/u/sciteam/aljones4/I3RC/Tools/density.nc",nf90_NoWrite, ncid)
+!   err=nf90_inq_dimid(ncid, "z-grid", dimid)
+!   err=nf90_Inquire_Dimension(ncid, dimid, len=nz)
+!!   allocate(rho(1:nz))
+!   err=nf90_inq_varid(ncid, "density", varid)
+!   err=nf90_get_var(ncid, varid, rho)
    
 !   mrsq = (1 + 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2)))))**2
 !   ext = ((8.0E24_8)*f*(Pi**3)*(mrsq-1)**2)/(3.0_8*(lambda**4)*(N**2)) 
@@ -1930,7 +1948,7 @@ contains
    if(.not. stateIsFailure(status)) call setStateToSuccess(status)
 
    deallocate(absv)
-   deallocate(rho)
+  
   end subroutine calc_RayleighScattering
   !-----------------------------------------------------------------------------------------
 end module opticalProperties   
