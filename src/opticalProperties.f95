@@ -152,9 +152,9 @@ contains
     character(len = maxNameLength)    :: name, calcRayl
     integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length, n
     real(8)                           :: lambda, albedo, freq
-    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId
+    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId, nmolec
     integer, dimension(3)             :: dimIds
-    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:)
+    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:), vmrs(:,:), totalVmr(:)
     integer, allocatable              :: phaseFunctionIndex(:,:,:)
 
 !    ierr = nf_set_log_level(3)
@@ -205,7 +205,7 @@ contains
         ncStatus(13) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
         ncStatus(23) =  nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
         do j =1, nDims
-	   ncStatus(23+j) =  nf90_Inquire_Dimension(ncFileId, dimIds(j), len = length)
+	   ncStatus(27+j) =  nf90_Inquire_Dimension(ncFileId, dimIds(j), len = length)
 !	   PRINT *, "read_SSPTable dimension ", j, "has length ", length
         end do
 !PRINT*, "read_SSPTable lambdaIndex= ", lambdaIndex, "nDims= ", ndims  
@@ -213,10 +213,16 @@ contains
 	if (TRIM(calcRayl) .eq. "True")then
 	   zLevelBase=1
 	   allocate(extinction(1,1,nZGrid), singleScatteringAlbedo(1,1,nZGrid), phaseFunctionIndex(1,1,nZGrid))
-	   CALL calc_RayleighScattering(xsec,lambda,commonD%rho(1,1,:),commonD%numConc(i,1,1,:), ext=extinction(1,1,:), &
+	   ncStatus(24) = nf90_inq_dimid(ncFileId, "vmrs_ref_nrows", ncDimId)
+	   ncStatus(25) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nmolec)
+	   allocate(vmrs(nZGrid,nmolec),totalVmr(nZGrid))
+	   ncStatus(26) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "vmrs", ncVarId)
+	   ncStatus(27) = nf90_get_var(ncFileId, ncVarId, vmrs)
+	   totalVmr=SUM(vmrs,2)
+	   CALL calc_RayleighScattering(xsec,lambda,commonD%rho(1,1,:),commonD%numConc(i,1,1,:), totalVmr, ext=extinction(1,1,:), &
 					ssa=singleScatteringAlbedo(1,1,:), phaseInd=phaseFunctionIndex(1,1,:),&
 					table=table,status=status)
-	   deallocate(xsec)
+	   deallocate(xsec,vmrs,totalVmr)
 	else
         !
         ! Is the component horizontally homogeneous? Does it fill the entire domain vertically?
@@ -1906,8 +1912,8 @@ contains
     end if
   end function computeNormalization
   !------------------------------------------------------------------------------------------
-  subroutine calc_RayleighScattering(absx,lambda,rho,N,ext,ssa,phaseInd,table,status)
-   real(8), dimension(:), intent(in)                   :: N, absx, rho
+  subroutine calc_RayleighScattering(absx,lambda,rho,N,vmr,ext,ssa,phaseInd,table,status)
+   real(8), dimension(:), intent(in)                   :: N, absx, rho, vmr
    real(8),               intent(in)                   :: lambda
    real(8), dimension(:), intent(inout)                :: ext, ssa
    integer, dimension(:), intent(inout)                :: phaseInd
@@ -1935,7 +1941,7 @@ contains
 !   mrsq = (1 + 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2)))))**2
 !   ext = ((8.0E24_8)*f*(Pi**3)*(mrsq-1)**2)/(3.0_8*(lambda**4)*(N**2)) 
    mr1 = 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2))))
-   ext = (32.0E27_8)*f*(Pi**3)*(rho**2)*(mr1**2)/(3.0_8*N*(rho0**2)*(lambda**4))
+   ext = (32.0E27_8)*f*(Pi**3)*(rho**2)*(mr1**2)/(3.0_8*N*vmr*(rho0**2)*(lambda**4))
    ssa = ext
    ext = absv+ext
    ssa = ssa/ext
