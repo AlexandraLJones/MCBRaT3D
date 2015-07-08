@@ -138,23 +138,24 @@ module opticalProperties
 
 contains
 
-   subroutine read_SSPTable(ncFileIds, lambdaIndex, commonD, thisDomain, status)
+   subroutine read_SSPTable(ncFileIds, lambdaIndex, commonD, thisDomain, calcRayl, status)
 !    character(len = *), intent(in   ) :: fileName
     integer, dimension(4), intent(in)    :: ncFileIds
     integer,            intent(in)    :: lambdaIndex
     type(commonDomain), intent(in)    :: commonD
     type(Domain), intent(out)         :: thisDomain
+    logical, optional,intent(in)      :: calcRayl
     type(ErrorMessage), intent(inout) :: status
 
     integer, dimension(30)            :: ncStatus
     type(phaseFunctionTable)          :: table
     logical                           :: horizontallyUniform, fillsVerticalDomain
-    character(len = maxNameLength)    :: name, calcRayl
+    character(len = maxNameLength)    :: name
     integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length, n
     real(8)                           :: lambda, albedo, freq
-    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId, nmolec
+    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId
     integer, dimension(3)             :: dimIds
-    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:), vmrs(:,:), totalVmr(:)
+    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:)
     integer, allocatable              :: phaseFunctionIndex(:,:,:)
 
 !    ierr = nf_set_log_level(3)
@@ -164,7 +165,7 @@ contains
     nYEdges = size(commonD%yPosition)
     nZEdges = size(commonD%zPosition) 
  n=1
- DO 
+ DO    ! loop over SSPTable files 
     ncFileId = ncFileIds(n)
     ncStatus(:) = nf90_NoErr
 !    err = nf90_open(trim(fileName), nf90_NoWrite, ncFileID)
@@ -195,7 +196,6 @@ contains
         ncStatus(10) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "Name", name)
 !PRINT *, "readSSP_Table: name= ", trim(makePrefix(i)), "Name"
         ncStatus(11) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "zLevelBase", zLevelBase)
-        ncStatus(22) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "calcRayl", calcRayl)
 !PRINT *, "readSSP_Table: name= ", trim(makePrefix(i)), "zLevelBase"
         !
         ! Read in the profile of absorption cross section
@@ -203,27 +203,12 @@ contains
 	allocate(xsec(1:nZGrid))
         ncStatus(12) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "xsec", ncVarId)
         ncStatus(13) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
-        ncStatus(23) =  nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
+        ncStatus(22) =  nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims, dimids = dimIds)
         do j =1, nDims
-	   ncStatus(27+j) =  nf90_Inquire_Dimension(ncFileId, dimIds(j), len = length)
+	   ncStatus(22+j) =  nf90_Inquire_Dimension(ncFileId, dimIds(j), len = length)
 !	   PRINT *, "read_SSPTable dimension ", j, "has length ", length
         end do
 !PRINT*, "read_SSPTable lambdaIndex= ", lambdaIndex, "nDims= ", ndims  
-	!!!! Should we calculate rayleigh scattering properties for this component? !!!!
-	if (TRIM(calcRayl) .eq. "True")then
-	   zLevelBase=1
-	   allocate(extinction(1,1,nZGrid), singleScatteringAlbedo(1,1,nZGrid), phaseFunctionIndex(1,1,nZGrid))
-	   ncStatus(24) = nf90_inq_dimid(ncFileId, "vmrs_ref_nrows", ncDimId)
-	   ncStatus(25) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nmolec)
-	   allocate(vmrs(nZGrid,nmolec),totalVmr(nZGrid))
-	   ncStatus(26) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "vmrs", ncVarId)
-	   ncStatus(27) = nf90_get_var(ncFileId, ncVarId, vmrs)
-	   totalVmr=SUM(vmrs,2)
-	   CALL calc_RayleighScattering(xsec,lambda,commonD%rho(1,1,:),commonD%numConc(i,1,1,:), totalVmr, ext=extinction(1,1,:), &
-					ssa=singleScatteringAlbedo(1,1,:), phaseInd=phaseFunctionIndex(1,1,:),&
-					table=table,status=status)
-	   deallocate(xsec,vmrs,totalVmr)
-	else
         !
         ! Is the component horizontally homogeneous? Does it fill the entire domain vertically?
         !
@@ -271,11 +256,11 @@ contains
         !
         ! Read in the phase function table(s)
         !
-        if(.not. stateIsFailure(status) .and. TRIM(calcRayl) .ne. "True") & ! we don't want to try to read a table if we just calculated one for rayleigh scattering
+        if(.not. stateIsFailure(status)) & ! we don't want to try to read a table if we just calculated one for rayleigh scattering
           call read_PhaseFunctionTable(fileId = ncFileId, table = table,                  &
                                        prefix = "Component" // trim(IntToChar(i)) // "_", &
                                        status = status)
-	end if
+	
 
         !
         ! Add the new component to the domain.
@@ -287,15 +272,35 @@ contains
                                    phaseFunctionIndex, table, zLevelBase = zLevelBase,   &
                                    status = status)
         else
-          call setStateToFailure(status, "read_SSPTable: Error reading phase function table or calculating rayleigh scattering.")
+          call setStateToFailure(status, "read_SSPTable: Error reading phase function table.")
         end if
         deallocate(extinction, singleScatteringAlbedo, phaseFunctionIndex)
       end do
-      if(.not. stateIsFailure(status))  call getOpticalPropertiesByComponent(thisDomain, status)
-      if(.not. stateIsFailure(status)) call setStateToSuccess(status)
       n=n+1
       if(ncFileIds(n).eq.-9999)EXIT
  END DO
+
+ ! do we need to add rayleigh scattering?
+ if(present(calcRayl) .and. calcRayl)then
+    zLevelBase=1
+    name = "Rayleigh Scattering"
+    allocate(extinction(1,1,nZGrid), singleScatteringAlbedo(1,1,nZGrid), phaseFunctionIndex(1,1,nZGrid))
+    CALL calc_RayleighScattering(lambda,commonD%rho(1,1,:),commonD%numConc(1,1,1,:), &
+                                  ext=extinction(1,1,:), ssa=singleScatteringAlbedo(1,1,:), &
+                                  phaseInd=phaseFunctionIndex(1,1,:),table=table,status=status)
+    if(.not. stateIsFailure(status)) then
+!PRINT *, "read_Domain: extinction size ", size(extinction, 1), size(extinction, 2), size(extinction, 3)
+          call addOpticalComponent(thisDomain, name, extinction, singleScatteringAlbedo, &
+                                   phaseFunctionIndex, table, zLevelBase = zLevelBase,   &
+                                   status = status)
+    else
+          call setStateToFailure(status, "read_SSPTable: Error calculating rayleigh scattering.")
+    end if
+    deallocate(extinction, singleScatteringAlbedo, phaseFunctionIndex) 
+ end if
+
+ if(.not. stateIsFailure(status))  call getOpticalPropertiesByComponent(thisDomain, status)
+ if(.not. stateIsFailure(status)) call setStateToSuccess(status)
    end subroutine read_SSPTable
 
    subroutine read_Common(filename, commonD, status)
@@ -1912,8 +1917,8 @@ contains
     end if
   end function computeNormalization
   !------------------------------------------------------------------------------------------
-  subroutine calc_RayleighScattering(absx,lambda,rho,N,vmr,ext,ssa,phaseInd,table,status)
-   real(8), dimension(:), intent(in)                   :: N, absx, rho, vmr
+  subroutine calc_RayleighScattering(lambda,rho,N,ext,ssa,phaseInd,table,status)
+   real(8),               intent(in)                   :: N(:), rho(:)
    real(8),               intent(in)                   :: lambda
    real(8), dimension(:), intent(inout)                :: ext, ssa
    integer, dimension(:), intent(inout)                :: phaseInd
@@ -1922,15 +1927,10 @@ contains
    
 
    real(8)                                             :: mr1, f=1.060816681_8, rho0=1.275_8
-   real(8), allocatable                                :: absv(:)
    real, dimension(2)                                  :: LG
    type(phaseFunction), dimension(1)                   :: phaseFunc
    integer                                             :: err, ncid, dimid, varid, nz
    
-   allocate(absv(1:size(absx)))
-   absv = absx*N*1000.0_8 
-   
-
 !   err=nf90_open("/mnt/a/u/sciteam/aljones4/I3RC/Tools/density.nc",nf90_NoWrite, ncid)
 !   err=nf90_inq_dimid(ncid, "z-grid", dimid)
 !   err=nf90_Inquire_Dimension(ncid, dimid, len=nz)
@@ -1941,10 +1941,8 @@ contains
 !   mrsq = (1 + 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2)))))**2
 !   ext = ((8.0E24_8)*f*(Pi**3)*(mrsq-1)**2)/(3.0_8*(lambda**4)*(N**2)) 
    mr1 = 6.4328E-5 + (2.94981E-2/(146-(lambda**(-2)))) + (2.554E-4/(41-(lambda**(-2))))
-   ext = (32.0E27_8)*f*(Pi**3)*(rho**2)*(mr1**2)/(3.0_8*N*vmr*(rho0**2)*(lambda**4))
-   ssa = ext
-   ext = absv+ext
-   ssa = ssa/ext
+   ext = (32.0E27_8)*f*(Pi**3)*(rho**2)*(mr1**2)/(3.0_8*N*(rho0**2)*(lambda**4))
+   ssa = 1.0_8 
 !   ext = ext*N*1000.0_8
    phaseInd = 1
    LG = (/0.0, 0.5/)/(/2.0*1.0+1.0, 2.0*2.0+1.0/)
@@ -1953,8 +1951,6 @@ contains
    call finalize_PhaseFunction(phaseFunc(1))
    if(.not. stateIsFailure(status)) call setStateToSuccess(status)
 
-   deallocate(absv)
-  
   end subroutine calc_RayleighScattering
   !-----------------------------------------------------------------------------------------
 end module opticalProperties   

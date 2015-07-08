@@ -61,7 +61,7 @@ program monteCarloDriver
   integer, parameter   :: maxNumRad = 648 !18mus*36phis , oldVal:72
   real                 :: intensityMus(maxNumRad)  = 0., &
                           intensityPhis(maxNumRad) = 0.
-  logical              :: angleFill = .false.
+  logical              :: angleFill = .false., calcRayl = .True.
   real, dimension(3)   :: thetaFill = -1., phiFill = -1.
   real, allocatable, dimension(:) :: mus, phis
   integer              :: nMu, nPhi, numLambda, lambdaI
@@ -100,8 +100,8 @@ program monteCarloDriver
   character(len=256)   :: auxhist01_radFile=""
   character(len=256)   :: auxhist01_fluxFile=""
 
-  namelist /radiativeTransfer/ solarMu, solarAzimuth, surfaceTemp, &
-                               intensityMus, intensityPhis, angleFill, thetaFill, phiFill, LW_flag, numLambda
+  namelist /radiativeTransfer/ solarMu, solarAzimuth, surfaceTemp, intensityMus, intensityPhis, &
+                               angleFill, thetaFill, phiFill, LW_flag, numLambda, calcRayl
   
   namelist /monteCarlo/        numPhotonsPerBatch, numBatches, iseed, nPhaseIntervals
   
@@ -307,7 +307,7 @@ program monteCarloDriver
      END DO
      DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1  
 PRINT *, "in LW loop at iteration ", i
-        call read_SSPTable(SSPFileID, i, commonPhysical, thisDomain, status) ! domain is initialized within this routine
+        call read_SSPTable(SSPFileID, i, commonPhysical, thisDomain,.False., status) ! domain is initialized within this routine
         call printStatus(status)
 	call getInfo_Domain(thisDomain, lambda=lambda, status=status)
         call printStatus(status)
@@ -316,11 +316,11 @@ PRINT *, "in LW loop at iteration ", i
            call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status=status)
            call printStatus(status)
 
-	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine   
+	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain,.False., status) ! domain is initialized within this routine   
 	   call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
            call printStatus(status)
 	   if (i .gt. 1) then ! we have a more accurate way to calculate dLambda
-	      call read_SSPTable(SSPFileID, i-1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
+	      call read_SSPTable(SSPFileID, i-1, commonPhysical, tempDomain, .False., status) ! domain is initialized within this routine
               call getInfo_Domain(tempDomain, lambda=lambdaBelow, status=status)
               call printStatus(status)
 	      dLambda=ABS((lambdaAbove-lambdaBelow)/2.0_8)
@@ -331,7 +331,7 @@ PRINT *, "in LW loop at iteration ", i
 	   lambda=lambdaAbove
 	elseif(i .gt. thisProc*lambdaPerProc+1 .and. i .lt. numLambda)then
 	   call finalize_Domain(tempDomain)
-	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain, status) ! domain is initialized within this routine
+	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain, .False., status) ! domain is initialized within this routine
            call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
            call printStatus(status)
 	   dLambda=ABS((lambdaAbove-lambdaBelow)/2.0_8)
@@ -435,7 +435,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
         n=n+1
         if(len_trim(SSPfilename(n)).le.0)EXIT
      END DO
-     call read_SSPTable(SSPFileID, 1, commonPhysical, thisDomain, status) ! domain is initialized within this routine
+     call read_SSPTable(SSPFileID, 1, commonPhysical, thisDomain, .False., status) ! domain is initialized within this routine
      call printStatus(status)
      n = 1
      DO
@@ -873,7 +873,7 @@ PRINT *, "Done with batches"
 	     CALL finalize_Domain(thisDomain)
 	    if(LW_flag >= 0.0)CALL finalize_Weights(theseWeights)
 	  end if
-	  CALL read_SSPTable(SSPFileID, indexes(i), commonPhysical, thisDomain, status)
+	  CALL read_SSPTable(SSPFileID, indexes(i), commonPhysical, thisDomain, calcRayl, status)
           if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
              theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
 	     CALL printStatus(status)
