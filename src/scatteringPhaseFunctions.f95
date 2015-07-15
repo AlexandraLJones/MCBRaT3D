@@ -75,6 +75,10 @@ module scatteringPhaseFunctions
   interface getPhaseFunctionValues
     module procedure getPhaseFunctionValues_one, getPhaseFunctionValues_table
   end interface ! getPhaseFunctionValues
+
+  interface read_PhaseFunctionTable
+    module procedure read_PhaseFunctionTableOLD, read_PhaseFunctionTableNEW
+  end interface 
   !------------------------------------------------------------------------------------------
   ! What is visible? 
   !------------------------------------------------------------------------------------------
@@ -952,7 +956,8 @@ contains
     ! For sets of Legendre coefficients
     integer                               :: coefficientDimID, coefficientVarID, &
                                              startVarId, lengthVarId
-    integer, dimension(:),    allocatable :: start, length
+    integer, dimension(:),    allocatable :: start
+    integer, dimension(:),    allocatable :: length
     real,    dimension(:),    allocatable :: legendreCoefficients
     
     ! To learn about the existing file
@@ -1112,7 +1117,7 @@ contains
 
   end subroutine add_PhaseFunctionTable
   !------------------------------------------------------------------------------------------
-  subroutine read_PhaseFunctionTable(fileName, fileId, table, prefix, status)
+  subroutine read_PhaseFunctionTableOLD(fileName, fileId, table, prefix, status)
     use netcdf
     character(len = *), optional, intent(in   ) :: fileName
     integer,            optional, intent(in   ) :: fileId
@@ -1136,7 +1141,8 @@ contains
     real,    dimension(:, :), allocatable :: phaseFunctionArray
     ! For sets of Legendre coefficients
     integer                               :: nTotalCoefficients
-    integer, dimension(:),    allocatable :: start, length
+    integer, dimension(:),    allocatable :: start
+    integer, dimension(:),    allocatable :: length
     real,    dimension(:),    allocatable :: legendreCoefficients
     type(phaseFunction), &
              dimension(:),    allocatable :: phaseFunctions
@@ -1267,7 +1273,171 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
 !PRINT *, "read_PhaseFunctionTable: state is failure at the end of the routine"
       end if
     end if
-  end subroutine read_PhaseFunctionTable
+  end subroutine read_PhaseFunctionTableOLD
+
+  subroutine read_PhaseFunctionTableNEW(fileName, fileId, spectIndex, table, prefix, status)
+    use netcdf
+    character(len = *), optional, intent(in   ) :: fileName
+    integer,            optional, intent(in   ) :: fileId
+    integer,                      intent(in   ) :: spectIndex
+    type(phaseFunctionTable),     intent(  out) :: table
+    character(len = *), optional, intent(in   ) :: prefix
+    type(ErrorMessage),           intent(inout) :: status
+    ! Read a phase function table from an external file.
+    !   Here we use netCDF files.
+
+    ! Local variables
+    integer, dimension(24)                     :: ncStatus
+    integer                                    :: ncFileId, ncDimId, ncVarId
+    integer                                    :: nEntries, i
+    character(len = 32)                        :: storageType
+    real,    dimension(:),    allocatable      :: key
+    real(8),    dimension(:),    allocatable      :: extinction, singleScatteringAlbedo
+    character(len = maxTableDescriptorLength)  :: description
+    ! For angle-value pairs
+    integer                               :: nAngles
+    real,    dimension(:),    allocatable :: scatteringAngle
+    real,    dimension(:, :), allocatable :: phaseFunctionArray
+    ! For sets of Legendre coefficients
+    integer                               :: nTotalCoefficients
+    integer, dimension(:),    allocatable :: start
+    integer, dimension(:),    allocatable :: length
+    real,    dimension(:),    allocatable :: legendreCoefficients
+    type(phaseFunction), &
+             dimension(:),    allocatable :: phaseFunctions
+
+    character(len = 16)                   :: thisPrefix
+
+    ! ------------------------
+    description = ""
+    thisPrefix = ""
+    if(present(prefix)) thisPrefix = trim(prefix)
+    if(present(fileName) .eqv. present(fileId)) then
+      call setStateToFailure(status, "read_PhaseFunctionTable: must supply either fileName or fileId")
+    else if (present(fileName)) then
+      ! Open the file, see if it is of the correct format
+      ncStatus( :) = nf90_NoErr
+      ncStatus( 1) = nf90_open(trim(fileName), nf90_NoWrite, ncFileID)
+      ncStatus( 2) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", storageType)
+!       PRINT*, 'ncstatus:', ncstatus(:)
+!        PRINT *, NF90_STRERROR(ncStatus(1))
+!       PRINT *, NF90_STRERROR(ncStatus(2))
+      if(any(ncStatus(1:2) /= nf90_noErr)) then
+PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncStatus(1:2)
+        call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " is not a phase function table file.")
+      end if
+    else
+      ncStatus( :) = nf90_NoErr
+      ncFileId = fileId
+      ncStatus( 1) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", storageType)
+!      PRINT *, "read_PhaseFunctionTable: ncstatus after get type ", ncstatus(:), 'noerror=', nf90_noErr
+      if(ncStatus(  1) /= nf90_noErr) &
+        call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " doesn't contain this phase function.")
+    end if
+
+    ! Read the data from the file
+    ncStatus(:) = nf90_NoErr
+    if(.not. stateIsFailure(status)) then
+!PRINT *, "read_PhaseFunctionTable: about to read data"
+      ! What's common to all the possible file formats?
+      ncStatus( 1) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "phaseFunctionNumber", ncDimId)
+      ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nEntries)
+      allocate(key(nEntries), extinction(nEntries), singleScatteringAlbedo(nEntries))
+      ncStatus( 3) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT", ncVarId)
+      ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, key)
+      ncStatus( 5) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "extinctionT", ncVarId)
+      ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, extinction, start = (/1,spectIndex/), count = (/nEntries,1/))
+      ncStatus( 7) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "singleScatteringAlbedoT", ncVarId)
+      ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo, start = (/1,spectIndex/), count = (/nEntries,1/))
+      ncStatus( 9) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "description", description)
+      if (ncStatus( 9) /= nf90_NoErr) then ! If a zero-length description was provided the attribute wasn't even written
+        description = ""
+        ncStatus( 9) = nf90_NoErr
+      end if
+!PRINT *, "read_PhaseFunctionTable: halfway through read data ", ncstatus(1:9)
+      if(index(trim(storageType), "Angle-Value") == 1) then
+        ncStatus(10) = nf90_inq_dimid(ncFileId, trim(thisPrefix) // "scatteringAngle", ncDimId)
+        ncStatus(11) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nAngles)
+        allocate(scatteringAngle(nAngles), phaseFunctionArray(nAngles, nEntries))
+
+        ncStatus(12) = nf90_inq_varid(ncFileId, trim(thisPrefix) //  "scatteringAngle", ncVarId)
+        ncStatus(13) = nf90_get_var(ncFileId, ncVarId, scatteringAngle)
+        ncStatus(14) = nf90_inq_varid(ncFileId, trim(thisPrefix) //  "phaseFunctionValues", ncVarId)
+        ncStatus(15) = nf90_get_var(ncFileId, ncVarId, phaseFunctionArray)
+      else if (index(trim(storageType), "LegendreCoefficients") == 1) then
+!        ncStatus(10) = nf90_inq_dimid(ncFileId, trim(thisPrefix) //  "coefficents", ncDimId)
+!        ncStatus(11) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nTotalCoefficients)
+        allocate(start(nEntries), length(nEntries), phaseFunctions(nEntries))
+        ncStatus(10) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "start", ncVarId)
+        ncStatus(11) = nf90_get_var(ncFileId, ncVarId, start, start = (/1,spectIndex/), count = (/nEntries,1/))
+        ncStatus(12) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "length", ncVarId)
+        ncStatus(13) = nf90_get_var(ncFileId, ncVarId, length, start = (/1,spectIndex/), count = (/nEntries,1/))
+	nTotalCoefficients = SUM(length)
+	allocate(legendreCoefficients(nTotalCoefficients))
+        ncStatus(14) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "legendreCoefficients", ncVarId)
+        ncStatus(15) = nf90_get_var(ncFileId, ncVarId, legendreCoefficients, start = (/start(1),spectIndex/), count = (/nTotalCoefficients,1/))
+	!Normalize LG coefficient start indexes back to 1
+	start(:) = start(:)-start(1)+1
+      else
+        call setStateToFailure(status, "read_PhaseFunctionTable: " // trim(fileName) // " is of unknown format.")
+      end if
+!PRINT *, "read_phaseFunctionTable: ncstatus after getting the vars", ncStatus(:)
+      !
+      ! If the name was supplied we're writing a stand-alone file, so it's time to close it
+      !
+      if(present(fileName)) ncStatus(18) = nf90_close(ncfileId)
+
+      !
+      ! Report any netcdf errors in the status variable
+      !
+      if(any(ncStatus(:) /= nf90_noErr)) then
+!PRINT *, "read_PhaseFunctionTable: some errors detected"
+        do i = 1, size(ncStatus)
+          if(ncStatus(i) /= nf90_NoErr) &
+            call setStateToFailure(status, "read_PhaseFunctionTable: ncStatus " // intToChar(i)  // trim(nf90_StrError(ncStatus(i))))
+        end do
+      end if
+
+      !
+      ! Put the data into the phase function table, depending on how it was stored
+      !
+      if(.not. stateIsFailure(status)) then
+!PRINT *, "read_PhaseFunctionTable: about to create new phasefunction"
+        if(index(trim(storageType), "Angle-Value") == 1) then
+          table = new_PhaseFunctionTable(scatteringAngle, phaseFunctionArray,     &
+                                        key, extinction, singleScatteringAlbedo, &
+                                        tableDescription = description, status = status)
+          deallocate(scatteringAngle, phaseFunctionArray)
+        else
+          do i = 1, nEntries
+            phaseFunctions(i) = new_PhaseFunction(legendreCoefficients(start(i):(start(i) + length(i) - 1)), &
+                                                  extinction(i), singleScatteringAlbedo(i), status = status)
+          end do
+!if(StateIsFailure(status)) PRINT*, "read_phaseFunction: state is failure after new_PhaseFunction"
+
+          if(.not. StateIsFailure(status)) then
+!PRINT*, "read_PhaseFunctionTable: about to create new table"
+            table = new_PhaseFunctionTable(phaseFunctions, key, tableDescription = description, status = status)
+          end if
+
+          ! Each element in the array of phase function needs to give its memory up
+          do i = 1, nEntries
+            call finalize_PhaseFunction(phaseFunctions(i))
+          end do
+          deallocate(start, length, legendreCoefficients, phaseFunctions)
+        end if  ! Which kind of phase function table
+      end if
+      deallocate(key, extinction, singleScatteringAlbedo)
+      if(.not. stateIsFailure(status))then
+         call setStateToSuccess(status)
+      else
+!PRINT *, "read_PhaseFunctionTable: state is failure at the end of the routine"
+      end if
+    end if
+  end subroutine read_PhaseFunctionTableNEW
+
+
+
   !------------------------------------------------------------------------------------------
   ! Finalization
   !------------------------------------------------------------------------------------------
