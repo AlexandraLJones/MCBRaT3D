@@ -12,7 +12,7 @@ optObjs = $(mieObjs) $(CodeDir)/inversePhaseFunctions.o $(CodeDir)/opticalProper
 rayObjs = $(optObjs) $(CodeDir)/characterUtils.o $(CodeDir)/ErrorMessages.o \
 	  $(CodeDir)/scatteringPhaseFunctions.o $(CodeDir)/numericUtilities.o
 
-Targets = MakeMieTable molecScattTrans
+Targets = MakeMieTable PhysicalPropertiesToDomainNew molecScattTrans
 
 all: $(Targets)
 
@@ -20,9 +20,9 @@ all: $(Targets)
 #
 MakeMieTable.o: MakeMieTable.f95  $(mieObjs)
 
+PhysicalPropertiesToDomainNew.o: PhysicalPropertiesToDomainNew.f95 $(optObjs)
+
 molecScattTrans.o: molecScattTrans.f95 $(rayObjs)
-
-
 
 
 
@@ -30,13 +30,17 @@ molecScattTrans.o: molecScattTrans.f95 $(rayObjs)
 #
 MakeMieTable: MakeMieTable.o mieindsub.o RefractiveIndex-IceAndWater.o $(mieObjs)
 
+PhysicalPropertiesToDomainNew: PhysicalPropertiesToDomainNew.o $(optObjs)
+
 molecScattTrans: molecScattTrans.o $(rayObjs)
 
 
 
 test: all
 	./MakeMieTable
+	./PhysicalPropertiesToDomainNew
 	./molecScattTrans
+	
 
 clean::
 	-/bin/rm *.lst *.mod *.o $(Targets) 

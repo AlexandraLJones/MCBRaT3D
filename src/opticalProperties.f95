@@ -140,7 +140,7 @@ module opticalProperties
 
 contains
 
-     subroutine read_SSPTable(ncFileIds, lambdaIndex, commonD, thisDomain, calcRayl, status)
+   subroutine read_SSPTable(ncFileIds, lambdaIndex, commonD, thisDomain, calcRayl, status)
 !    character(len = *), intent(in   ) :: fileName
     integer, dimension(4), intent(in)    :: ncFileIds
     integer,            intent(in)    :: lambdaIndex
@@ -154,10 +154,11 @@ contains
     logical                           :: horizontallyUniform, fillsVerticalDomain
     character(len = maxNameLength)    :: name, extType
     integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length, n
-    real(8)                           :: lambda, albedo, freq
-    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId
+    real(8)                           :: lambda, albedo, freq, f
+    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId, dimId, nReff, il, comp, gasComp, ix, iy, iz
     integer, dimension(3)             :: dimIds
-    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:)
+    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:), extinctionT(:), singleScatteringAlbedoT(:)
+	real, allocatable                 :: key(:)
     integer, allocatable              :: phaseFunctionIndex(:,:,:)
 	real, dimension(2)                                  :: LG
    type(phaseFunction), dimension(1)                   :: phaseFunc
@@ -168,7 +169,9 @@ contains
     nXEdges = size(commonD%xPosition)
     nYEdges = size(commonD%yPosition)
     nZEdges = size(commonD%zPosition)
- n=1
+ n=1 ! SSP file counter
+ comp = 1 ! total number of components counter
+ gasComp = 0 ! total number of gaseous components
  DO    ! loop over SSPTable files
     ncFileId = ncFileIds(n)
     ncStatus(:) = nf90_NoErr
@@ -197,50 +200,106 @@ contains
     if(n .eq. 1) thisDomain = new_Domain(commonD, lambda, lambdaIndex, nlambda, albedo, status)
 
     ncStatus( 9) = nf90_get_att(ncFileID, nf90_Global, "numberOfComponents", nComponents)
-    do i = 1, nComponents
+    do i = 1, nComponents ! loop over components in file n
         ncStatus(10) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "Name", name)
 !PRINT *, "readSSP_Table: name= ", trim(makePrefix(i)), "Name"
         ncStatus(11) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "zLevelBase", zLevelBase)
 !PRINT *, "readSSP_Table: name= ", trim(makePrefix(i)), "zLevelBase"
-	ncStatus(12) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "extType", extType)
+		ncStatus(12) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "extType", extType)
 		
         if(extType .eq. "absXsec")then! Read in the profile of absorption cross section; we assume that there is no associated scattering for this component
-		allocate(xsec(1:nZGrid))
-		ncStatus(13) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "xsec", ncVarId)
-		ncStatus(14) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
-		allocate(extinction(1,1,nZGrid),singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid))
-            	extinction(1,1,:) = xsec * commonD%numConc(1,1,:) * 1000.0 ! xsec should have units of m^2 per molecule and the number concentrations should be in molecules per meter cubed, which means the resulting volume extinction coefficient is in m^-1, however, physical distances are in km and the units need to cancel with volume extinction coefficient, so that means converting to units of km^-1, thus the factor of 1000 multiplication
-        	deallocate(xsec)
-		singleScatteringAlbedo = 0.0_8
-		phaseFunctionIndex = 1
-		LG = (/0.0, 0.0/)
-		phaseFunc(1) = new_PhaseFunction(LG,status=status)
-		table = new_PhaseFunctionTable(phaseFunc(1:1),key=(/0.0/),tableDescription="Molecular Absorption", status=status)
-		call finalize_PhaseFunction(phaseFunc(1))
-	elseif(extType .eq. "volExt")then ! Read in volume extinction
-		
-	else ! unrecognizable format
-		call setStateToFailure(status, "read_SSPTable: unrecognizable extType")
-	end if
+			gasComp = gasComp + 1
+			allocate(xsec(1:nZGrid))
+			ncStatus(13) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "xsec", ncVarId)
+			ncStatus(14) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
+			allocate(extinction(1,1,nZGrid),singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid))
+            extinction(1,1,:) = xsec * commonD%numConc(1,1,:) * 1000.0 ! xsec should have units of m^2 per molecule and the number concentrations should be in molecules per meter cubed, which means the resulting volume extinction coefficient is in m^-1, however, physical distances are in km and the units need to cancel with volume extinction coefficient, so that means converting to units of km^-1, thus the factor of 1000 multiplication
+            deallocate(xsec)
+			singleScatteringAlbedo = 0.0_8
+			phaseFunctionIndex = 1
+			LG = (/0.0, 0.0/)
+			phaseFunc(1) = new_PhaseFunction(LG,status=status)
+			table = new_PhaseFunctionTable(phaseFunc(1:1),key=(/0.0/),tableDescription="Molecular Absorption", status=status)
+			call finalize_PhaseFunction(phaseFunc(1))
+			if(any(ncStatus(:) .ne. nf90_NoErr)) then
+				PRINT *, "read_SSPTable: Error reading scalar fields from file ", ncStatus(9:), "lambdaIndex= ", lambdaIndex
+				call setStateToFailure(status, "read_SSPTable: Error reading scalar fields from file")
+			end if
+		elseif(extType .eq. "volExt")then ! Read in volume extinction
+			ncStatus(13) = nf90_inq_dimid(ncFileId, trim(makePrefix(i)) // "phaseFunctionNumber", dimId)
+			ncStatus(14) = nf90_Inquire_Dimension(ncFileId, dimId, len = nReff)
+			allocate(extinctionT(nReff),singleScatteringAlbedoT(nReff), key(nReff))
+			ncStatus(15) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "ExtinctionT", ncVarId)
+			ncStatus(16) = nf90_get_var(ncFileId, ncVarId, extinctionT(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
+			ncStatus(17) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedoT", ncVarId)
+			ncStatus(18) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedoT(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
+			ncStatus(19) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "phaseFunctionKeyT", ncVarId)
+			ncStatus(20) = nf90_get_var(ncFileId, ncVarId, key(:))
+			if(any(ncStatus(:) .ne. nf90_NoErr)) then
+				PRINT *, "read_SSPTable: Error reading scalar fields from file ", ncStatus(9:), "lambdaIndex= ", lambdaIndex
+				call setStateToFailure(status, "read_SSPTable: Error reading scalar fields from file")
+			end if
+			if(.not. stateIsFailure(status)) & ! we don't want to try to read a table if we just calculated one for rayleigh scattering
+				call read_PhaseFunctionTable(fileId = ncFileId, spectIndex = lambdaIndex, table = table,  &
+                                       prefix = "Component" // trim(IntToChar(i)) // "_", &
+                                       status = status)
+			allocate(phaseFunctionIndex(1, 1, nZGrid), extinction(1,1,nReff),singleScatteringAlbedo(1, 1, nReff))
+			phaseFunctionIndex = 1	
+			extinction = 0.0_8
+			singleScatteringAlbedo = 0.0_8
+			! Fill Domain vars according to physical properties and phase function key nearest neighbor	
+			do iz = 1, nZGrid
+				do iy = 1, size(extinction(1,:,nZGrid))
+					do ix = 1, size(extinction(:,1,nZGrid))
+						if(commonD%MassConc(comp-gasComp,ix,iy,iz) .gt. 0.0_8 .and. commonD%Reff(comp-gasComp,ix,iy,iz) .lt. MAXVAL(key) .and. commonD%Reff(comp-gasComp,ix,iy,iz) .ge. MINVAL(key))then
+							! Binary search to find effective radius entry in table
+							il = findIndex(commonD%Reff(comp-gasComp,ix,iy,iz), REAL(key(:),8))
 
-        if(any(ncStatus(:) .ne. nf90_NoErr)) then
-          PRINT *, "read_SSPTable: Error reading scalar fields from file ", ncStatus(9:), "lambdaIndex= ", lambdaIndex
-          call setStateToFailure(status, "read_SSPTable: Error reading scalar fields from file")
-!       else
-!         PRINT *, "read_SSPTable: no problem reading scalar fields, ", ncStatus(:)
-        end if
+							! Interpolate optical properties linearly in Reff for this component
+							f = (commonD%Reff(comp-gasComp,ix,iy,iz)-key(il)) / (key(il+1)-key(il))
+							extinction(ix,iy,iz) = commonD%MassConc(comp-gasComp,ix,iy,iz) * &
+                                    ((1-f)*extinctionT(il) + f*extinctionT(il+1))
+							singleScatteringAlbedo(ix,iy,iz) = (1-f)*singleScatteringAlbedoT(il) + f*singleScatteringAlbedoT(il+1)
+							! Chose the closest phase function
+							if (f < 0.5) then
+								phaseFunctionIndex(ix,iy,iz) = il
+							else
+								phaseFunctionIndex(ix,iy,iz) = il+1
+							endif
+						else if(commonD%MassConc(comp-gasComp,ix,iy,iz) .gt. 0.0_8)then
+							call setStateToFailure(status, "read_SSPTable: Effective radius outside of table range")
+						end if
+					end do
+				end do
+			end do	
+			!!!TODO !!
+			
+		else ! unrecognizable format
+			call setStateToFailure(status, "read_SSPTable: unrecognizable extType")
+		end if
+        
+             
+        !
+        ! Add the new component to the domain.
+        !
+        if(.not. stateIsFailure(status)) then
 
-	call addOpticalComponent(thisDomain, name, extinction, singleScatteringAlbedo, &
+!PRINT *, "read_Domain: extinction size ", size(extinction, 1), size(extinction, 2), size(extinction, 3)
+			call addOpticalComponent(thisDomain, name, extinction, singleScatteringAlbedo, &
                                    phaseFunctionIndex, table, zLevelBase = zLevelBase,   &
                                    status = status)
-	deallocate(extinction, singleScatteringAlbedo, phaseFunctionIndex)
-	CALL finalize_PhaseFunctionTable(table)
-    end do
-    n=n+1
-    if(ncFileIds(n).eq.-9999)EXIT
+        else
+			call setStateToFailure(status, "read_SSPTable: Error reading phase function table.")
+        end if
+        deallocate(extinction, singleScatteringAlbedo, phaseFunctionIndex)
+		CALL finalize_PhaseFunctionTable(table)
+		comp = comp+1
+      end do
+      n=n+1
+      if(ncFileIds(n).eq.-9999)EXIT
  END DO
 
-  ! do we need to add rayleigh scattering?
+ ! do we need to add rayleigh scattering?
  if(present(calcRayl) .and. calcRayl)then
     zLevelBase=1
     name = "Rayleigh Scattering"
@@ -287,13 +346,13 @@ contains
       ncStatus( 6) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZEdges)
       ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-grid", zGridDimId)
       ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
-      ncStatus( 9) = nf90_get_att(ncFileID, nf90_Global, "numberOfComponents", nComponents) 
       if(any(ncStatus(:) /= nf90_NoErr)) then
         call setStateToFailure(status, "read_Common: " // trim(fileName) // &
                                " problem reading dimensions.")
         PRINT *, "read_Common: ncStatus dimension errors ", ncStatus(1:9) 
       end if
-      allocate(commonD%xPosition(nXEdges), commonD%yPosition(nYEdges), commonD%zPosition(nZEdges), commonD%temps(nXEdges-1,nYEdges-1,nZEdges-1))
+      allocate(commonD%xPosition(nXEdges), commonD%yPosition(nYEdges), commonD%zPosition(nZEdges), &
+		 commonD%temps(nXEdges-1,nYEdges-1,nZEdges-1))
       ncStatus( 1) = nf90_inq_varid(ncFileId, "x-edges", ncVarId)
       ncStatus( 2) = nf90_get_var(ncFileId, ncVarId, commonD%xPosition)
       ncStatus( 3) = nf90_inq_varid(ncFileId, "y-edges", ncVarId)
@@ -331,9 +390,20 @@ contains
 !PRINT *, 'read_Common: status after Nc', ncStatus(:)
  	  commonD%numConc(:,:,:)=(prssr*100.0*Na)/(Rstar*commonD%temps) ! factor of 100 converts from hPa in domain to the Pa needed for proper unit cancelation
 !PRINT *, "number concentration: ", commonD%numConc(1,1,:)
-          if(any(ncStatus(:) /= nf90_NoErr)) &
-          call setStateToFailure(status, "read_Common: " // trim(fileName) // &
+          if(any(ncStatus(:) /= nf90_NoErr)) then
+          	call setStateToFailure(status, "read_Common: " // trim(fileName) // &
                                " problem reading PRESSURE.") 
+	  else
+	    ncStatus( 1) = nf90_inq_dimid(ncFileId, "nonGasComps", ncDimId)
+      	    ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nComponents)
+	    if (ncStatus(1) .eq. nf90_NoErr .and. nComponents .gt. 0) then
+		allocate(commonD%massConc(nComponents,nXEdges-1,nYEdges-1,nZEdges-1), commonD%Reff(nComponents,nXEdges-1,nYEdges-1,nZEdges-1))
+		ncStatus( 3) = nf90_inq_varid(ncFileId,"massConc", ncVarID)
+		ncStatus( 4) = nf90_get_var(ncFileId, ncVarId,commonD%massConc)
+		ncStatus( 5) = nf90_inq_varid(ncFileId,"Reff", ncVarID)
+                ncStatus( 6) = nf90_get_var(ncFileId, ncVarId,commonD%Reff)
+	    end if
+	  end if
         end if
 
 	ncStatus( 1) = nf90_inq_varid(ncFileId,"Density", ncVarID)
@@ -349,7 +419,7 @@ contains
 
 	if(any(ncStatus(:) /= nf90_NoErr))then
 	   call setStateToFailure(status, "read_Common: " // trim(fileName) // &
-                               " problem reading DENSITY.")
+                               " problem reading DENSITY, massConc, or Reff.")
 	else
 	   call setStateToSuccess(status)
 	end if
