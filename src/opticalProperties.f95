@@ -169,6 +169,9 @@ contains
     nXEdges = size(commonD%xPosition)
     nYEdges = size(commonD%yPosition)
     nZEdges = size(commonD%zPosition)
+
+    nZGrid = nZEdges-1
+
  n=1 ! SSP file counter
  comp = 1 ! total number of components counter
  gasComp = 0 ! total number of gaseous components
@@ -190,8 +193,6 @@ contains
     lambda = (light_spd * (10**6))/freq  ![microns]
     ncStatus( 5) = nf90_inq_varid(ncFileId, "surfaceAlbedo", ncVarId)
     ncStatus( 6) = nf90_get_var(ncFileID, ncVarId, albedo, start = (/lambdaIndex/))
-    ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-Grid", zGridDimId)
-    ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
 
     if(any(ncStatus(:) .ne. nf90_NoErr)) then
         call setStateToFailure(status, "read_SSPTable: doesn't look an optical properties file.")
@@ -205,7 +206,7 @@ contains
 !PRINT *, "readSSP_Table: name= ", trim(makePrefix(i)), "Name"
         ncStatus(11) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "zLevelBase", zLevelBase)
 !PRINT *, "readSSP_Table: name= ", trim(makePrefix(i)), "zLevelBase"
-		ncStatus(12) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "extType", extType)
+	ncStatus(12) = nf90_get_att(ncFileId, nf90_global, trim(makePrefix(i)) // "extType", extType)
 		
         if(extType .eq. "absXsec")then! Read in the profile of absorption cross section; we assume that there is no associated scattering for this component
 			gasComp = gasComp + 1
@@ -230,16 +231,16 @@ contains
 			ncStatus(14) = nf90_Inquire_Dimension(ncFileId, dimId, len = nReff)
 			allocate(extinctionT(nReff),singleScatteringAlbedoT(nReff), key(nReff))
 			ncStatus(15) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "ExtinctionT", ncVarId)
-			ncStatus(16) = nf90_get_var(ncFileId, ncVarId, extinctionT(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
+			ncStatus(16) = nf90_get_var(ncFileId, ncVarId, extinctionT(:), start = (/1,lambdaIndex/), count = (/nReff,1/))
 			ncStatus(17) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "SingleScatteringAlbedoT", ncVarId)
-			ncStatus(18) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedoT(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
+			ncStatus(18) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedoT(:), start = (/1,lambdaIndex/), count = (/nReff,1/))
 			ncStatus(19) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "phaseFunctionKeyT", ncVarId)
 			ncStatus(20) = nf90_get_var(ncFileId, ncVarId, key(:))
 			if(any(ncStatus(:) .ne. nf90_NoErr)) then
 				PRINT *, "read_SSPTable: Error reading scalar fields from file ", ncStatus(9:), "lambdaIndex= ", lambdaIndex
 				call setStateToFailure(status, "read_SSPTable: Error reading scalar fields from file")
 			end if
-			if(.not. stateIsFailure(status)) & ! we don't want to try to read a table if we just calculated one for rayleigh scattering
+			if(.not. stateIsFailure(status)) & 
 				call read_PhaseFunctionTable(fileId = ncFileId, spectIndex = lambdaIndex, table = table,  &
                                        prefix = "Component" // trim(IntToChar(i)) // "_", &
                                        status = status)
@@ -272,7 +273,7 @@ contains
 					end do
 				end do
 			end do	
-			!!!TODO !!
+			
 			
 		else ! unrecognizable format
 			call setStateToFailure(status, "read_SSPTable: unrecognizable extType")
