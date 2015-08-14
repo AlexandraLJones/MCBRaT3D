@@ -1345,9 +1345,9 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
       allocate(key(nEntries), extinction(nEntries), singleScatteringAlbedo(nEntries))
       ncStatus( 3) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT", ncVarId)
       ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, key)
-      ncStatus( 5) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "extinctionT", ncVarId)
+      ncStatus( 5) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "ExtinctionT", ncVarId)
       ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, extinction, start = (/1,spectIndex/), count = (/nEntries,1/))
-      ncStatus( 7) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "singleScatteringAlbedoT", ncVarId)
+      ncStatus( 7) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "SingleScatteringAlbedoT", ncVarId)
       ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, singleScatteringAlbedo, start = (/1,spectIndex/), count = (/nEntries,1/))
       ncStatus( 9) = nf90_get_att(ncFileId, nf90_Global, trim(thisPrefix) // "description", description)
       if (ncStatus( 9) /= nf90_NoErr) then ! If a zero-length description was provided the attribute wasn't even written
