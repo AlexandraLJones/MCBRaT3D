@@ -1,64 +1,70 @@
-! Outline for program to create liquid water Mie SSP Table file
-
+! new outline for parallelization of MieSSPTableCreate
 Program MakeMieSSPTable
 
   use ErrorMessages
   use scatteringPhaseFunctions
   use UserInterface
   use netcdf
+  use multipleProcesses
 
   IMPLICIT NONE
   !
   ! Input parameters
   !
   INTEGER :: NRETAB = 0
-  REAL    :: WAVELEN1 = 0., WAVELEN2 = 0., DELTAWAVE = 0., PARDENS = 1.
-  REAL    :: SRETAB = 0, ERETAB = 0, ALPHA = 0, MAXRADIUS = 0
-!  REAL(8) :: albedo = 0
+  REAL    :: WAVELEN1 = 0.0, WAVELEN2 = 0.0, DELTAWAVE = 0., PARDENS = 1.
+  REAL    :: SRETAB = 0.0, ERETAB = 0.0, ALPHA = 0.0, MAXRADIUS = 0.0
+!  REAL(8) :: albedo = 0.164
   COMPLEX :: RINDEX
   CHARACTER(LEN=1)   :: PARTYPE = "W", AVGFLAG = "C", DISTFLAG = "G"
   CHARACTER(LEN=256) :: phaseFunctionTableFile = "phaseFunctionTable.pft", frequencyFile
   NAMELIST /mie_table_input/ DISTFLAG, ALPHA, NRETAB, SRETAB, ERETAB, phaseFunctionTableFile, frequencyFile
-  
+
   ! Local variable
   !
-  INTEGER :: NSIZE, MAXLEG, I, J, L, NL, n, ncDimId, nfreq, ncVarId, ncFileId, entryDimId, fDimId, coeffDimId
+  INTEGER :: NSIZE, MAXLEG, I, J, L, NL, n, m, work, ierr, src, count
+  INTEGER :: ncDimId, nfreq, ncVarId, ncFileId, entryDimId, fDimId, coeffDimId, thisProc, numProcs
   INTEGER, dimension(23) :: ncStatus
   INTEGER, dimension(8) :: VarId
   LOGICAL :: LOGSPACEDREFF
   REAL    :: PI, WAVELENCEN, XMAX, SCATTER
   CHARACTER(LEN=256) :: namelistFileName, thisPrefix="Component1_"
   character(len=256) :: tableDescription
+  integer, parameter :: ind=1, ext=2, ssa=3, len=4, st=5, LG=6
 
-  INTEGER, ALLOCATABLE :: NLEG1(:), NLEG(:), start(:,:), length(:,:)
+  INTEGER, ALLOCATABLE :: NLEG1(:), NLEG(:), start(:,:), length(:,:), tempStart(:)
   REAL,    ALLOCATABLE :: RADII(:), ND(:)
   REAL(8),    ALLOCATABLE :: EXTINCT1(:), SCATTER1(:),EXTINCT(:), SSALB(:), lambdas(:)
    REAL(8),    ALLOCATABLE :: freqs(:), TOTALEXT(:,:), TOTALSSA(:,:)
-  REAL,    ALLOCATABLE :: REFF(:),LEGEN1(:,:), LEGCOEF(:,:), TOTALLG(:,:)
-
+  REAL,    ALLOCATABLE :: REFF(:),LEGEN1(:,:), LEGCOEF(:,:), TOTALLG(:,:), buffr(:)
+  integer, dimension(MPI_STATUS_SIZE)  :: mpiStatus
+   
   !
   ! Temperature at which to evaluate index of refraction for water and ice
   !
   real, parameter :: waterTemperature = 283., iceTemperature = 243.
 
   type(ErrorMessage)               :: status
-  
-  
-   PI = ACOS(-1.0)
+
+! initiate procs
+  call initializeProcesses(numProcs, thisProc)
+
+! all procs read in freqs and calculate lambdas
+  PI = ACOS(-1.0)
   RINDEX = CMPLX(0., 0.)
 
-  
- ! Rread namelist containing input filename, paramters describing effective radius, shape parameter, distribution type, and output file name 
+
+ ! Read namelist containing input filename, paramters describing effective radius, shape parameter, distribution type, and output file name
   namelistFileName = getOneArgument()
   OPEN (UNIT=1, FILE=trim(namelistFileName), STATUS='OLD')
   READ (1,NML=mie_table_input)
   CLOSE (1)
-  PRINT *,  frequencyFile
+  if(thisProc .eq. 0)PRINT *,  frequencyFile
   !
   ! Check for valid input values and consistency among parameters
   !
   if(nReTab == 0) stop "MakeMieTable: Must specify at least one effective radius"
-   if(alpha <= 0.) stop "MakeMieTable: must specify parameter alpha for size distribution"
+  if(alpha <= 0.) stop "MakeMieTable: must specify parameter alpha for size distribution"
   if(sretab <= 0) stop "MakeMieTable: must specify a starting effective radius (sretab)"
   if(eretab <= 0.) then
     eretab = sretab
@@ -68,216 +74,279 @@ Program MakeMieSSPTable
   end if
   LOGSPACEDREFF = NRETAB < 0
   NRETAB = ABS(NRETAB)
-  
+
  ! Max radius should be set to twice the largest Re
   MAXRADIUS = 2*ERETAB
-  
+
 !Find proper file in the following directory: /mnt/b/projects/sciteam/jq0/LookupTables/final/500
 
-	 ncStatus(:) = nf90_NoErr
-	if(nf90_open(trim(frequencyFile), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
+  ncStatus(:) = nf90_NoErr
+  if(nf90_open(trim(frequencyFile), nf90_NoWrite, ncFileID) /= nf90_NoErr) then
       call setStateToFailure(status, "Can't open file " // trim(frequencyFile))
-	end if
-	! read in freq_grid(f_grid_nelem)
-	if(.not. stateIsFailure(status)) then
-		ncstatus( 1)=nf90_inq_dimid(ncFileId, "f_grid_nelem", ncDimId)
-		ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nfreq)
-		ALLOCATE(freqs(1:nfreq), lambdas(1:nfreq))
-		ncStatus( 3) = nf90_inq_varid(ncFileId, "freq_grid", ncVarId)
+  end if
+    ! read in freq_grid(f_grid_nelem)
+  if(.not. stateIsFailure(status)) then
+        ncstatus( 1)=nf90_inq_dimid(ncFileId, "f_grid_nelem", ncDimId)
+        ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nfreq)
+        ALLOCATE(freqs(1:nfreq), lambdas(1:nfreq))
+        ncStatus( 3) = nf90_inq_varid(ncFileId, "freq_grid", ncVarId)
         ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, freqs)
-		! convert to wavelength	
-		lambdas = 2.99792458E14/freqs  ! in microns
-		! Maximum number of Legendre coefficients to compute (for largest
-		!    size parameter in file) so we know how much space to allocate
-		! Reference Wiscombe, W.J., 1980: Improved Mie scattering algorithms
-		!   Appl. Opt. Vol 19, pg 1505-1509.
-		!
-		XMAX = 2*PI*MAXRADIUS/lambdas(nfreq)
-		MAXLEG = NINT(2*(XMAX + 4.0*XMAX**0.3334 + 2))
-		PRINT *, "Maximum number of LG coefficients for this run: ", MAXLEG
-	end if
-	
-	if(any(ncStatus(:) /= nf90_NoErr)) &
+        ! convert to wavelength
+        lambdas = 2.99792458E14/freqs  ! in microns
+        if(any(ncStatus(:) /= nf90_NoErr)) &
         call setStateToFailure(status, "MieSSPTable: " // trim(frequencyFile) // &
                                " problem reading frequencies")
-	ALLOCATE(TOTALEXT(1:NRETAB,1:nfreq), TOTALSSA(1:NRETAB,1:nfreq), TOTALLG(1:(MAXLEG)*NRETAB, 1:nfreq))	
-	ALLOCATE(start(NRETAB,nfreq), length(nretab, nfreq), REFF(NRETAB))
-	start=1
-	
-	! At which values of effective radius do we build the table?
-	IF (NRETAB == 1) THEN
-		REFF(:nReTab) = SRETAB
-	ELSE
-		IF (LOGSPACEDREFF) THEN
-		  REFF(:) = SRETAB*(ERETAB/SRETAB)**(FLOAT( (/ (i, i = 0, nReTab - 1)/))/(NRETAB-1))
-		ELSE
-		  REFF(:) = SRETAB + (ERETAB - SRETAB) * FLOAT((/ (i, i = 0, nReTab - 1) /) )/(NRETAB-1)
-		ENDIF
-	ENDIF
-	
-	DO n = 1, nfreq
-		PRINT *, "working on spectral point: ", n, "at wavelength ", lambdas(n)
-		WAVELEN1 = lambdas(n)
-		WAVELEN2 = WAVELEN1
-		
-		CALL GET_CENTER_WAVELEN (WAVELEN1, WAVELEN2, WAVELENCEN)
-		
-		
-		! Maximum number of Legendre coefficients to compute (for largest
-		!    size parameter)
-		! Reference Wiscombe, W.J., 1980: Improved Mie scattering algorithms
-		!   Appl. Opt. Vol 19, pg 1505-1509.
-		!
-		XMAX = 2*PI*MAXRADIUS/WAVELENCEN
-		MAXLEG = NINT(2*(XMAX + 4.0*XMAX**0.3334 + 2))
-	
-		RINDEX =  GET_REFRACT_INDEX (PARTYPE, WAVELEN1, WAVELEN2)
-		
-		! -----------------------------------------------------------
-		! Now we're ready to do the computation
-		!
-		! Figure the number of radii there will be
-		nsize = GET_NSIZE(SRETAB, MAXRADIUS, WAVELENCEN)
-		PRINT *, "total number of individual radii needed: ", NSIZE
+  end if			
 
-		! Allocate all the arrays here
-		! Drop radius and number concentration (for all drops)
-		ALLOCATE (RADII(NSIZE), ND(NSIZE))
-		! Extinction, single scattering albedo, number of Legendre coefficents, and
-		!   the value of those coefficients
-		ALLOCATE (EXTINCT1(NSIZE), SCATTER1(NSIZE), NLEG1(NSIZE), LEGEN1(0:MAXLEG,NSIZE))
-		! Effective radius, extinction, and ssa at each effective radius
-		ALLOCATE (EXTINCT(NRETAB), SSALB(NRETAB))
-		! Number of Legendre coefficients and their value at each tabulated effective radius
-		ALLOCATE (NLEG(NRETAB), LEGCOEF(0:MAXLEG,NRETAB))
-		
+! allocate and fill REFF
+  ALLOCATE(REFF(NRETAB))
+  ! At which values of effective radius do we build the table?
+  IF (NRETAB == 1) THEN
+        REFF(:nReTab) = SRETAB
+  ELSE
+        IF (LOGSPACEDREFF) THEN
+            REFF(:) = SRETAB*(ERETAB/SRETAB)**(FLOAT( (/ (i, i = 0, nReTab - 1)/))/(NRETAB-1))
+        ELSE
+            REFF(:) = SRETAB + (ERETAB - SRETAB) * FLOAT((/ (i, i = 0, nReTab - 1) /) )/(NRETAB-1)
+        ENDIF
+  ENDIF
 
-		! Make up the discrete particle radii to use
-		radii(:NSIZE) = GET_SIZES (SRETAB, MAXRADIUS, WAVELENCEN, NSIZE)
+
+  if (thisProc .gt. 0) deallocate(freqs)
+
+! loop over frequencies
+  DO n = nfreq-thisProc, 1, -1*(numProcs-1)
+	PRINT *, "now computing frequency index: ", n
+	! only proceed if first iteration or thisProc .gt.0
+     if(n .eq. nfreq .or. thisProc .gt. 0)then
+		! determine MAXLEG
+	 WAVELEN1 = lambdas(n)
+       	WAVELEN2 = WAVELEN1
+
+       	CALL GET_CENTER_WAVELEN (WAVELEN1, WAVELEN2, WAVELENCEN)
+
+        ! Maximum number of Legendre coefficients to compute (for largest
+        !    size parameter)
+        ! Reference Wiscombe, W.J., 1980: Improved Mie scattering algorithms
+        !   Appl. Opt. Vol 19, pg 1505-1509.
+        !
+        XMAX = 2*PI*MAXRADIUS/WAVELENCEN
+        MAXLEG = NINT(2*(XMAX + 4.0*XMAX**0.3334 + 2))
+	if(thisProc .eq. 0)PRINT *, "maximum LG coefficients needed: ", MAXLEG
+		 
+		! get RINDEX
+	RINDEX =  GET_REFRACT_INDEX (PARTYPE, WAVELEN1, WAVELEN2)
 		
-		! Do the Mie computations for each radius, which may involve several
-		!   Mie calculation over the wavelength integration
-!		PRINT *, "about to call compute_mie_all_sizes"
-		CALL COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, PARTYPE, &
+		! determine number of radii needed, nsize
+	nsize = GET_NSIZE(SRETAB, MAXRADIUS, WAVELENCEN)
+        !PRINT *, "total number of individual radii needed: ", NSIZE
+		
+		! allocate vectors of length nsize
+		
+        ! Drop radius and number concentration (for all drops)
+        ALLOCATE (RADII(NSIZE), ND(NSIZE))
+        ! Extinction, single scattering albedo, number of Legendre coefficents, and
+        !   the value of those coefficients
+        ALLOCATE (EXTINCT1(NSIZE), SCATTER1(NSIZE), NLEG1(NSIZE))
+		
+		! allocate vectors of length NRETAB (except REFF which was already done and including start)
+	 ALLOCATE (EXTINCT(NRETAB), SSALB(NRETAB), NLEG(NRETAB), tempStart(NRETAB))
+		 
+		! allocate arrays of size (MAXLEG+1, NSIZE)
+	ALLOCATE(LEGCOEF(0:MAXLEG,NRETAB), LEGEN1(0:MAXLEG,NSIZE))
+		
+		! get discreet particle radii
+	radii(:NSIZE) = GET_SIZES (SRETAB, MAXRADIUS, WAVELENCEN, NSIZE)
+		
+		! do the mie comps for each radius
+	CALL COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, PARTYPE, &
                               WAVELENCEN, RINDEX, NSIZE, RADII, MAXLEG, &
                               EXTINCT1, SCATTER1, NLEG1, LEGEN1)
+							  
+		! loop over effective radii
+	DO I = 1, NRETAB
+		! Set tabulated effective radius
 
+		! Calculate the discrete size number concentrations (ND), which vary
+		!   according to a truncated gamma or lognormal distribution,
+		!   that gives the desired effective radius (REFF) and LWC (1 g/m^3).
+		CALL MAKE_SIZE_DIST (DISTFLAG, PARDENS, RADII, REFF(I), ALPHA, ND(:))
 
-		! Loop over the number of output tabulated effective radii
-		DO I = 1, NRETAB
-!			PRINT *, "working on effective radius, ", REFF(i)
-			! Set tabulated effective radius
+		! Sum the scattering properties over the discrete size distribution
+		extinct(i) = dot_product(nd(:nsize), extinct1(:nsize))
+		scatter    = dot_product(nd(:nsize), scatter1(:nsize))
+		LEGCOEF(:,I) = 0.0
+		NL = 1
+		do J = 1, NSIZE
+		   NL = max(NL, nLeg1(J))
+		   LEGCOEF(0:NL,I) = LEGCOEF(0:NL,I) + ND(J) * LEGEN1(0:NL,J)
+		END do
 
-			! Calculate the discrete size number concentrations (ND), which vary
-			!   according to a truncated gamma or lognormal distribution,
-			!   that gives the desired effective radius (REFF) and LWC (1 g/m^3).
-			CALL MAKE_SIZE_DIST (DISTFLAG, PARDENS, RADII, REFF(I), ALPHA, ND(:))
+		LEGCOEF(0:NL,I) = LEGCOEF(0:NL,I)/SCATTER
+		tempStart(1)=1
+		DO L = 0, NL
+		   IF (LEGCOEF(L,I) .GT. 0.5E-5)then
+ 			NLEG(I) = L
+			if(I .lt. NRETAB) tempStart(I+1)=tempStart(I)+nLeg(I)
+		   END IF	
+		ENDDO
 
-			! Sum the scattering properties over the discrete size distribution
-			extinct(i) = dot_product(nd(:nsize), extinct1(:nsize))
-			scatter    = dot_product(nd(:nsize), scatter1(:nsize))
-			LEGCOEF(:,I) = 0.0 
-			NL = 1
-			do J = 1, NSIZE
-				NL = max(NL, nLeg1(J))
-				LEGCOEF(0:NL,I) = LEGCOEF(0:NL,I) + ND(J) * LEGEN1(0:NL,J)
-			END do
-
-			LEGCOEF(0:NL,I) = LEGCOEF(0:NL,I)/SCATTER
-			DO L = 0, NL
-			  IF (LEGCOEF(L,I) .GT. 0.5E-5) NLEG(I) = L
-			ENDDO
-
-			!
+    !
 			! Sanity check - the first Legendre coefficient should be identically 1
-			!
-			IF (ABS(LEGCOEF(0,I)-1.0) > 0.0001) THEN
-			  PRINT *,'Phase function not normalized for Reff=',REFF(I),LEGCOEF(0,I)
-			  STOP
-			ENDIF
-			IF (EXTINCT(I) > 0.0) THEN
-			  SSALB(I) = SCATTER/EXTINCT(I)
-			ENDIF
-					
-			TOTALLG(start(i,n):start(i,n)+nLeg(i)-1,n)=LegCoef(1:Nleg(i), i) / (/ (2*l+1, l=1, Nleg(i)) /)
-			if(i .lt. nReTab) start(i+1,n)=start(i,n)+nLeg(i)
-		ENDDO  ! end of effective radius loop
-				
+    !
+		IF (ABS(LEGCOEF(0,I)-1.0) > 0.0001) THEN
+		   PRINT *,'Phase function not normalized for Reff=',REFF(I),LEGCOEF(0,I)
+		   STOP
+		ENDIF
+		IF (EXTINCT(I) > 0.0) THEN
+			SSALB(I) = SCATTER/EXTINCT(I)
+		ENDIF
+		LegCoef(0:Nleg(i), i) = LegCoef(0:Nleg(i), i) / (/ (2*l+1, l=0, Nleg(i)) /)
+	ENDDO  ! end of effective radius loop
+
+	if(thisProc .eq. 0)EXIT
 		
-		! copy arrays into total arrays
-		TOTALEXT(:,n)=EXTINCT
-		TOTALSSA(:,n)=SSALB
-		length(:,n)=nLeg
+		! put LegCoef into buffer to send
+	ALLOCATE(buffr(1:SUM(nLeg)))
+	DO m = 1, NRETAB
+		buffr(tempStart(m):tempStart(m)+nLeg(m)-1)=LegCoef(1:nLeg(m),m)
+	ENDDO
+	DEALLOCATE(LegCoef)
 		
-		! deallocate temporary freqeuncy specific arrays
-		DEALLOCATE(RADII, ND)
-		DEALLOCATE(EXTINCT1, SCATTER1, NLEG1, LEGEN1)
-		DEALLOCATE(EXTINCT, SSALB, NLEG, LEGCOEF)
-				
+		! send arrays to root (EXTINCT, SSALB, nLeg, start, LegCoeff)
+	CALL MPI_SEND(n, 1, MPI_INT, 0, ind, MPI_COMM_WORLD, ierr)
+	CALL MPI_SEND(EXTINCT, NRETAB, MPI_REAL8, 0, ext, MPI_COMM_WORLD, ierr)
+	CALL MPI_SEND(SSALB, NRETAB, MPI_REAL8, 0, ssa, MPI_COMM_WORLD, ierr)
+	CALL MPI_SEND(nLeg, NRETAB, MPI_INT, 0, len, MPI_COMM_WORLD, ierr)
+	CALL MPI_SEND(tempStart, NRETAB, MPI_INT, 0, st, MPI_COMM_WORLD, ierr)
+	CALL MPI_SEND(buffr, SUM(nLeg), MPI_REAL, 0, LG, MPI_COMM_WORLD, ierr)
 		
-	
-	END DO
-	
-	tableDescription = "Mie phase function table for spheres made of water at a concentration of 1 g/m^3. Key is in microns. "
-	select case (trim(distflag))
-      case('g', 'G')
-       tableDescription = trim(tableDescription) // " Gamma size distribution. "
-      case('l', 'L')
-       tableDescription = trim(tableDescription) // " Lognormal size distribution. "
-    end select
-	!
-	! Convert to units of extinction in g/m3
-	!
-	TOTALEXT = 0.001 * TOTALEXT
+		
+		! deallocate variables allocated within freq loop
+	DEALLOCATE (RADII, ND)
+        DEALLOCATE (EXTINCT1, SCATTER1, NLEG1)
+	DEALLOCATE (EXTINCT, SSALB, NLEG, tempStart)
+	DEALLOCATE (LEGEN1, buffr)
+     end if
+  ENDDO ! end of frequency loop
 
 	
-	! Need to do the writing to a file
+! root process
+  if(thisProc .eq. 0)then
+	! deallocate lambdas
+	DEALLOCATE(lambdas)
+	
+	! sum nLeg
+	MAXLEG=SUM(nLeg)
+	
+	! allocate total arrays (TOTALEXT, TOTALSSA, TOTALLG, start, length)
+	ALLOCATE(TOTALEXT(NRETAB,nfreq), TOTALSSA(NRETAB,nfreq),start(NRETAB,nfreq), length(NRETAB,nfreq), TOTALLG(MAXLEG,nfreq))
+	
+	! fill with results from first iteration
+	TOTALEXT(:,nfreq)=EXTINCT
+	TOTALSSA(:,nfreq)=SSALB
+	length(:,nfreq)=nLeg
+	start(:,nfreq)=tempStart
+	DO m = 1, NRETAB
+		TOTALLG(tempStart(m):tempStart(m)+nLeg(m)-1,nfreq)=LegCoef(1:nLeg(m),m)
+	ENDDO
+	
+	! DEALLOCATE single frequency vars that we no longer need or need to reallocate later
+	DEALLOCATE (RADII, ND, EXTINCT, SSALB, nLeg, tempStart)
+    	DEALLOCATE (EXTINCT1, SCATTER1, NLEG1)
+	DEALLOCATE(LEGCOEF, LEGEN1)
+	
+	! initialize output file
+	tableDescription = "Mie phase function table for spheres made of water at a concentration of 1 g/m^3. Key is in microns. "
+    	select case (trim(distflag))
+      	case('g', 'G')
+       	tableDescription = trim(tableDescription) // " Gamma size distribution. "
+      	case('l', 'L')
+       	tableDescription = trim(tableDescription) // " Lognormal size distribution. "
+    	end select
 	
 	ncStatus(:) = nf90_NoErr
-	ncStatus(1)=  nf90_create(trim(phaseFunctionTableFile), NF90_NETCDF4, ncFileID) ! need to use netcdf4 when file size will be over 2GB
-	if(ANY(ncStatus == nf90_NoErr)) then
-		! define dimensions
-		ncStatus(2) = nf90_def_dim(ncFileId, "f_grid_nelem", nfreq, fDimId)
-		ncStatus(3) = nf90_def_dim(ncFileId, trim(thisPrefix) // "phaseFunctionNumber", NRETAB, entryDimId)
-		ncStatus(4) = nf90_def_dim(ncFileId, trim(thisPrefix) // "maxCoefficients", size(TOTALLG(:,1)), coeffDimId)
-		! define variables
-		 ncStatus( 5) = nf90_def_var(ncFileId, "f_grid", nf90_double, fDimId, VarId(1))
-!		 ncStatus( 6) = nf90_def_var(ncFileId, "surfaceAlbedo", nf90_double, fDimId, VarId(2))
-		 ncStatus( 7) = nf90_def_var(ncFileId, trim(thisPrefix) // "ExtinctionT", nf90_double, (/entryDimId,fDimId/), VarId(3))
-		 ncStatus( 8) = nf90_def_var(ncFileId, trim(thisPrefix) // "SingleScatterAlbedoT", nf90_double, (/entryDimId,fDimId/), VarId(4))
-		 ncStatus( 9) = nf90_def_var(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT", nf90_float, entryDimId, VarId(5))
-		 ncStatus(10) = nf90_def_var(ncFileId, trim(thisPrefix) // "start", nf90_int, (/entryDimId,fDimId/), VarId(6))
-		 ncStatus(11) = nf90_def_var(ncFileId, trim(thisPrefix) // "length", nf90_int, (/entryDimId,fDimId/), VarId(7))
-		 ncStatus(12) = nf90_def_var(ncFileId, trim(thisPrefix) // "legendreCoefficients", nf90_float, (/coeffDimId,fDimId/), VarId(8))
-		! put attributes
-		 ncStatus(13) = nf90_put_att(ncFileID,nf90_Global, "numberOfComponents", 1)
-		 ncStatus(14) = nf90_put_att(ncFileID,nf90_Global, "title", "SSP Table based on Mie Properties from I3RC's Mie Tool")
-		 ncStatus(15) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "Name", "Water Droplets")
-		 ncStatus(16) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "description", tableDescription)
-		 ncStatus(17) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "zLevelBase", 1)
-		 ncStatus(18) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "extType", "volExt")
-		 ncStatus(19) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", "LegendreCoefficients")
-		 ncStatus(20) = nf90_put_att(ncFileID,nf90_Global, "freqUnits", "Hz")
-		 ncStatus(21) = nf90_put_att(ncFileID,nf90_Global, "starting_freq", freqs(1))
-		 ncStatus(22) = nf90_put_att(ncFileID,nf90_Global, "ending_freq", freqs(nfreq))
-	end if
-	ncStatus(23) = nf90_EndDef(ncFileID)
-	if(any(ncStatus(:) /= nf90_noErr)) call setStateToFailure(status, "add_PhaseFunctionTable: problem opening or defining SSP file.")
-	 if(.not. stateIsFailure(status)) then 
-		ncStatus = nf90_noErr
+    	ncStatus(1)=  nf90_create(trim(phaseFunctionTableFile), NF90_NETCDF4, ncFileID) ! need to use netcdf4 when file size will be over 2GB
+    	if(ANY(ncStatus == nf90_NoErr)) then
+        ! define dimensions
+        	ncStatus(2) = nf90_def_dim(ncFileId, "f_grid_nelem", nfreq, fDimId)
+        	ncStatus(3) = nf90_def_dim(ncFileId, trim(thisPrefix) // "phaseFunctionNumber", NRETAB, entryDimId)
+        	ncStatus(4) = nf90_def_dim(ncFileId, trim(thisPrefix) // "maxCoefficients", size(TOTALLG(:,1)), coeffDimId)
+        ! define variables
+        	ncStatus( 5) = nf90_def_var(ncFileId, "f_grid", nf90_double, fDimId, VarId(1))
+!       ncStatus( 6) = nf90_def_var(ncFileId, "surfaceAlbedo", nf90_double, fDimId, VarId(2))
+        	ncStatus( 7) = nf90_def_var(ncFileId, trim(thisPrefix) // "ExtinctionT", nf90_double, (/entryDimId,fDimId/), VarId(3))
+        	ncStatus( 8) = nf90_def_var(ncFileId, trim(thisPrefix) // "SingleScatterAlbedoT", nf90_double, (/entryDimId,fDimId/), VarId(4))
+        	ncStatus( 9) = nf90_def_var(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT", nf90_float, entryDimId, VarId(5))
+        	ncStatus(10) = nf90_def_var(ncFileId, trim(thisPrefix) // "start", nf90_int, (/entryDimId,fDimId/), VarId(6))
+        	ncStatus(11) = nf90_def_var(ncFileId, trim(thisPrefix) // "length", nf90_int, (/entryDimId,fDimId/), VarId(7))
+        	ncStatus(12) = nf90_def_var(ncFileId, trim(thisPrefix) // "legendreCoefficients", nf90_float, (/coeffDimId,fDimId/), VarId(8))
+        ! put attributes
+		ncStatus(13) = nf90_put_att(ncFileID,nf90_Global, "numberOfComponents", 1)
+        	ncStatus(14) = nf90_put_att(ncFileID,nf90_Global, "title", "SSP Table based on Mie Properties from I3RC's Mie Tool")
+        	ncStatus(15) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "Name", "Water Droplets")
+        	ncStatus(16) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "description", tableDescription)
+        	ncStatus(17) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "zLevelBase", 1)
+        	ncStatus(18) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "extType", "volExt")
+        	ncStatus(19) = nf90_put_att(ncFileID,nf90_Global, trim(thisPrefix) // "phaseFunctionStorageType", "LegendreCoefficients")
+        	ncStatus(20) = nf90_put_att(ncFileID,nf90_Global, "freqUnits", "Hz")
+        	ncStatus(21) = nf90_put_att(ncFileID,nf90_Global, "starting_freq", freqs(1))
+        	ncStatus(22) = nf90_put_att(ncFileID,nf90_Global, "ending_freq", freqs(nfreq))
+    	end if
+    	ncStatus(23) = nf90_EndDef(ncFileID)
+    		
+	work = nfreq-1
+	DO WHILE (work .gt. 0)
+		! listen for and recv arrays from other procs then put them into their proper place
+		CALL MPI_RECV(n, 1, MPI_INT, MPI_ANY_SOURCE, ind, MPI_COMM_WORLD, mpiStatus, ierr)
+		src = mpiStatus(MPI_SOURCE)
+		CALL MPI_RECV(TOTALEXT(:,n), NRETAB, MPI_REAL8, src, ext, MPI_COMM_WORLD, mpiStatus, ierr)
+		CALL MPI_RECV(TOTALSSA(:,n), NRETAB, MPI_REAL8, src, ssa, MPI_COMM_WORLD, mpiStatus, ierr)
+		CALL MPI_RECV(length(:,n), NRETAB, MPI_INT, src, len, MPI_COMM_WORLD, mpiStatus, ierr)
+		CALL MPI_RECV(start(:,n), NRETAB, MPI_INT, src, st, MPI_COMM_WORLD, mpiStatus, ierr)
+		CALL MPI_PROBE(src, LG, MPI_COMM_WORLD, mpiStatus, ierr)
+		CALL MPI_GET_COUNT(mpiStatus, MPI_REAL, count)
+		CALL MPI_RECV(TOTALLG(1:count, n), count, MPI_REAL, src, LG, MPI_COMM_WORLD, mpiStatus, ierr)
+		
+		! decrement remaining work counter
+		work = work - 1
+	END DO	
+	! do any final transformations on variables
+	! convert to units of extinction in gm^-3
+	TOTALEXT=TOTALEXT * 0.001
+	! fill output file and deallocate variables as you go
+	if(any(ncStatus(:) /= nf90_noErr)) call setStateToFailure(status, "MIESSPTableCreate: problem opening or defining SSP file.")
+    	if(.not. stateIsFailure(status)) then
+        	ncStatus = nf90_noErr
 		ncStatus(1)=nf90_put_var(ncFileId, varId(1), freqs)
+		DEALLOCATE(freqs)
 !		ncStatus(2)=nf90_put_var(ncFileId, varId(2), albedo)
+!		DEALLOCATE(albedo)
 		ncStatus(3)=nf90_put_var(ncFileId, varId(3), TOTALEXT)
-		ncStatus(4)=nf90_put_var(ncFileId, varId(4), TOTALSSA)
-		ncStatus(5)=nf90_put_var(ncFileId, varId(5), REFF)
-		ncStatus(6)=nf90_put_var(ncFileId, varId(6), start)
-		ncStatus(7)=nf90_put_var(ncFileId, varId(7), length)
-		ncStatus(8)=nf90_put_var(ncFileId, varId(8), TOTALLG)
-	 end if
+		DEALLOCATE(TOTALEXT)
+        	ncStatus(4)=nf90_put_var(ncFileId, varId(4), TOTALSSA)
+		DEALLOCATE(TOTALSSA)
+        	ncStatus(5)=nf90_put_var(ncFileId, varId(5), REFF)
+		DEALLOCATE(REFF)
+        	ncStatus(6)=nf90_put_var(ncFileId, varId(6), start)
+		DEALLOCATE(start)
+        	ncStatus(7)=nf90_put_var(ncFileId, varId(7), length)
+		DEALLOCATE(length)
+        	ncStatus(8)=nf90_put_var(ncFileId, varId(8), TOTALLG)
+		DEALLOCATE(TOTALLG)
+	end if
 	ncStatus(23) = nf90_close(ncFileId)
-	
-	
-	
+  end if
+		
+! DEALLOCATE remaining allocated variables if allocated (freqs, lambdas)
+ IF(ALLOCATED(freqs))DEALLOCATE(freqs)
+ IF(ALLOCATED(lambdas))DEALLOCATE(lambdas)
+ IF(ALLOCATED(REFF))DEALLOCATE(REFF)
+ 
+! finalize processes
+  call finalizeProcesses
+
+
 	CONTAINS
 	
 ! ------------------------------------------------------------------------------

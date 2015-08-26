@@ -38,7 +38,7 @@ Libs        =
 
 # Macros are available for ifort, g95, xlf, absoft, ftn
  compiler=ftn
- debug=yes
+ debug=no
 
 ifeq (${compiler},ftn)
 #   fortran compiler on Blue Waters
@@ -47,19 +47,17 @@ ifeq (${compiler},ftn)
   ifeq (${debug},no)
   #optimization flags
 #     F95Flags = -h omp${Modules}
-     F95Flags = -h omp -h pl=/u/sciteam/aljones4/I3RC/compileLib  -h wp -d wX -dynamic${Modules}
+     F95Flags = -h omp -h pl=/u/sciteam/aljones4/I3RC/compileLib -h wp -d wX -dynamic${Modules}
 #     F95Flags = -h omp -h pl=/u/sciteam/aljones4/I3RC/compileLib  -h wp -d wX -static${Modules} 
-     FFlags =
+     FFlags = 
   else
 #      F95Flags = -h omp -g -O fp0 -Rb -Rc -Rp -rm${Modules}
      F95Flags = -h omp -h msgs -g -O fp0 -Rb -Rc -Rp -rm -h pl=/u/sciteam/aljones4/I3RC/compileLib -h wp -d wX -dynamic${Modules}
-#     F95Flags = -h omp -h msgs -h profile_generate -O fp0 -Rb -Rc -Rp -rm -h pl=/u/sciteam/aljones4/I3RC/compileLib -h wp -d wX -dynamic${Modules}
 #     F95Flags = -h omp -h msgs -g -O fp0 -Rb -Rc -Rp -rm -h pl=/u/sciteam/aljones4/I3RC/compileLib -h wp -d wX -static${Modules}
 #     F95Flags = -g -O0 -dynamic${Modules}
 #     FFlags = -g -O0
 
       FFlags = -h msgs -g -O fp0 -rm
-#     FFlags = -h msgs -h profile_generate -O fp0 -rm
   endif
 endif
 
