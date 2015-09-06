@@ -326,43 +326,28 @@ contains
     !   always makes sense.
 
     ! Local variables
-    real(8), allocatable            :: tempTable2(:)
     integer :: lowerBound, upperBound, midPoint
     integer :: increment
 
     lowerBound = 0
     upperBound = size(table)
 
-    allocate(tempTable2(upperBound))
-
-    if(table(1) .gt. table(upperBound))then ! need to reverse order of elements
-	tempTable2=table(upperBound:1:-1)
-    else
-	tempTable2=table
-    end if
-
     ! Bisection: figure out which half of the interval holds the
     !   desired value, discard the other half, and repeat
     bisectionLoop: do
       if(lowerBound .eq. size(table) .or. upperBound .le. lowerBound+1 ) exit bisectionLoop
       midPoint = (lowerBound + upperBound)/2
-      if(value > tempTable2(midPoint)) then
+      if(value > table(midPoint)) then
         lowerBound = midPoint
       else
         upperBound = midPoint
       end if
     end do bisectionLoop
 
-    if(table(1) .gt. table(upperBound))then ! need to convert the index to reverse position
-	findCDFIndex_double = size(table)-upperBound+1
-    else
-    	findCDFIndex_double = upperBound
-    end if
-    deallocate(tempTable2)
-
+    findCDFIndex_double = upperBound
   end function findCDFIndex_double
   !------------------------------------------------------------------------------------------
-  pure  function findCDFIndex_int(value, table)
+ pure function findCDFIndex_int(value, table)
     integer,               intent( in) :: value
     integer, dimension(:), intent( in) :: table
     integer                         :: findCDFIndex_int
@@ -374,45 +359,31 @@ contains
     !   always makes sense.
 
     ! Local variables
-    integer, allocatable               :: tempTable2(:)
     integer :: lowerBound, upperBound, midPoint
     integer :: increment
 
     lowerBound = 0
     upperBound = size(table)
 
-    allocate(tempTable2(1:upperBound))
-    if(table(1) .gt. table(upperBound))then ! need to reverse order of elements
-        tempTable2=table(upperBound:1:-1)
-    else
-	tempTable2=table
-    end if
-
     ! Bisection: figure out which half of the interval holds the
     !   desired value, discard the other half, and repeat
     bisectionLoop: do
       if(lowerBound .eq. size(table) .or. upperBound .le. lowerBound+1 ) exit bisectionLoop
       midPoint = (lowerBound + upperBound)/2
-      if(value > tempTable2(midPoint)) then
+      if(value > table(midPoint)) then
         lowerBound = midPoint
       else
         upperBound = midPoint
       end if
     end do bisectionLoop
 
-    if(table(1) .gt. table(upperBound))then ! need to convert the index to reverse position
-        findCDFIndex_int = size(table)-upperBound+1
-    else
-        findCDFIndex_int = upperBound
-    end if
-    deallocate(tempTable2)
+    findCDFIndex_int = upperBound
   end function findCDFIndex_int
   !------------------------------------------------------------------------------------------
   !------------------------------------------------------------------------------------------
  pure function findCDFIndex_int8(value, table)
     integer(8),               intent( in) :: value
     integer(8), dimension(:), intent( in) :: table
-    integer(8), allocatable               :: tempTable(:)
     integer                         :: findCDFIndex_int8
     !
     ! Find the index i into the table such that table(i-1) < value <= table(i)
@@ -427,32 +398,20 @@ contains
 
     lowerBound = 0
     upperBound = size(table)
-    allocate(tempTable(upperBound))
-
-    if(table(1) .gt. table(upperBound))then ! need to reverse order of elements
-        tempTable=table(upperBound:1:-1)
-    else
-	tempTable=table
-    end if
 
     ! Bisection: figure out which half of the interval holds the
     !   desired value, discard the other half, and repeat
     bisectionLoop: do
       if(lowerBound .eq. size(table) .or. upperBound .le. lowerBound+1 ) exit bisectionLoop
       midPoint = (lowerBound + upperBound)/2
-      if(value > tempTable(midPoint)) then
+      if(value > table(midPoint)) then
         lowerBound = midPoint
       else
         upperBound = midPoint
       end if
     end do bisectionLoop
 
-    if(table(1) .gt. table(upperBound))then ! need to convert the index to reverse position
-        findCDFIndex_int8 = size(table)-upperBound+1
-    else
-        findCDFIndex_int8 = upperBound
-    end if
-    deallocate(tempTable)
+    findCDFIndex_int8 = upperBound
   end function findCDFIndex_int8
   !------------------------------------------------------------------------------------------
   pure function findIndexReal(value, table, firstGuess)

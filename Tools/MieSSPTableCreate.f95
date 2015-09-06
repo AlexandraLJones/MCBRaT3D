@@ -237,7 +237,7 @@ Program MakeMieSSPTable
 	DEALLOCATE(lambdas)
 	
 	! sum nLeg
-	MAXLEG=SUM(nLeg)
+	MAXLEG=SUM(nLeg)+5
 	
 	! allocate total arrays (TOTALEXT, TOTALSSA, TOTALLG, start, length)
 	ALLOCATE(TOTALEXT(NRETAB,nfreq), TOTALSSA(NRETAB,nfreq),start(NRETAB,nfreq), length(NRETAB,nfreq), TOTALLG(MAXLEG,nfreq))
