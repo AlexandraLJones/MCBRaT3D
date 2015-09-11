@@ -22,7 +22,8 @@ Program MakeMieSSPTable
 
   ! Local variable
   !
-  INTEGER :: NSIZE, MAXLEG, I, J, L, NL, n, m, work, ierr, src, count
+  INTEGER :: NSIZE, I, J, L, NL, n, m, work, ierr, src, count, MAXLEG
+  !INTEGER, parameter :: MAXLEG=500
   INTEGER :: ncDimId, nfreq, ncVarId, ncFileId, entryDimId, fDimId, coeffDimId, thisProc, numProcs
   INTEGER, dimension(23) :: ncStatus
   INTEGER, dimension(8) :: VarId
@@ -151,7 +152,7 @@ Program MakeMieSSPTable
 		
 		! allocate vectors of length NRETAB (except REFF which was already done and including start)
 	 ALLOCATE (EXTINCT(NRETAB), SSALB(NRETAB), NLEG(NRETAB), tempStart(NRETAB))
-		 
+	tempStart(1)=1 
 		! allocate arrays of size (MAXLEG+1, NSIZE)
 	ALLOCATE(LEGCOEF(0:MAXLEG,NRETAB), LEGEN1(0:MAXLEG,NSIZE))
 		
@@ -162,6 +163,7 @@ Program MakeMieSSPTable
 	CALL COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, PARTYPE, &
                               WAVELENCEN, RINDEX, NSIZE, RADII, MAXLEG, &
                               EXTINCT1, SCATTER1, NLEG1, LEGEN1)
+!if(any(NLEG1 .ge. MAXLEG)) PRINT *, "reported more LG than MAXLEG ", n, NLEG1
 							  
 		! loop over effective radii
 	DO I = 1, NRETAB
@@ -183,14 +185,10 @@ Program MakeMieSSPTable
 		END do
 
 		LEGCOEF(0:NL,I) = LEGCOEF(0:NL,I)/SCATTER
-		tempStart(1)=1
 		DO L = 0, NL
-		   IF (LEGCOEF(L,I) .GT. 0.5E-5)then
- 			NLEG(I) = L
-			if(I .lt. NRETAB) tempStart(I+1)=tempStart(I)+nLeg(I)
-		   END IF	
+		   IF (LEGCOEF(L,I) .GT. 0.5E-5) NLEG(I) = L
 		ENDDO
-
+		if(I .lt. NRETAB) tempStart(I+1)=tempStart(I)+nLeg(I)
     !
 			! Sanity check - the first Legendre coefficient should be identically 1
     !
@@ -237,10 +235,10 @@ Program MakeMieSSPTable
 	DEALLOCATE(lambdas)
 	
 	! sum nLeg
-	MAXLEG=SUM(nLeg)+5
+	!MAXLEG=SUM(nLeg)+MAXLEG
 	
 	! allocate total arrays (TOTALEXT, TOTALSSA, TOTALLG, start, length)
-	ALLOCATE(TOTALEXT(NRETAB,nfreq), TOTALSSA(NRETAB,nfreq),start(NRETAB,nfreq), length(NRETAB,nfreq), TOTALLG(MAXLEG,nfreq))
+	ALLOCATE(TOTALEXT(NRETAB,nfreq), TOTALSSA(NRETAB,nfreq),start(NRETAB,nfreq), length(NRETAB,nfreq), TOTALLG(SUM(nLeg)+MAXLEG,nfreq))
 	
 	! fill with results from first iteration
 	TOTALEXT(:,nfreq)=EXTINCT
@@ -306,6 +304,7 @@ Program MakeMieSSPTable
 		CALL MPI_RECV(start(:,n), NRETAB, MPI_INT, src, st, MPI_COMM_WORLD, mpiStatus, ierr)
 		CALL MPI_PROBE(src, LG, MPI_COMM_WORLD, mpiStatus, ierr)
 		CALL MPI_GET_COUNT(mpiStatus, MPI_REAL, count)
+!if(count .gt. MAXLEG)PRINT *, "count exceeds MAXLEG for freq ", n, MAXLEG, count
 		CALL MPI_RECV(TOTALLG(1:count, n), count, MPI_REAL, src, LG, MPI_COMM_WORLD, mpiStatus, ierr)
 		
 		! decrement remaining work counter
