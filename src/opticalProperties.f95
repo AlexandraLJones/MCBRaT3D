@@ -71,6 +71,8 @@ module opticalProperties
     real(8), allocatable          :: numConc(:,:,:) !  total molecular numberconcentration(x, y, z)
     real(8), allocatable          :: massConc(:,:,:,:)! component mass concentration (component,x,y,z)
     real(8), allocatable          :: Reff(:,:,:,:)! component effective radius (component,x,y,z)
+    real(8), allocatable          :: zPositionOLD(:)
+    real(8), allocatable          :: tempsOLD(:,:,:)
 
   end type commonDomain
 
@@ -153,11 +155,12 @@ contains
     type(phaseFunctionTable)          :: table
     logical                           :: horizontallyUniform, fillsVerticalDomain
     character(len = maxNameLength)    :: name, extType
-    integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length, n
-    real(8)                           :: lambda, albedo, freq, f
-    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId, dimId, nReff, il, comp, gasComp, ix, iy, iz
+    integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length, n, nZEdgesOLD, nZGridOLD
+    real(8)                           :: lambda, albedo, freq, f, z
+    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId, dimId, nReff, il, comp, gasComp, ix, iy, iz, ind, q
     integer, dimension(3)             :: dimIds
-    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:), extinctionT(:), singleScatteringAlbedoT(:)
+    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:), extinctionT(:), singleScatteringAlbedoT(:), &
+					numConc(:), rho(:)
 	real, allocatable                 :: key(:)
     integer, allocatable              :: phaseFunctionIndex(:,:,:)
 	real, dimension(2)                                  :: LG
@@ -169,8 +172,10 @@ contains
     nXEdges = size(commonD%xPosition)
     nYEdges = size(commonD%yPosition)
     nZEdges = size(commonD%zPosition)
+    nZEdgesOLD = size(commonD%zPositionOLD)
 
     nZGrid = nZEdges-1
+    nZGridOLD = nZEdgesOLD-1
 
  n=1 ! SSP file counter
  comp = 1 ! total number of components counter
@@ -210,11 +215,18 @@ contains
 		
         if(extType .eq. "absXsec")then! Read in the profile of absorption cross section; we assume that there is no associated scattering for this component
 		gasComp = gasComp + 1
-		allocate(xsec(1:nZGrid))
+		allocate(xsec(1:nZGridOLD))
 		ncStatus(13) = nf90_inq_varid(ncFileId, trim(makePrefix(i)) // "xsec", ncVarId)
-		ncStatus(14) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1,lambdaIndex/), count = (/nZGrid,1/))
-		allocate(extinction(1,1,nZGrid),singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid))
-           	extinction(1,1,:) = xsec * commonD%numConc(1,1,:) * 1000.0 ! xsec should have units of m^2 per molecule and the number concentrations should be in molecules per meter cubed, which means the resulting volume extinction coefficient is in m^-1, however, physical distances are in km and the units need to cancel with volume extinction coefficient, so that means converting to units of km^-1, thus the factor of 1000 multiplication
+		ncStatus(14) = nf90_get_var(ncFileId, ncVarId, xsec(:), start = (/1,lambdaIndex/), count = (/nZGridOLD,1/))
+		allocate(extinction(1,1,nZGrid),singleScatteringAlbedo(1, 1, nZGrid), phaseFunctionIndex(1, 1, nZGrid), &
+			numConc(nZGrid), rho(nZGrid))
+		do q = 1, nZGrid
+			z = SUM(commonD%zPosition(q:q+1))/2.0
+			ind = findIndex(z,commonD%zPositionOLD)
+			numConc(q)=commonD%numConc(1,1,ind)
+           		extinction(1,1,q) = xsec(ind) * numConc(q) * 1000.0 ! xsec should have units of m^2 per molecule and the number concentrations should be in molecules per meter cubed, which means the resulting volume extinction coefficient is in m^-1, however, physical distances are in km and the units need to cancel with volume extinction coefficient, so that means converting to units of km^-1, thus the factor of 1000 multiplication
+			rho(q)=commonD%rho(1,1,ind)
+		end do
             	deallocate(xsec)
 		singleScatteringAlbedo = 0.0_8
 		phaseFunctionIndex = 1
@@ -313,7 +325,7 @@ contains
     zLevelBase=1
     name = "Rayleigh Scattering"
     allocate(extinction(1,1,nZGrid), singleScatteringAlbedo(1,1,nZGrid), phaseFunctionIndex(1,1,nZGrid))
-    CALL calc_RayleighScattering(lambda,commonD%rho(1,1,:),commonD%numConc(1,1,:), &
+    CALL calc_RayleighScattering(lambda,rho(:),numConc(:), &
                                   ext=extinction(1,1,:), ssa=singleScatteringAlbedo(1,1,:), &
                                   phaseInd=phaseFunctionIndex(1,1,:),table=table,status=status)
     if(.not. stateIsFailure(status)) then
@@ -338,7 +350,7 @@ contains
 
     integer, dimension(16)             :: ncStatus
     integer                           :: ncFileID, ncDimID, zGridDimID, nXEdges, nYEdges, &
-					 nZEdges, nZGrid, ncVarID, nComponents, i, nDims
+					 nZEdges, nZGrid, nZEdgesOLD, nZGridOLD, ncVarID, nComponents, i, nDims
     real(8), allocatable              :: prssr(:,:,:)
 
     ncStatus(:) = nf90_NoErr
@@ -355,13 +367,18 @@ contains
       ncStatus( 6) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZEdges)
       ncStatus( 7) = nf90_inq_dimid(ncFileId, "z-grid", zGridDimId)
       ncStatus( 8) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGrid)
+      ncStatus( 9) = nf90_inq_dimid(ncFileId, "z-edgesOLD", ncDimId)
+      ncStatus(10) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = nZEdgesOLD)
+      ncStatus(11) = nf90_inq_dimid(ncFileId, "z-gridOLD", zGridDimId)
+      ncStatus(12) = nf90_Inquire_Dimension(ncFileId, zGridDimId, len = nZGridOLD)
       if(any(ncStatus(:) /= nf90_NoErr)) then
         call setStateToFailure(status, "read_Common: " // trim(fileName) // &
                                " problem reading dimensions.")
-        PRINT *, "read_Common: ncStatus dimension errors ", ncStatus(1:9) 
+        PRINT *, "read_Common: ncStatus dimension errors ", ncStatus(1:12) 
       end if
       allocate(commonD%xPosition(nXEdges), commonD%yPosition(nYEdges), commonD%zPosition(nZEdges), &
-		 commonD%temps(nXEdges-1,nYEdges-1,nZEdges-1))
+		 commonD%temps(nXEdges-1,nYEdges-1,nZEdges-1), commonD%zPositionOLD(nZEdgesOLD), &
+                 commonD%tempsOLD(nXEdges-1,nYEdges-1,nZEdgesOLD-1))
       ncStatus( 1) = nf90_inq_varid(ncFileId, "x-edges", ncVarId)
       ncStatus( 2) = nf90_get_var(ncFileId, ncVarId, commonD%xPosition)
       ncStatus( 3) = nf90_inq_varid(ncFileId, "y-edges", ncVarId)
@@ -370,6 +387,10 @@ contains
       ncStatus( 6) = nf90_get_var(ncFileId, ncVarId, commonD%zPosition)
       ncStatus( 7) = nf90_inq_varid(ncFileId, "Temperatures", ncVarId)
       ncStatus( 8) = nf90_get_var(ncFileId, ncVarId, commonD%temps)
+      ncStatus( 9) = nf90_inq_varid(ncFileId, "z-edgesOLD", ncVarId)
+      ncStatus(10) = nf90_get_var(ncFileId, ncVarId, commonD%zPositionOLD)
+      ncStatus(11) = nf90_inq_varid(ncFileId, "TemperaturesOLD", ncVarId)
+      ncStatus(12) = nf90_get_var(ncFileId, ncVarId, commonD%tempsOLD)
 !      if( COUNT(temps .le. 0.0_8) .gt. 0)PRINT *, 'readDomain: there are temps at or below 0.0 K'
 !PRINT *, 'read_Common: status before Nc', ncStatus(:)
       if(any(ncStatus(:) /= nf90_NoErr)) then
@@ -380,8 +401,8 @@ contains
         ncStatus( 1) = nf90_inq_varid(ncFileId,"Pressures", ncVarID)
 
         if(ncStatus(1) .eq.  nf90_NoErr)then
-	  allocate(prssr(1:nXEdges-1,1:nYEdges-1,1:nZEdges-1))
-	  allocate(commonD%numConc(nXEdges-1,nYEdges-1,nZEdges-1))
+	  allocate(prssr(1:nXEdges-1,1:nYEdges-1,1:nZEdgesOLD-1))
+	  allocate(commonD%numConc(nXEdges-1,nYEdges-1,nZEdgesOLD-1))
 	  ncStatus(2)= nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims)
 	  if (nDims .eq. 3)then
  	     ncStatus(3) = nf90_get_var(ncFileId, ncVarId, prssr(:,:,:))
@@ -397,7 +418,7 @@ contains
 !             ncStatus((2*i)+1) = nf90_get_var(ncFileId, ncVarId, commonD%numConc(1,1,:)) 
 !	  end do     
 !PRINT *, 'read_Common: status after Nc', ncStatus(:)
- 	  commonD%numConc(:,:,:)=(prssr*100.0*Na)/(Rstar*commonD%temps) ! factor of 100 converts from hPa in domain to the Pa needed for proper unit cancelation
+ 	  commonD%numConc(:,:,:)=(prssr*100.0*Na)/(Rstar*commonD%tempsOLD) ! factor of 100 converts from hPa in domain to the Pa needed for proper unit cancelation
 !PRINT *, "number concentration: ", commonD%numConc(1,1,:)
           if(any(ncStatus(:) /= nf90_NoErr)) then
           	call setStateToFailure(status, "read_Common: " // trim(fileName) // &
@@ -419,9 +440,9 @@ contains
 	if(ncStatus(1) .eq.  nf90_NoErr)then
 	   ncStatus( 2) = nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims)
 	   if(ndims.eq.1)then
-		allocate(commonD%rho(1,1,nZEdges-1))
+		allocate(commonD%rho(1,1,nZEdgesOLD-1))
 	   else
-		allocate(commonD%rho(nXEdges-1,nYEdges-1,nZEdges-1))
+		allocate(commonD%rho(nXEdges-1,nYEdges-1,nZEdgesOLD-1))
 	   end if
 	   ncStatus(3) = nf90_get_var(ncFileId, ncVarId,commonD%rho)
 	end if
