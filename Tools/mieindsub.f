@@ -32,7 +32,7 @@ C     coefficient is returned as Legendre series coefficients.
       MSPHERE = MINDEX
 
 C         Compute the An's and Bn's and the cross sections
-      NMIE = 0
+      NMIE = 0    
       CALL MIECALC (NMIE, X, MSPHERE, A, B)
       CALL MIECROSS (NMIE, X, A, B, QEXT, QSCAT)
       EXTINCTION = GEOMAREA*QEXT

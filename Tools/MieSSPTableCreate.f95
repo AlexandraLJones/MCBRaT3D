@@ -28,7 +28,7 @@ Program MakeMieSSPTable
   INTEGER, dimension(23) :: ncStatus
   INTEGER, dimension(8) :: VarId
   LOGICAL :: LOGSPACEDREFF
-  REAL    :: PI, WAVELENCEN, XMAX, SCATTER
+  REAL(8)    :: PI, WAVELENCEN, XMAX, SCATTER
   CHARACTER(LEN=256) :: namelistFileName, thisPrefix="Component1_"
   character(len=256) :: tableDescription
   integer, parameter :: ind=1, ext=2, ssa=3, len=4, st=5, LG=6
@@ -133,6 +133,7 @@ Program MakeMieSSPTable
         !
         XMAX = 2*PI*MAXRADIUS/WAVELENCEN
         MAXLEG = NINT(2*(XMAX + 4.0*XMAX**0.3334 + 2))
+!	MAXLEG = 300
 	if(thisProc .eq. 0)PRINT *, "maximum LG coefficients needed: ", MAXLEG
 		 
 		! get RINDEX
@@ -197,7 +198,7 @@ Program MakeMieSSPTable
 		   STOP
 		ENDIF
 		IF (EXTINCT(I) > 0.0) THEN
-			SSALB(I) = SCATTER/EXTINCT(I)
+			SSALB(I) = MIN(SCATTER/EXTINCT(I), 1.0_8)
 		ENDIF
 		LegCoef(0:Nleg(i), i) = LegCoef(0:Nleg(i), i) / (/ (2*l+1, l=0, Nleg(i)) /)
 	ENDDO  ! end of effective radius loop

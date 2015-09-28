@@ -240,7 +240,7 @@ contains
 			PRINT *, "read_SSPTable: Error reading scalar fields from file ", ncStatus(9:), "lambdaIndex= ", lambdaIndex
 			call setStateToFailure(status, "read_SSPTable: Error reading scalar fields from file")
 		end if
-		allocate(phaseFunctionIndex(1, 1, nZGrid), extinction(1,1,nZGrid),singleScatteringAlbedo(1, 1, nZGrid))
+		allocate(phaseFunctionIndex(nXEdges-1, nYEdges-1, nZGrid), extinction(nXEdges-1, nYEdges-1,nZGrid),singleScatteringAlbedo(nXEdges-1, nYEdges-1, nZGrid))
 		phaseFunctionIndex = 1
                 extinction = 0.0_8
                 singleScatteringAlbedo = 0.0_8
@@ -250,13 +250,13 @@ contains
 		else
 			LG = (/0.0, 0.0/)
                 	phaseFunc(1) = new_PhaseFunction(LG,status=status)
-			table = new_PhaseFunctionTable(phaseFunc(1:1),key=(/0.0/),tableDescription="Molecular Absorption", status=status)
+			table = new_PhaseFunctionTable(phaseFunc(1:1),key=(/0.0/),tableDescription="dummy table", status=status)
                 	call finalize_PhaseFunction(phaseFunc(1))
 		endif
 		! Fill Domain vars according to physical properties and phase function key nearest neighbor	
 		do iz = 1, nZGrid
-			do iy = 1, size(extinction(1,:,nZGrid))
-				do ix = 1, size(extinction(:,1,nZGrid))
+			do iy = 1, nYEdges-1
+				do ix = 1, nXEdges-1
 					if(commonD%MassConc(comp-gasComp,ix,iy,iz) .gt. 0.0_8 .and. commonD%Reff(comp-gasComp,ix,iy,iz) .lt. MAXVAL(key) .and. commonD%Reff(comp-gasComp,ix,iy,iz) .ge. MINVAL(key))then
 						! Binary search to find effective radius entry in table
 						il = findIndex(commonD%Reff(comp-gasComp,ix,iy,iz), REAL(key(:),8))
@@ -418,12 +418,13 @@ contains
 	ncStatus( 1) = nf90_inq_varid(ncFileId,"Density", ncVarID)
 	if(ncStatus(1) .eq.  nf90_NoErr)then
 	   ncStatus( 2) = nf90_Inquire_Variable(ncFileId, ncVarId, ndims = nDims)
+	   allocate(commonD%rho(nXEdges-1,nYEdges-1,nZEdges-1))
 	   if(ndims.eq.1)then
-		allocate(commonD%rho(1,1,nZEdges-1))
+		ncStatus(3) = nf90_get_var(ncFileId, ncVarId,commonD%rho(1,1,:))
+		commonD%rho=spread(spread(commonD%rho(1,1,:),1, nCopies=nXEdges-1), 2, nCopies=nYEdges-1)
 	   else
-		allocate(commonD%rho(nXEdges-1,nYEdges-1,nZEdges-1))
+		ncStatus(3) = nf90_get_var(ncFileId, ncVarId,commonD%rho)
 	   end if
-	   ncStatus(3) = nf90_get_var(ncFileId, ncVarId,commonD%rho)
 	end if
 
 	if(any(ncStatus(:) /= nf90_NoErr))then

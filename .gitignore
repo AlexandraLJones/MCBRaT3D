@@ -12,4 +12,8 @@
 *.phasetab
 *.gz
 *.mod
+*.ap2
+*.pft
+*.xf
+*.nc
 build.log
