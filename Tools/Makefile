@@ -42,7 +42,7 @@ molecScattTrans: molecScattTrans.o $(rayObjs)
 
 test: all
 	./MakeMieTable
-	./MakeMieTable
+	./MieSSPTableCreate
 	./PhysicalPropertiesToDomainNew
 	./molecScattTrans
 	

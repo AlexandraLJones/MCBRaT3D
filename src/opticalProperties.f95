@@ -124,6 +124,10 @@ module opticalProperties
   interface replaceOpticalComponent
     module procedure replaceOpticalComponent3D, replaceOpticalComponent1D
   end interface ! replaceOpticalComponent
+
+ interface new_Domain
+    module procedure new_DomainMono, new_DomainBB
+  end interface
   !------------------------------------------------------------------------------------------
   ! What is visible? 
   !------------------------------------------------------------------------------------------
@@ -439,7 +443,7 @@ contains
   !------------------------------------------------------------------------------------------
   ! Initialization: Routine to create new domains 
   !------------------------------------------------------------------------------------------
-   function new_Domain(commonD, lambda, lambdaI, nlambda, albedo, status)
+   function new_DomainBB(commonD, lambda, lambdaI, nlambda, albedo, status)
 !  function new_Domain(xPosition, yPosition, zPosition, lambda, lambdaI, nlambda, albedo, temps, status)
 !    real(8),  dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
 !    real(8),  dimension(:,:,:), intent(in) :: temps
@@ -447,7 +451,7 @@ contains
     real(8), intent(in)			 :: lambda, albedo
     integer, intent(in)			 :: lambdaI, nlambda
     type(ErrorMessage),    intent(inout) :: status
-    type(domain)                         :: new_Domain
+    type(domain)                         :: new_DomainBB
     
     ! Local variables
     integer :: numX, numY, numZ
@@ -466,15 +470,15 @@ contains
     ! -------------------------
      if(.not. stateIsFailure(status)) then
 !       allocate(new_Domain%xPosition(numX), new_Domain%yPosition(numY), new_Domain%zPosition(numZ), new_Domain%temps(numX-1,numY-1,numZ-1))
-       new_Domain%xPosition(1:) => commonD%xPosition(:)
-       new_Domain%yPosition(1:) => commonD%yPosition(:)
-       new_Domain%zPosition(1:) => commonD%zPosition(:)
-       new_Domain%temps(1:,1:,1:) => commonD%temps(:,:,:)       
-       new_Domain%lambda       = lambda
-       new_Domain%lambdaI      = lambdaI
-       new_Domain%nlambda      = nlambda
+       new_DomainBB%xPosition(1:) => commonD%xPosition(:)
+       new_DomainBB%yPosition(1:) => commonD%yPosition(:)
+       new_DomainBB%zPosition(1:) => commonD%zPosition(:)
+       new_DomainBB%temps(1:,1:,1:) => commonD%temps(:,:,:)       
+       new_DomainBB%lambda       = lambda
+       new_DomainBB%lambdaI      = lambdaI
+       new_DomainBB%nlambda      = nlambda
 !PRINT *, 'new_Domain: nlambdas match= ', new_Domain%nlambda, nlambda
-       new_Domain%surfaceAlbedo = albedo
+       new_DomainBB%surfaceAlbedo = albedo
 
        ! Are the grids regularly spaced? Compare the distance between each pair 
        !   of array elements to the distance between the first two. 
@@ -484,14 +488,61 @@ contains
                    (commonD%xPosition(2)  - commonD%xPosition(1)) ) <= 2 * spacing(commonD%xPosition(2:))) .and. &
           all(abs( (commonD%yPosition(2:) - commonD%yPosition(:numY-1)) -                                &
                    (commonD%yPosition(2)  - commonD%yPosition(1)) ) <= 2 * spacing(commonD%yPosition(2:))))      &
-         new_Domain%xyRegularlySpaced = .true.
+         new_DomainBB%xyRegularlySpaced = .true.
        if(all(abs( (commonD%zPosition(2:) - commonD%zPosition(:numZ-1)) -                           &
                    (commonD%zPosition(2)  - commonD%zPosition(1)) ) <= 2 * spacing(commonD%zPosition(2:)))) &
-         new_Domain%zRegularlySpaced = .true.
+         new_DomainBB%zRegularlySpaced = .true.
        call setStateToSuccess(status)
      end if
 
-  end function new_Domain
+  end function new_DomainBB
+  !------------------------------------------------------------------------------------------
+  function new_DomainMono(xPosition, yPosition, zPosition, temps, status)
+    real(8),  dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
+    real(8),  dimension(:,:,:), intent(in) :: temps
+    type(ErrorMessage),    intent(inout) :: status
+    type(domain)                         :: new_DomainMono
+
+    ! Local variables
+    integer :: numX, numY, numZ
+
+
+    ! -------------------------
+    ! Checks: always increasing, within limits;
+    !   other checks performed by addOpticalComponent
+    numX = size(xPosition); numY = size(yPosition); numZ = size(zPosition)
+    if(any(xPosition(2:) - xPosition(:numX-1) <= 0.) .or. &
+       any(yPosition(2:) - yPosition(:numY-1) <= 0.) .or. &
+       any(zPosition(2:) - zPosition(:numZ-1) <= 0.))     &
+      call setStateToFailure(status, "new_Domain: Positions must be increasing, unique.")
+
+    ! -------------------------
+     if(.not. stateIsFailure(status)) then
+       allocate(new_DomainMono%xPosition(numX), new_DomainMono%yPosition(numY), new_DomainMono%zPosition(numZ), new_DomainMono%temps(numX-1,numY-1,numZ-1))
+       new_DomainMono%xPosition(1:) = xPosition(:)
+       new_DomainMono%yPosition(1:) = yPosition(:)
+       new_DomainMono%zPosition(1:) = zPosition(:)
+       new_DomainMono%temps(1:,1:,1:) = temps(:,:,:)
+
+       ! Are the grids regularly spaced? Compare the distance between each pair
+       !   of array elements to the distance between the first two.
+       ! The default value is false.
+       !
+       if(all(abs( (xPosition(2:) - xPosition(:numX-1)) -                                &
+                   (xPosition(2)  - xPosition(1)) ) <= 2 * spacing(xPosition(2:))) .and. &
+          all(abs( (yPosition(2:) - yPosition(:numY-1)) -                               &
+                   (yPosition(2)  - yPosition(1)) ) <= 2 * spacing(yPosition(2:))))      &
+         new_DomainMono%xyRegularlySpaced = .true.
+       if(all(abs( (zPosition(2:) - zPosition(:numZ-1)) -                           &
+                   (zPosition(2)  - zPosition(1)) ) <= 2 * spacing(zPosition(2:)))) &
+         new_DomainMono%zRegularlySpaced = .true.
+       call setStateToSuccess(status)
+     end if
+
+  end function new_DomainMono
+
+
+
   !------------------------------------------------------------------------------------------
   subroutine addOpticalComponent3D(thisDomain, componentName,          &
                                    extinction, singleScatteringAlbedo, &

@@ -12,7 +12,8 @@ Program MakeMieSSPTable
   ! Input parameters
   !
   INTEGER :: NRETAB = 0
-  REAL    :: WAVELEN1 = 0.0, WAVELEN2 = 0.0, DELTAWAVE = 0., PARDENS = 1.
+  REAL    :: WAVELEN1 = 0.0, WAVELEN2 = 0.0
+  REAL    ::  DELTAWAVE = 0., PARDENS = 1.
   REAL    :: SRETAB = 0.0, ERETAB = 0.0, ALPHA = 0.0, MAXRADIUS = 0.0
 !  REAL(8) :: albedo = 0.164
   COMPLEX :: RINDEX
@@ -460,7 +461,7 @@ Program MakeMieSSPTable
   ! greater than 5 microns.
     IMPLICIT NONE
     REAL, INTENT(IN)  :: WAVELEN1, WAVELEN2
-    REAL, INTENT(OUT) :: WAVELENCEN
+    REAL(8), INTENT(OUT) :: WAVELENCEN
 
     ! Local variables
     REAL              :: BBTEMP
@@ -542,7 +543,8 @@ Program MakeMieSSPTable
    ! The formula and spacing in size parameter can be changed to trade
    ! off size distribution integration accuracy vs. computer time.
     IMPLICIT NONE
-    REAL,    INTENT(IN)  :: SRETAB, MAXRADIUS, WAVELEN
+    REAL,    INTENT(IN)  :: SRETAB, MAXRADIUS
+    REAL(8),    INTENT(IN)  ::  WAVELEN
     INTEGER              :: NSIZE
 
     ! Local variables
@@ -570,7 +572,8 @@ Program MakeMieSSPTable
    ! off size distribution integration accuracy vs. computer time.
     IMPLICIT NONE
     INTEGER, INTENT(IN ) :: NSIZE
-    REAL,    INTENT(IN ) :: SRETAB, MAXRADIUS, WAVELEN
+    REAL,    INTENT(IN ) :: SRETAB, MAXRADIUS 
+    REAL(8),    INTENT(IN ) :: WAVELEN
     REAL                 :: RADII(NSIZE)
 
     ! Local variables
@@ -608,7 +611,8 @@ Program MakeMieSSPTable
    ! coefficient.
     IMPLICIT NONE
     INTEGER, INTENT(IN) :: NSIZE, MAXLEG
-    REAL,    INTENT(IN) :: WAVELEN1, WAVELEN2, DELTAWAVE, WAVELENCEN
+    REAL,    INTENT(IN) :: WAVELEN1, WAVELEN2, DELTAWAVE
+    REAL(8),    INTENT(IN) ::  WAVELENCEN
     REAL,    INTENT(IN) :: RADII(NSIZE)
     COMPLEX, INTENT(IN) :: RINDEX
     CHARACTER(LEN=1), &

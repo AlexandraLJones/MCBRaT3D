@@ -177,6 +177,7 @@ program ParticleFileToDomain
  
   call read_particle_file_size (ParticleFileName, nX, nY, nZp, Pfile_type)
   allocate (Zpar(nZp+1), TempPar(nZp+1))
+  !print *, nzP
   if(Pfile_type .lt. 4)then
     allocate (nComp(nX,nY,nZp), ptype(numScatTables,nX,nY,nZp))
     allocate (MassCont(numScatTables,nX,nY,nZp), Reff(numScatTables,nX,nY,nZp))
@@ -193,6 +194,8 @@ program ParticleFileToDomain
   end if
    ! Combine the particle levels and extra levels
   nZt = nZp + numOtherLevels
+  !print *, nZt
+  !print *, zpar
   allocate (Zlevels(nZt+1), Temp(nZt+1))
   call organize_levels (nZp, Zpar, TempPar, &
                         numOtherLevels,     &
@@ -309,7 +312,7 @@ PRINT *, ScatTableFiles(i)
   !
   thisDomain = new_Domain (deltaX * (/ (i, i = 0, nX) /), &
                            deltaY * (/ (i, i = 0, nY) /), &
-                           Zlevels(1:nZt+1),temps, status)
+                           Zlevels(1:nZt+1),temps, status=status)
   call printStatus(status)
 
 
@@ -544,7 +547,7 @@ subroutine read_molec_abs_file (MolecAbsFileName, nZt, Zlevels, GasExt)
   character(len=*), intent(in) :: MolecAbsFileName
   integer, intent(in) :: nZt
   real(8),    intent(in) :: Zlevels(1:nZt+1)
-  real(8),    intent(out) :: GasExt(1:nZt+1)
+  real(8),    intent(out) :: GasExt(1:nZt)
   integer :: nZ
   real(8), allocatable :: Zlevin(:)
 
@@ -556,7 +559,8 @@ subroutine read_molec_abs_file (MolecAbsFileName, nZt, Zlevels, GasExt)
     read (2,*) Zlevin(1:nZ+1)
     if (nZ /= nZt .or. any(abs(Zlevin(:) - Zlevels(:)) > spacing(Zlevels))) then
       print *, 'read_molec_abs_file: input Z levels do not match'
-      print *, 'Zlevin=', Zlevin(:), 'Zlevels=', Zlevels(:)
+      print *, nZ, nZt
+      print *, abs(Zlevin(:) - Zlevels(:))
       stop
     endif
     deallocate (Zlevin)
