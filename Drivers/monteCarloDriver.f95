@@ -169,7 +169,7 @@ program monteCarloDriver
 !  write(horiz_file, '(A,I0.4)') "horiz.out.",thisProc
 !  write(diff_file, '(A,I0.4)') "diff.out.",thisProc
 !  write(voxel_file2, '(A,I0.4)') "voxel2.out.",thisProc
-   write(batch_file, '(A,I0.4)') "batch.out.", thisProc
+!   write(batch_file, '(A,I0.4)') "batch.out.", thisProc
 
 !  open(unit=11, file=trim(voxel_file) , status='UNKNOWN')
 !  open(unit=12, file=trim(level_file) , status='UNKNOWN')
@@ -178,7 +178,7 @@ program monteCarloDriver
 !  open(unit=15, file=trim(horiz_file) , status='UNKNOWN')
 !  open(unit=16, file=trim(diff_file) , status='UNKNOWN')
 !  open(unit=17, file=trim(voxel_file2) , status='UNKNOWN')
-  open(unit=51, file=trim(batch_file), status='UNKNOWN')
+!  open(unit=51, file=trim(batch_file), status='UNKNOWN')
 
   ! -----------------------------------------
   ! Get the input variables from the namelist file
@@ -487,7 +487,7 @@ level_weights=level_weights, nX=nX, nY=nY, nZ=nZ, randomNumbers=randoms, status=
       RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + Radiance(:, :, :)**2
     endif
 	
-WRITE(51, '(13E26.16 )') solarFlux, Radiance(1,1,1:4), RadianceStats(1,1,1:4,1), RadianceStats(1,1,1:4,2)
+!WRITE(51, '(13E26.16 )') solarFlux, Radiance(1,1,1:4), RadianceStats(1,1,1:4,1), RadianceStats(1,1,1:4,2)
 
    if(recScatOrd) then 
       call reportResults(mcIntegrator, &
