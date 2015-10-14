@@ -48,6 +48,8 @@ module ErrorMessages
 
   ! Here we declare which functions are visible outside the module. 
   !   This defines the interface. 
+  public :: memcheck
+
   ! -- Boolean functions for reporting the current error state
   public :: stateIsSuccess, &
             stateIsWarning, &
@@ -87,6 +89,16 @@ module ErrorMessages
   ! end program example
 
 contains  
+  subroutine memcheck(RSS)
+    integer, intent(out)		:: RSS
+    integer				:: temp
+
+    open(unit=5, file="/proc/self/statm", status='OLD')
+    read(5,*) temp, RSS, temp, temp, temp, temp, temp
+    close(5)
+
+
+  end subroutine memcheck
   ! -----------
   !  Functions for initializing or setting state with optional messages
   ! -----------

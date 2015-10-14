@@ -154,7 +154,7 @@ program monteCarloDriver
   integer              :: batchesAssigned, batchesCompleted
   integer(8)           ::  totalNumPhotons = 0, counter
   integer              :: currentFreq(1)
-  integer              :: err
+  integer              :: err, RSS
   integer, dimension(4):: SSPFileID=-9999   ! must have number of dimensions equal to SSPfilename
 !  real(8), allocatable    :: voxel_weights(:,:,:,:), col_weights(:,:,:),level_weights(:,:)
 !  integer, allocatable   :: voxel_tallys1(:,:,:), voxel_tallys2(:,:,:), voxel_tallys1_sum(:,:,:), voxel_tallys2_sum(:,:,:), voxel_tallys1_total(:,:,:), voxel_tallys2_total(:,:,:)
@@ -184,7 +184,11 @@ program monteCarloDriver
   !
 !PRINT*, 'about to call initializeProcesses' 
   call initializeProcesses(numProcs, thisProc)
-
+  if(thisProc .lt. 2)then
+  	call memcheck(RSS)
+  	PRINT*, "Driver: memory after initializing procs ", RSS, "rank= ", thisProc
+  end if
+  
  !!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
     
  availProcs = OMP_GET_NUM_PROCS()
@@ -286,6 +290,11 @@ program monteCarloDriver
   !
 !  allocate(BBDomain(numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory before read_common ", RSS, "rank= ", thisProc
+end if
+
   call read_Common(physDomainFile, commonPhysical, status)
   call printStatus(status)
   allocate(freqDistr(1:numLambda), photonCDF(1:numLambda))
@@ -305,6 +314,11 @@ program monteCarloDriver
 	n=n+1
 	if(len_trim(SSPfilename(n)).le.0)EXIT
      END DO
+
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory before LW setup iteration ", RSS, "rank= ", thisProc
+end if
      DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1  
 PRINT *, "in LW loop at iteration ", i
         call read_SSPTable(SSPFileID, i, commonPhysical, thisDomain,.True.,.False., status) ! domain is initialized within this routine
@@ -379,6 +393,12 @@ PRINT *, "in LW loop at iteration ", i
 	fluxCDF(i)=emittedFlux
 	call finalize_Weights(theseWeights)
      END DO
+
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after LW setup iteration ", RSS, "rank= ", thisProc
+end if
+
      n = 1
      DO
         err = nf90_close(SSPFileID(n))
@@ -477,6 +497,11 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
      call synchronizeProcesses
      freqDistr(:) = sumAcrossProcesses(freqDistr)
   end if
+
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after setup ", RSS, "rank= ", thisProc
+end if
 
   if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
 !  if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
@@ -608,7 +633,10 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
   if (MasterProc) &
     print *, "Setup CPU time (secs, approx): ", int(cpuTimeSetup)
 !PRINT *, "setup completed"
-
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory before batches ", RSS, "rank= ", thisProc
+end if
   ! --------------------------------------------------------------------------
 
   ! The  loop over batches is for estimating the uncertainty in the flux and
@@ -706,7 +734,12 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
 	n =  mpiStatus(MPI_SOURCE)
 	totalNumPhotons = totalNumPhotons + numPhotonsProcessed
 	batchesCompleted = batchesCompleted + 1
-	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
+!	PRINT *, 'have completed', batchesCompleted, 'of the', batchesAssigned, 'batches assigned'
+
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after having completed ", batchesCompleted, "of the", batchesAssigned, "batches assigned:", RSS, "rank= ", thisProc
+!end if
 !	PRINT *, 'MasterProc recieved completion message ', mpiStatus(MPI_TAG), 'from rank', mpiStatus(MPI_SOURCE), 'asking if there are more photons in frequency index ', currentFreq
 !PRINT *, MOD(batchesCompleted, checkFreq)
 !	if(MOD(batchesCompleted, checkFreq) .eq. 0)then
@@ -860,10 +893,18 @@ PRINT *, "Done with batches"
        randoms(thisThread)=new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
     END DO
     DO WHILE (mpiStatus(MPI_TAG) .ne. EXIT_TAG)
+
+
 	CALL MPI_PROBE(0,MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 	CALL MPI_GET_COUNT(mpiStatus,MPI_INTEGER8,counts,ierr)
 	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
        allocate(left(1:counts), indexes(1:counts))
+
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just before computation of the next batch", RSS, "rank= ", thisProc, "with this many freq bins", counts
+end if
+
        CALL MPI_RECV(left, counts, MPI_INTEGER8, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
        CALL MPI_RECV(indexes, counts, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
 !    PRINT *, 'Rank', thisProc, 'Received initial message ', mpiStatus(MPI_TAG), 'frequency index ', currentFreq
@@ -873,6 +914,12 @@ PRINT *, "Done with batches"
 	     CALL finalize_Domain(thisDomain)
 	    if(LW_flag >= 0.0)CALL finalize_Weights(theseWeights)
 	  end if
+
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory just before computation of count", i, RSS, "rank= ", thisProc
+!end if
+
 	  CALL read_SSPTable(SSPFileID, indexes(i), commonPhysical, thisDomain,.False., calcRayl, status)
           if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
              theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
@@ -966,6 +1013,11 @@ PRINT *, "Done with batches"
 	    RadianceStats(:, :, :,2) = RadianceStats(:, :, :,2) + numPhotonsProcessed*(Radiance(:, :, :)**2.0_8)
 !PRINT *, numPhotonsProcessed, 'numPhotons', solarFlux*FluxUp, '=FluxUp', solarFlux*FluxDown, '=FluxDown', solarFlux*AbsorbedVolume, '=AbsVolume', solarFlux*Radiance(:, :, :), '=Intensity'
 	end if
+
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after computation of count", i, RSS, "rank= ", thisProc
+!end if
      END DO
 !WRITE(51, '(E26.16, I10, I4, 4E26.16 )') solarFlux, numPhotonsProcessed, currentFreq, Radiance(1,1,1), RadianceStats(1,1,1,1:2)
 
@@ -1038,6 +1090,11 @@ PRINT *, "Done with batches"
  !   END DO
 !PRINT *, 'thisProc=', thisProc,  'RadianceStatsSums=', RadianceStats(1,1,1,1:3)
   end if !  end do batches
+
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after having completed all batches", RSS, "rank= ", thisProc
+end if
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
   if(allocated(freqDistr))deallocate(freqDistr)
 !  if (allocated(startingPhoton)) deallocate(startingPhoton)
@@ -1132,6 +1189,10 @@ end if
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
   endif
 
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just before writing", RSS, "rank= ", thisProc
+end if
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: calculated radiative quantities. Mean and error of FluxUp'
   if(MasterProc) then ! Write a single output file. 
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
@@ -1213,6 +1274,11 @@ end if
 
   call finalize_RandomNumberSequence(randoms(thisThread))
   call finalize_Integrator (mcIntegrator)
+
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just before completion", RSS, "rank= ", thisProc
+end if
 
 contains
 
