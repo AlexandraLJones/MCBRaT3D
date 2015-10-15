@@ -59,32 +59,44 @@ contains
 !    ! Gets the first argument from the command line
 !    !   Use this version on systems that do not support iarg and getarc
 !    !
-    
+!   
 !    if(present(message)) print *, message
 !    read *, GetOneArgument
 !    print *, 'Using value ' // trim(GetOneArgument)
 !  end function GetOneArgument
 ! ---------------------------------  
   function GetOneArgument(message)
-    character (len = *),&
-      optional, intent(in) :: message
-    character(len = 256)   :: GetOneArgument
-    integer                :: ilen, m, ierr
+	character (len = *), optional, intent(in) :: message
+	character(len = 256)   :: GetOneArgument
 
-    EXTERNAL PXFGETARG
-    m = 1  ! retrieve 1st commandline argument
+!    ! Gets the first argument from the command line
+!    !   Use this version with GNU
+!    !
+
+	CALL get_command_argument(1, GetOneArgument)
+	print *, 'Using value ' // trim(GetOneArgument)
+  end function GetOneArgument
+!----------------------------------
+!  function GetOneArgument(message)
+!    character (len = *),&
+!      optional, intent(in) :: message
+!    character(len = 256)   :: GetOneArgument
+!    integer                :: ilen, m, ierr
+
+!    EXTERNAL PXFGETARG
+!    m = 1  ! retrieve 1st commandline argument
 
 !    !
 !    ! Use this version for cray compilers
 !    !
-     if(present(message)) print *, message
-     CALL PXFGETARG(m, GetOneArgument, ilen, ierr)
-     if(ilen < 1 .and. MasterProc) then
-        print *, "No file name supplied"
-        stop
-     end if
-     if(MasterProc) print *, 'Using value ' // trim(GetOneArgument)
-  end function GetOneArgument
+!     if(present(message)) print *, message
+!     CALL PXFGETARG(m, GetOneArgument, ilen, ierr)
+!     if(ilen < 1 .and. MasterProc) then
+!        print *, "No file name supplied"
+!        stop
+!     end if
+ !    if(MasterProc) print *, 'Using value ' // trim(GetOneArgument)
+!  end function GetOneArgument
 !---------------------------------
 !  function GetOneArgument(message)
 !    character (len = *),&

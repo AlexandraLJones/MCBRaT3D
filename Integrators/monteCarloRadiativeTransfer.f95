@@ -206,7 +206,8 @@ contains
   !   fluxes. There actual work might be done in other subroutines (to reflect 
   !   algorithmic choices, say). 
   !------------------------------------------------------------------------------------------
-  subroutine computeRadiativeTransfer(thisIntegrator,thisDomain, randomNumbers, incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status, option2)
+  subroutine computeRadiativeTransfer(thisIntegrator,thisDomain, randomNumbers, incomingPhotons,& 
+		numPhotonsPerBatch, numPhotonsProcessed, status, option2)
     type(integrator),           intent(inout) :: thisIntegrator
     type(domain),		intent(inout)    :: thisDomain
     type(randomNumberSequence), intent(inout) :: randomNumbers
@@ -1667,7 +1668,8 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     allocate(phaseFuncI(1:numX,1:numY,1:numZ,1:numComps))
     allocate(tabulatedPhaseFunctions(1:numComps))
     allocate(tabulatedOrigPhaseFunctions(1:numComps))
-    call getInfo_Domain(thisDomain, phaseFuncI=phaseFuncI,tabPhase=tabulatedPhaseFunctions, tabOrigPhase=tabulatedOrigPhaseFunctions, status=status)
+    call getInfo_Domain(thisDomain, phaseFuncI=phaseFuncI,tabPhase=tabulatedPhaseFunctions, &
+		tabOrigPhase=tabulatedOrigPhaseFunctions, status=status)
  
     ! -------------------------------------
     numIntensityDirections = size(thisIntegrator%intensityDirections, 2)

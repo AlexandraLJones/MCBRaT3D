@@ -1233,7 +1233,8 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
 !PRINT *, "read_PhaseFunctionTable: some errors detected"
         do i = 1, size(ncStatus)
           if(ncStatus(i) /= nf90_NoErr) &
-            call setStateToFailure(status, "read_PhaseFunctionTable: ncStatus " // intToChar(i)  // trim(nf90_StrError(ncStatus(i))))
+            call setStateToFailure(status, "read_PhaseFunctionTable: ncStatus " &
+		 // intToChar(i)  // trim(nf90_StrError(ncStatus(i))))
         end do
       end if 
       
@@ -1375,7 +1376,8 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
 	nTotalCoefficients = SUM(length)
 	allocate(legendreCoefficients(nTotalCoefficients))
         ncStatus(14) = nf90_inq_varid(ncFileId, trim(thisPrefix) // "legendreCoefficients", ncVarId)
-        ncStatus(15) = nf90_get_var(ncFileId, ncVarId, legendreCoefficients, start = (/start(1),spectIndex/), count = (/nTotalCoefficients,1/))
+        ncStatus(15) = nf90_get_var(ncFileId, ncVarId, legendreCoefficients, &
+		start = (/start(1),spectIndex/), count = (/nTotalCoefficients,1/))
 	!Normalize LG coefficient start indexes back to 1
 	start(:) = start(:)-start(1)+1
       else
@@ -1394,7 +1396,8 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
 !PRINT *, "read_PhaseFunctionTable: some errors detected"
         do i = 1, size(ncStatus)
           if(ncStatus(i) /= nf90_NoErr) &
-            call setStateToFailure(status, "read_PhaseFunctionTable: ncStatus " // intToChar(i)  // trim(nf90_StrError(ncStatus(i))))
+            call setStateToFailure(status, "read_PhaseFunctionTable: ncStatus " &
+		 // intToChar(i)  // trim(nf90_StrError(ncStatus(i))))
         end do
       end if
 

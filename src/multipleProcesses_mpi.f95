@@ -18,10 +18,11 @@ module multipleProcesses
   logical :: MasterProc = .true. 
   
   interface sumAcrossProcesses
-    module procedure sumAcrossProcesses_Real_Scalar, sumAcrossProcesses_Int_Scalar, sumAcrossProcesses_Int_1D,&
-                     sumAcrossProcesses_Real_1D, sumAcrossProcesses_Int_2D, sumAcrossProcesses_Real8_2D, sumAcrossProcesses_Real_2D,&
-                     sumAcrossProcesses_Real_3D, sumAcrossProcesses_Int_3D, sumAcrossProcesses_Real_4D, &
-                     sumAcrossProcesses_Real_5D, sumAcrossProcesses_Int8_1D
+    module procedure sumAcrossProcesses_Real_Scalar, sumAcrossProcesses_Int_Scalar, &
+		sumAcrossProcesses_Int_1D, sumAcrossProcesses_Real_1D, sumAcrossProcesses_Int_2D,&
+		 sumAcrossProcesses_Real8_2D, sumAcrossProcesses_Real_2D, sumAcrossProcesses_Real_3D, &
+		sumAcrossProcesses_Int_3D, sumAcrossProcesses_Real_4D, &
+                sumAcrossProcesses_Real_5D, sumAcrossProcesses_Int8_1D
   end interface sumAcrossProcesses
 contains
   ! -----------------------------------------------------------

@@ -137,7 +137,8 @@ program monteCarloDriver
   real(8)                 :: meanFluxUpStats(2), meanFluxDownStats(2), meanFluxAbsorbedStats(2)
   real(8), allocatable    :: xPosition(:), yPosition(:), zPosition(:), tempExt(:,:,:)
   real(8), allocatable    :: solarSourceFunction(:), centralLambdas(:), fluxCDF(:)
-  real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :), absorbedProfile(:), absorbedVolume(:, :, :), Radiance(:, :, :)
+  real, allocatable    :: fluxUp(:, :), fluxDown(:, :), fluxAbsorbed(:, :), absorbedProfile(:)
+  real, allocatable    :: absorbedVolume(:, :, :), Radiance(:, :, :)
   real(8), allocatable    :: fluxUpStats(:, :, :), fluxDownStats(:, :, :), fluxAbsorbedStats(:, :, :), &
 				absorbedProfileStats(:, :), absorbedVolumeStats(:, :, :, :), RadianceStats(:, :, :, :),&
 				dummy2D(:,:), dummy3D(:,:,:), dummy4D1(:,:,:,:), dummy4D2(:,:,:,:)
@@ -174,8 +175,8 @@ program monteCarloDriver
   type(Weights)              :: theseWeights
 
   ! Variables related to splitting up the job across processors
-  integer            :: thisProc, thisThread            ! ID OF CURRENT PROCESSOR; default 0
-  integer            :: numProcs, numThreads            ! TOTAL NUMBER OF PROCESSORS USED; default 1
+  integer            :: thisProc, thisThread=0            ! ID OF CURRENT PROCESSOR; default 0
+  integer            :: numProcs, numThreads=1            ! TOTAL NUMBER OF PROCESSORS USED; default 1
   integer            :: batchesPerProcessor, lambdaPerProc
 
 
@@ -191,12 +192,12 @@ program monteCarloDriver
   
  !!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
     
- availProcs = OMP_GET_NUM_PROCS()
+ !availProcs = OMP_GET_NUM_PROCS()
 ! maxThreads = OMP_GET_THREAD_LIMIT()
- ompParallel =  OMP_IN_PARALLEL()
+ !ompParallel =  OMP_IN_PARALLEL()
 !PRINT *, 'in parallel region? ', ompParallel, 'available procs:', availProcs
 
-  numThreads = OMP_GET_NUM_THREADS()
+  !numThreads = OMP_GET_NUM_THREADS()
 !PRINT *, 'numThreads=', numThreads
   !!$OMP SINGLE
   allocate(randoms(0:numThreads-1))
@@ -358,7 +359,8 @@ PRINT *, "in LW loop at iteration ", i
 
         theseWeights = new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=1, status=status)
         call printStatus(status)
-        call emission_weighting(thisDomain, numLambda, i, theseWeights, surfaceTemp, instrResponseFile, dLambda=dLambda, totalFlux=emittedFlux, status=status)
+        call emission_weighting(thisDomain, numLambda, i, theseWeights, surfaceTemp, &
+		instrResponseFile, dLambda=dLambda, totalFlux=emittedFlux, status=status)
         call printStatus(status)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
@@ -428,7 +430,7 @@ end if
      fluxCDF=fluxCDF/solarFlux
      fluxCDF(numLambda)=1.0_8
 
-     thisThread = OMP_GET_THREAD_NUM()
+     !thisThread = OMP_GET_THREAD_NUM()
 !PRINT *, 'thisThread=', thisThread
   !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
      randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed,thisProc, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
@@ -475,14 +477,15 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
      allocate(centralLambdas(1:numLambda))
      call read_SolarSource(solarSourceFile, numLambda, solarSourceFunction, centralLambdas, status=status)
      call printStatus(status) 
-     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
+     call solar_Weighting(theseWeights, numLambda, solarSourceFunction, centralLambdas, solarMu, &
+		instrResponseFile, emittedFlux, status=status)   ! convert the solar source function to CDF and total Flux
 !     if(MasterProc .and. thisThread .eq. 0)PRINT *, 'filled solar weights'
      call printStatus(status)
      solarFlux = emittedFlux
      deallocate(centralLambdas)
      deallocate(solarSourceFunction)
 
-     thisThread = OMP_GET_THREAD_NUM()
+     !thisThread = OMP_GET_THREAD_NUM()
 !PRINT *, 'thisThread=', thisThread
   !randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
      randoms(thisThread) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) ) ! I think for the set up step every processor should have an identical set of random numbers so that when work is being divided up the photonstreams and photon frequency distributions are consistent with one another.
@@ -902,7 +905,8 @@ PRINT *, "Done with batches"
 
 if(thisProc .lt. 2)then
         call memcheck(RSS)
-        PRINT*, "Driver: memory just before computation of the next batch", RSS, "rank= ", thisProc, "with this many freq bins", counts
+        PRINT*, "Driver: memory just before computation of the next batch", RSS, "rank= ", &
+		thisProc, "with this many freq bins", counts
 end if
 
        CALL MPI_RECV(left, counts, MPI_INTEGER8, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
@@ -929,11 +933,13 @@ end if
 	  end if
 
 	  if(LW_flag >= 0.0)then 
-	     incomingPhotons=new_PhotonStream(theseWeights=theseWeights,iLambda=1, numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
+	     incomingPhotons=new_PhotonStream(theseWeights=theseWeights,iLambda=1, &
+		numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
 !PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
 	     CALL printStatus(status)
           else
-	     incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
+	     incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, &
+		numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
 !	PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
              CALL printStatus(status)  
           end if
@@ -965,7 +971,8 @@ end if
 !	    randoms(i) = new_RandomNumberSequence(seed = (/ iseed, thisProc, thisThread /) )
 !	END DO
 	! Now we compute the radiative transfer for this batch of photons.
-        call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingPhotons, numPhotonsPerBatch, numPhotonsProcessed, status)
+        call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingPhotons,&
+					 numPhotonsPerBatch, numPhotonsProcessed, status)
         call printStatus(status)
         totalPhotonsProcessed=totalPhotonsProcessed+numPhotonsProcessed
 	! get contribution arrays from integrator
@@ -1178,7 +1185,8 @@ end if
 
   absorbedVolumeStats(:, :, :, :) = solarFlux*absorbedVolumeStats(:, :, :, :)/totalNumPhotons
   absorbedVolumeStats(:, :, :, 2) = solarFlux*absorbedVolumeStats(:, :, :, 2)
-  absorbedVolumeStats(:, :, :, 2) = sqrt(max(0.0, absorbedVolumeStats(:, :, :, 2)-(absorbedVolumeStats(:, :, :,1)**2.0_8))/(batchesCompleted-1))
+  absorbedVolumeStats(:, :, :, 2) = sqrt(max(0.0, absorbedVolumeStats(:, :, :, 2)- &
+					(absorbedVolumeStats(:, :, :,1)**2.0_8))/(batchesCompleted-1))
 
   if (computeIntensity) then
     RadianceStats(:, :, :, :) = solarFlux*RadianceStats(:, :, :, :)/totalNumPhotons

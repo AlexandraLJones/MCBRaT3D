@@ -24,7 +24,7 @@ module numericUtilities
 
 contains
   !------------------------------------------------------------------------------------------
-  pure subroutine computeLobattoTerms(mus, weights)
+   pure subroutine computeLobattoTerms(mus, weights)
     real, dimension(:), intent(out) :: mus, weights
     ! Find the weights and abscissas for Lobatto on the interval [-1, 1]. 
     !   For n point quadrature the weights are the 0s of the derivative of the 
@@ -113,7 +113,7 @@ contains
     deallocate(trialMus, derivatives, secondDerivs, lastguess, legendreP)
   end subroutine computeLobattoTerms
   !------------------------------------------------------------------------------------------
-  pure subroutine computeGaussLegendreTerms(mus, weights)
+   pure subroutine computeGaussLegendreTerms(mus, weights)
     real, dimension(:), intent(out) :: mus, weights
     ! Find the weights and abscissas for Gauss-Legendre integration on the interval (-1, 1). 
     !   For n point quadrature the weights are the 0s of the nth degree Legendre polynomial. 

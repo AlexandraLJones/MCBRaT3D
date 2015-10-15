@@ -215,7 +215,8 @@ contains
   end function newPhotonStream_Spotlight
 
 !-------------------------------------------------------------------------------------------
-  function newPhotonStream_LWemission(numberOfPhotons, atms_photons, voxel_weights, col_weights, level_weights, nx, ny, nz, randomNumbers, status, option1) result(photons)
+  function newPhotonStream_LWemission(numberOfPhotons, atms_photons, voxel_weights, col_weights, &
+	level_weights, nx, ny, nz, randomNumbers, status, option1) result(photons)
     ! Create a set of emitted photons with random initial azimuth, random 
     ! mus, and random x,y,z location within the domain. This is the LW source from the atmosphere
     ! and surface. The x,y,z locations are weighted based on the power emitted 
@@ -288,7 +289,8 @@ contains
 
             photons%zPosition(i) = ((ik-1)*(1.0_8)/nz) + dble(getRandomReal(randomNumbers)/nz) ! The first term represents the fractional position of the layer bottom in the column, such that ik=1 corresponds to a position of 0. The second term respresents the position within the layer.
             if(ik .eq. 1 .and. photons%zPosition(i) .eq. 0.0_8) photons%zPosition(i)=0.0_8+spacing(1.0_8)
-            if(ik .eq. nz .and. photons%zPosition(i) .gt. 1.0_8-2.0_8*spacing(1.0_8)) photons%zPosition(i)=photons%zPosition(i) - (2.0_8*spacing(1.0_8))
+            if(ik .eq. nz .and. photons%zPosition(i) .gt. 1.0_8-2.0_8*spacing(1.0_8)) &
+			photons%zPosition(i)=photons%zPosition(i) - (2.0_8*spacing(1.0_8))
             photons%xPosition(i) = ((ii -1)*1.0_8/nx) + dble(getRandomReal(randomNumbers)*(1.0/nx)) 
             photons%yPosition(i) = ((ij -1)*1.0_8/ny) + dble(getRandomReal(randomNumbers)*(1.0/ny)) 
 !if(i .eq. 1) PRINT *, 'ind= ', ind, 'i= ', ik, 'j= ', ij, 'k= ', ik, 'xPos= ', photons%xPosition(i)
@@ -447,7 +449,8 @@ contains
     sfcTally = 0; atmsTally = 0
     ! Checks
         if(numberOfPhotons < 0) &
-          call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons: " // trim(intToChar(numberOfPhotons)))
+          call setStateToFailure(status, "setIllumination: must ask for non-negative number of photons: " &
+		// trim(intToChar(numberOfPhotons)))
 
         if(.not. stateIsFailure(status)) then
 	  call getInfo_Weights(theseWeights=theseWeights, iLambda=iLambda, numX=numX, numY=numY, numZ=numZ, status=status)
@@ -462,7 +465,8 @@ contains
 
 	! get relevant theseWeights values    !!!!!!!BUT i REALLY ONLY HAVE TO DO THIS FOR THE ATMOSPHERE SO SHOULD IT GO IN A DIFFERENT SUBROUTINE, MAYBE IN THE EMISSIONbbwEIGHTS MODULE?????
 	  allocate(levelWeights(1:numZ), colWeights(1:numY,1:numZ), voxelWeights(1:numX,1:numY,1:numZ))
-	  call getInfo_weights(theseWeights=theseWeights, iLambda=iLambda, fracAtmsPower=fracAtmsPower, levelWeights=levelWeights, colWeights=colWeights, voxelWeights=voxelWeights, status=status)
+	  call getInfo_weights(theseWeights=theseWeights, iLambda=iLambda, fracAtmsPower=fracAtmsPower,&
+		 levelWeights=levelWeights, colWeights=colWeights, voxelWeights=voxelWeights, status=status)
 !    write(32,"(36F12.8)") levelWeights(:)
 !    DO k = 1, numZ
 !      write(33,"(100F12.8)") colWeights(:,k)
@@ -495,7 +499,8 @@ contains
 
 		photons%zPosition(i) = ((ik-1)*(1.0_8)/numZ) + dble(getRandomReal(randomNumbers)/numZ) ! The first term represents the fractional position of the layer bottom in the column, such that ik=1 corresponds to a position of 0. The second term respresents the position within the layer.
             	if(ik .eq. 1 .and. photons%zPosition(i) .eq. 0.0_8) photons%zPosition(i)=0.0_8+spacing(1.0_8)
-            	if(ik .eq. numZ .and. photons%zPosition(i) .gt. 1.0_8-2.0_8*spacing(1.0_8)) photons%zPosition(i)=photons%zPosition(i) - (2.0_8*spacing(1.0_8))
+            	if(ik .eq. numZ .and. photons%zPosition(i) .gt. 1.0_8-2.0_8*spacing(1.0_8)) &
+				photons%zPosition(i)=photons%zPosition(i) - (2.0_8*spacing(1.0_8))
             	photons%xPosition(i) = ((ii -1)*1.0_8/numX) + dble(getRandomReal(randomNumbers)*(1.0/numX)) 
             	photons%yPosition(i) = ((ij -1)*1.0_8/numY) + dble(getRandomReal(randomNumbers)*(1.0/numY))
 		DO

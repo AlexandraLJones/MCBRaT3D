@@ -276,11 +276,13 @@ Program MakeMieSSPTable
         	ncStatus( 5) = nf90_def_var(ncFileId, "f_grid", nf90_double, fDimId, VarId(1))
 !       ncStatus( 6) = nf90_def_var(ncFileId, "surfaceAlbedo", nf90_double, fDimId, VarId(2))
         	ncStatus( 7) = nf90_def_var(ncFileId, trim(thisPrefix) // "ExtinctionT", nf90_double, (/entryDimId,fDimId/), VarId(3))
-        	ncStatus( 8) = nf90_def_var(ncFileId, trim(thisPrefix) // "SingleScatterAlbedoT", nf90_double, (/entryDimId,fDimId/), VarId(4))
+        	ncStatus( 8) = nf90_def_var(ncFileId, trim(thisPrefix) // "SingleScatterAlbedoT", &
+				nf90_double, (/entryDimId,fDimId/), VarId(4))
         	ncStatus( 9) = nf90_def_var(ncFileId, trim(thisPrefix) // "phaseFunctionKeyT", nf90_float, entryDimId, VarId(5))
         	ncStatus(10) = nf90_def_var(ncFileId, trim(thisPrefix) // "start", nf90_int, (/entryDimId,fDimId/), VarId(6))
         	ncStatus(11) = nf90_def_var(ncFileId, trim(thisPrefix) // "length", nf90_int, (/entryDimId,fDimId/), VarId(7))
-        	ncStatus(12) = nf90_def_var(ncFileId, trim(thisPrefix) // "legendreCoefficients", nf90_float, (/coeffDimId,fDimId/), VarId(8))
+        	ncStatus(12) = nf90_def_var(ncFileId, trim(thisPrefix) // "legendreCoefficients", &
+				nf90_float, (/coeffDimId,fDimId/), VarId(8))
         ! put attributes
 		ncStatus(13) = nf90_put_att(ncFileID,nf90_Global, "numberOfComponents", 1)
         	ncStatus(14) = nf90_put_att(ncFileID,nf90_Global, "title", "SSP Table based on Mie Properties from I3RC's Mie Tool")

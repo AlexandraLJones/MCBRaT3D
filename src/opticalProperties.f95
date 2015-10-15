@@ -159,9 +159,11 @@ contains
     character(len = maxNameLength)    :: name, extType
     integer                           :: nLambda, nComponents, zLevelBase, i, nZGrid, nXEdges, nYEdges, nZEdges, j, length, n
     real(8)                           :: lambda, albedo, freq, f
-    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId, dimId, nReff, il, comp, gasComp, ix, iy, iz
+    integer                           :: nDims, ncVarID, ncDimId, zGridDimId, err, ncFileId, dimId, &
+					nReff, il, comp, gasComp, ix, iy, iz
     integer, dimension(3)             :: dimIds
-    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:), xsec(:), extinctionT(:), singleScatteringAlbedoT(:)
+    real(8), allocatable              :: extinction(:,:,:), singleScatteringAlbedo(:,:,:)
+    real(8), allocatable              :: xsec(:), extinctionT(:), singleScatteringAlbedoT(:)
 	real, allocatable                 :: key(:)
     integer, allocatable              :: phaseFunctionIndex(:,:,:)
 	real, dimension(2)                                  :: LG
@@ -244,7 +246,8 @@ contains
 			PRINT *, "read_SSPTable: Error reading scalar fields from file ", ncStatus(9:), "lambdaIndex= ", lambdaIndex
 			call setStateToFailure(status, "read_SSPTable: Error reading scalar fields from file")
 		end if
-		allocate(phaseFunctionIndex(nXEdges-1, nYEdges-1, nZGrid), extinction(nXEdges-1, nYEdges-1,nZGrid),singleScatteringAlbedo(nXEdges-1, nYEdges-1, nZGrid))
+		allocate(phaseFunctionIndex(nXEdges-1, nYEdges-1, nZGrid), &
+		extinction(nXEdges-1, nYEdges-1,nZGrid),singleScatteringAlbedo(nXEdges-1, nYEdges-1, nZGrid))
 		phaseFunctionIndex = 1
                 extinction = 0.0_8
                 singleScatteringAlbedo = 0.0_8
@@ -261,7 +264,9 @@ contains
 		do iz = 1, nZGrid
 			do iy = 1, nYEdges-1
 				do ix = 1, nXEdges-1
-					if(commonD%MassConc(comp-gasComp,ix,iy,iz) .gt. 0.0_8 .and. commonD%Reff(comp-gasComp,ix,iy,iz) .lt. MAXVAL(key) .and. commonD%Reff(comp-gasComp,ix,iy,iz) .ge. MINVAL(key))then
+					if(commonD%MassConc(comp-gasComp,ix,iy,iz) .gt. 0.0_8 .and. &
+					commonD%Reff(comp-gasComp,ix,iy,iz) .lt. MAXVAL(key) .and. &
+					commonD%Reff(comp-gasComp,ix,iy,iz) .ge. MINVAL(key))then
 						! Binary search to find effective radius entry in table
 						il = findIndex(commonD%Reff(comp-gasComp,ix,iy,iz), REAL(key(:),8))
 
@@ -269,7 +274,9 @@ contains
 						f = (commonD%Reff(comp-gasComp,ix,iy,iz)-key(il)) / (key(il+1)-key(il))
 						extinction(ix,iy,iz) = commonD%MassConc(comp-gasComp,ix,iy,iz) * &
                                     		((1-f)*extinctionT(il) + f*extinctionT(il+1))
-						singleScatteringAlbedo(ix,iy,iz) = (1-f)*singleScatteringAlbedoT(il) + f*singleScatteringAlbedoT(il+1)
+						singleScatteringAlbedo(ix,iy,iz) = &
+						     (1-f)*singleScatteringAlbedoT(il) + &
+						     f*singleScatteringAlbedoT(il+1)
 						if(.not. setup)then  ! the presense of raylExt indicates that we are not in the setup step and therefore information about the phase function is needed
 						   ! Chose the closest phase function
 						   if (f < 0.5) then
@@ -518,7 +525,8 @@ contains
 
     ! -------------------------
      if(.not. stateIsFailure(status)) then
-       allocate(new_DomainMono%xPosition(numX), new_DomainMono%yPosition(numY), new_DomainMono%zPosition(numZ), new_DomainMono%temps(numX-1,numY-1,numZ-1))
+       allocate(new_DomainMono%xPosition(numX), new_DomainMono%yPosition(numY), &
+	new_DomainMono%zPosition(numZ), new_DomainMono%temps(numX-1,numY-1,numZ-1))
        new_DomainMono%xPosition(1:) = xPosition(:)
        new_DomainMono%yPosition(1:) = yPosition(:)
        new_DomainMono%zPosition(1:) = zPosition(:)
@@ -986,7 +994,8 @@ contains
       allocate(totalExtinction(numX,numY,numZ), thisDomain%totalExt(1:numX,1:numY,1:numZ))
       allocate(cumulativeExtinction(numX,numY,numZ,numComponents), thisDomain%cumulativeExt(1:numX,1:numY,1:numZ,1:numComponents))
       allocate(singleScatteringAlbedo(numX,numY,numZ,numComponents), thisDomain%ssa(1:numX,1:numY,1:numZ,1:numComponents))
-      allocate(phaseFunctionIndex(numX,numY,numZ,numComponents), thisDomain%phaseFunctionIndex(1:numX,1:numY,1:numZ,1:numComponents))
+      allocate(phaseFunctionIndex(numX,numY,numZ,numComponents), &
+	thisDomain%phaseFunctionIndex(1:numX,1:numY,1:numZ,1:numComponents))
       allocate(phaseFunctions(numComponents),thisDomain%forwardTables(1:numComponents))
     end if 
 
@@ -1527,7 +1536,8 @@ contains
      
       ! Resonable values for the properties
       if(any(extinction(:, :, :) < 0.)) &
-        call setStateToFailure(status, "validateOpticalComponent: LambdaI= " // IntToChar(thisDomain%lambdaI) // "extinction must be >= 0.")
+        call setStateToFailure(status, "validateOpticalComponent: LambdaI= " // &
+		IntToChar(thisDomain%lambdaI) // "extinction must be >= 0.")
       if(any(singleScatteringAlbedo(:, :, :) < 0.) .or. any(singleScatteringAlbedo(:, :, :) > 1. )) &
         call setStateToFailure(status, "validateOpticalComponent: singleScatteringAlbedo must be between 0 and 1")
       

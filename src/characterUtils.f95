@@ -44,7 +44,7 @@ contains
     !   Creates the character representation of an integer.  
     !  
 
-    write(Int4ToChar, '(I)') integerValue
+    write(Int4ToChar, '(I10)') integerValue
     Int4ToChar = AdjustL(Int4ToChar)
   end function Int4ToChar
   ! --------------------------------------------------------------------------------
@@ -55,7 +55,7 @@ contains
     !   Creates the character representation of an integer.
     !
 
-    write(Int8ToChar, '(I)') integerValue
+    write(Int8ToChar, '(I19)') integerValue
     Int8ToChar = AdjustL(Int8ToChar)
   end function Int8ToChar
 
