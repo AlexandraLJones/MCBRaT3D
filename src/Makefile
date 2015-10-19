@@ -44,5 +44,5 @@ monteCarloIllumination.o: monteCarloIllumination.f95 ErrorMessages.o RandomNumbe
                           numericUtilities.o emissionAndBroadBandWeights.o characterUtils.o
 
 clean::
-	-/bin/rm *.lst *.mod *.o
+	-/bin/rm *.lst *.mod *.o *.pdb *.inst.f95
 

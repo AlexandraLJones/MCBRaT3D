@@ -1519,7 +1519,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     
     
     thisIntegrator%useSurfaceBDRF = pristineI%useSurfaceBDRF 
-    call finalize_surfaceDescription(thisIntegrator%surfaceBDRF)
+!    call finalize_surfaceDescription(thisIntegrator%surfaceBDRF)
 
     thisIntegrator%recScatOrd   = pristineI%recScatOrd
     thisIntegrator%numrecScatOrd= pristineI%numRecScatOrd

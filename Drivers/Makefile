@@ -22,4 +22,4 @@ monteCarloDriver.o: monteCarloDriver.f95 $(rtObjs)
 
 
 clean::
-	/bin/rm *.lst *.mod *.o $(Targets)
+	/bin/rm *.lst *.mod *.o *.pdb *.inst.f95 $(Targets)

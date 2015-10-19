@@ -18,23 +18,23 @@ rtObjs =  $(CodeDir)/characterUtils.o $(CodeDir)/numericUtilities.o \
           $(IntegDir)/monteCarloRadiativeTransfer.o
  
 
-Targets =  homogBBDomain inhomogBBDomain
+Targets =  #homogBBDomain inhomogBBDomain
 
 all: $(Targets)
 
 
 
 
-homogBBDomain: homogBBDomain.o $(rtObjs)
-homogBBDomain.o: homogBBDomain.f95 $(rtObjs)
+#homogBBDomain: homogBBDomain.o $(rtObjs)
+#homogBBDomain.o: homogBBDomain.f95 $(rtObjs)
 
-inhomogBBDomain: inhomogBBDomain.o $(rtObjs)
-inhomogBBDomain.o: inhomogBBDomain.f95 $(rtObjs)
+#inhomogBBDomain: inhomogBBDomain.o $(rtObjs)
+#inhomogBBDomain.o: inhomogBBDomain.f95 $(rtObjs)
 
 test: all
-	./homogBBDomain
-	./inhomogBBDomain
+#	./homogBBDomain
+#	./inhomogBBDomain
 
 clean::
-	/bin/rm *.lst *.o *.mod $(Targets)
+	/bin/rm *.lst *.o *.mod *.pdb *.inst.f95 $(Targets)
         

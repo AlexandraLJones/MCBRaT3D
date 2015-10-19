@@ -14,4 +14,4 @@ uses =  $(CodeDir)/characterUtils.o $(CodeDir)/numericUtilities.o \
 monteCarloRadiativeTransfer.o: monteCarloRadiativeTransfer.f95 $(uses)
 
 clean::
-	-/bin/rm *.lst *.mod *.o
+	-/bin/rm *.lst *.mod *.o *.pdb *.inst.f95

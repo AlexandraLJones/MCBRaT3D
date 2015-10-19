@@ -1437,6 +1437,17 @@ contains
       end do
       if(associated(thisDomain%components)) deallocate(thisDomain%components)
     end if
+    ! phaseTables
+     do i = 1, size(thisDomain%components)
+	if(associated(thisDomain%forwardTables)) CALL finalize_PhaseFunctionTable(thisDomain%forwardTables(i))
+	if(associated(thisDomain%tabulatedPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedPhaseFunctions(i))
+	if(associated(thisDomain%tabulatedOrigPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedOrigPhaseFunctions(i))
+	if(associated(thisDomain%inversePhaseFunctions)) CALL finalize_Matrix(thisDomain%inversePhaseFunctions(i))
+     end do
+      if(associated(thisDomain%tabulatedPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedPhaseFunctions)
+      if(associated(thisDomain%forwardTables)) DEALLOCATE(thisDomain%forwardTables)
+      if(associated(thisDomain%tabulatedOrigPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedOrigPhaseFunctions)
+      if(associated(thisDomain%inversePhaseFunctions)) DEALLOCATE(thisDomain%inversePhaseFunctions)
     
   end subroutine finalize_Domain
   !------------------------------------------------------------------------------------------

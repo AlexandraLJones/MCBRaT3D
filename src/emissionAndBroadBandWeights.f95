@@ -66,7 +66,7 @@ module emissionAndBBWeights
      if (associated(theseWeights%voxelWeights))then
         NULLIFY(theseWeights%levelWeights)
         NULLIFY(theseWeights%colWeights)
-        NULLIFY(theseWeights%voxelWeights)
+        DEALLOCATE(theseWeights%voxelWeights)
      end if
    end subroutine finalize_Weights
 

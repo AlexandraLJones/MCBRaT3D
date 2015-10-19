@@ -31,8 +31,8 @@ module surfaceProperties
   !------------------------------------------------------------------------------------------
   type surfaceDescription
     private
-    real(8), dimension(:),       pointer :: xPosition, yPosition
-    real, dimension(:, :, :), pointer :: BRDFParameters
+    real(8), dimension(:),       pointer :: xPosition => null(), yPosition => null()
+    real, dimension(:, :, :), pointer :: BRDFParameters => null()
   end type surfaceDescription
   
   !------------------------------------------------------------------------------------------

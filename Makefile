@@ -40,6 +40,35 @@ Libs        =
  compiler=ftn
  debug=no
 
+ifeq (${compiler},tau)
+#   Tau fortran wrapper 
+   F95         = tau_f90.sh
+   F77         = tau_f90.sh
+  ifeq (${debug},no)
+  #optimization flags
+     F95Flags = -optTauSelectFile=/u/sciteam/aljones4/I3RC/tau_memory.instr -tau_makefile=/sw/xe/tau/2.24.1/cle5.2_gnu4.8.2/craycnl/lib/Makefile.tau-gnu-mpi-pdt -dynamic${Modules} 
+     FFlags = -tau_makefile=/sw/xe/tau/2.24.1/cle5.2_gnu4.8.2/craycnl/lib/Makefile.tau-gnu-mpi-pdt
+  else
+     F95Flags = -optTauSelectFile=/u/sciteam/aljones4/I3RC/tau_memory.instr -tau_makefile=/sw/xe/tau/2.24.1/cle5.2_gnu4.8.2/craycnl/lib/Makefile.tau-gnu-mpi-pdt  -g -O0  -dynamic${Modules}
+     FFlags = -tau_makefile=/sw/xe/tau/2.24.1/cle5.2_gnu4.8.2/craycnl/lib/Makefile.tau-gnu-mpi-pdt -g -O0
+  endif
+endif
+
+
+ifeq (${compiler},ftnGnu)
+#   Tau fortran wrapper
+   F95         = ftn
+   F77         = ftn
+  ifeq (${debug},no)
+  #optimization flags
+     F95Flags = -dynamic${Modules}
+     FFlags = 
+  else
+     F95Flags = -g -O0  -dynamic${Modules}
+     FFlags = -g -O0
+  endif
+endif
+
 ifeq (${compiler},ftn)
 #   fortran compiler on Blue Waters
    F95         = ftn
