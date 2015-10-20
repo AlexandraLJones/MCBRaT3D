@@ -65,38 +65,38 @@ contains
 !    print *, 'Using value ' // trim(GetOneArgument)
 !  end function GetOneArgument
 ! ---------------------------------  
-  function GetOneArgument(message)
-	character (len = *), optional, intent(in) :: message
-	character(len = 256)   :: GetOneArgument
-
+!  function GetOneArgument(message)
+!	character (len = *), optional, intent(in) :: message
+!	character(len = 256)   :: GetOneArgument
+!
 !    ! Gets the first argument from the command line
 !    !   Use this version with GNU
 !    !
-
-	CALL get_command_argument(1, GetOneArgument)
-	print *, 'Using value ' // trim(GetOneArgument)
-  end function GetOneArgument
-!----------------------------------
-!  function GetOneArgument(message)
-!    character (len = *),&
-!      optional, intent(in) :: message
-!    character(len = 256)   :: GetOneArgument
-!    integer                :: ilen, m, ierr
-
-!    EXTERNAL PXFGETARG
-!    m = 1  ! retrieve 1st commandline argument
-
-!    !
-!    ! Use this version for cray compilers
-!    !
-!     if(present(message)) print *, message
-!     CALL PXFGETARG(m, GetOneArgument, ilen, ierr)
-!     if(ilen < 1 .and. MasterProc) then
-!        print *, "No file name supplied"
-!        stop
-!     end if
- !    if(MasterProc) print *, 'Using value ' // trim(GetOneArgument)
+!
+!	CALL get_command_argument(1, GetOneArgument)
+!	print *, 'Using value ' // trim(GetOneArgument)
 !  end function GetOneArgument
+!----------------------------------
+  function GetOneArgument(message)
+    character (len = *),&
+      optional, intent(in) :: message
+    character(len = 256)   :: GetOneArgument
+    integer                :: ilen, m, ierr
+
+    EXTERNAL PXFGETARG
+    m = 1  ! retrieve 1st commandline argument
+
+    !
+    ! Use this version for cray compilers
+    !
+     if(present(message)) print *, message
+     CALL PXFGETARG(m, GetOneArgument, ilen, ierr)
+     if(ilen < 1 .and. MasterProc) then
+        print *, "No file name supplied"
+        stop
+     end if
+    if(MasterProc) print *, 'Using value ' // trim(GetOneArgument)
+  end function GetOneArgument
 !---------------------------------
 !  function GetOneArgument(message)
 !    character (len = *),&

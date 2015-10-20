@@ -335,6 +335,7 @@ PRINT *, "in LW loop at iteration ", i
 	   call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
            call printStatus(status)
 	   if (i .gt. 1) then ! we have a more accurate way to calculate dLambda
+		  call finalize_Domain(tempDomain)
 	      call read_SSPTable(SSPFileID, i-1, commonPhysical, tempDomain, .True.,.False., status) ! domain is initialized within this routine
               call getInfo_Domain(tempDomain, lambda=lambdaBelow, status=status)
               call printStatus(status)
@@ -354,14 +355,15 @@ PRINT *, "in LW loop at iteration ", i
            lambda=lambdaAbove
 	else !i must equal numLambda
 	   dLambda=ABS(lambda-lambdaBelow)
-	   call finalize_Domain(tempDomain)
+	   
         end if
-
+		call finalize_Domain(tempDomain)
         theseWeights = new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=1, status=status)
         call printStatus(status)
         call emission_weighting(thisDomain, numLambda, i, theseWeights, surfaceTemp, &
 		instrResponseFile, dLambda=dLambda, totalFlux=emittedFlux, status=status)
         call printStatus(status)
+		if (i .lt. MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc)) call finalize_Domain(thisDomain)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
@@ -445,6 +447,7 @@ end if
      deallocate(fluxCDF)
      call synchronizeProcesses
      freqDistr(:) = sumAcrossProcesses(freqDistr)
+	 
   else
 if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPfilename
      n = 1
@@ -500,7 +503,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
      call synchronizeProcesses
      freqDistr(:) = sumAcrossProcesses(freqDistr)
   end if
-
+	if(.NOT. MasterProc) DEALLOCATE(freqDistr, photonCDF)
 if(thisProc .lt. 2)then
         call memcheck(RSS)
         PRINT*, "Driver: memory after setup ", RSS, "rank= ", thisProc
@@ -510,6 +513,7 @@ end if
 !  if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
   if(MasterProc .and. thisThread .eq. 0)PRINT*, 'number of non-zero frequencies:', COUNT(freqDistr .gt. 0)
   
+  if(MasterProc)then
   photonCDF(1) = freqDistr(1)
 !if(MasterProc .and. thisThread .eq. 0) write(34,"(2E30.20, 2I12)") centralLambdas(1), solarSourceFunction(1), photonCDF(1), freqDistr(1)
   DO i = 2, numLambda
@@ -517,6 +521,7 @@ end if
 !if(MasterProc .and. thisThread .eq. 0) write(34,"(2E30.20, 2I12)") centralLambdas(i), solarSourceFunction(i), photonCDF(i), freqDistr(i) 
   END DO
 !if(MasterProc .and. thisThread .eq. 0) close(34)
+  end if
 
   allocate(xPosition(nx+1), yPosition(ny+1), zPosition(nz+1))
   call getInfo_Domain(thisDomain, xPosition = xPosition, yPosition = yPosition, &
@@ -916,15 +921,24 @@ end if
        DO i= 1, counts
 	  if(mpiStatus(MPI_TAG) .eq. NEW_FREQ)then
 	     CALL finalize_Domain(thisDomain)
-	    if(LW_flag >= 0.0)CALL finalize_Weights(theseWeights)
+	    
 	  end if
-
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after domain finalized", RSS, "rank= ", &
+                thisProc, "count=", i, " of ", counts
+end if
 !if(thisProc .lt. 2)then
 !        call memcheck(RSS)
 !        PRINT*, "Driver: memory just before computation of count", i, RSS, "rank= ", thisProc
 !end if
 
 	  CALL read_SSPTable(SSPFileID, indexes(i), commonPhysical, thisDomain,.False., calcRayl, status)
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after readSSP", RSS, "rank= ", &
+                thisProc, "count=", i, " of ", counts
+end if
           if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
              theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
 	     CALL printStatus(status)
@@ -937,13 +951,18 @@ end if
 		numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic thermal source call
 !PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
 	     CALL printStatus(status)
+		 CALL finalize_Weights(theseWeights)
           else
 	     incomingPhotons=new_PhotonStream(solarMu, solarAzimuth, &
 		numberOfPhotons=MIN(numPhotonsPerBatch, left(i)), randomNumbers=randoms(thisThread), status=status) ! monochromatic solar source call
 !	PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
              CALL printStatus(status)  
           end if
-
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after photonInitialization", RSS, "rank= ", &
+                thisProc, "count=", i, " of ", counts
+end if
 
 !    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
 !        theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
@@ -973,7 +992,13 @@ end if
 	! Now we compute the radiative transfer for this batch of photons.
         call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingPhotons,&
 					 numPhotonsPerBatch, numPhotonsProcessed, status)
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after computeRadiativeTransfer", RSS, "rank= ", &
+                thisProc, "count=", i, " of ", counts
+end if
         call printStatus(status)
+		call finalize_PhotonStream (incomingPhotons)
         totalPhotonsProcessed=totalPhotonsProcessed+numPhotonsProcessed
 	! get contribution arrays from integrator
 	!   This particular integrator provides fluxes at the top and bottom
@@ -985,6 +1010,11 @@ end if
 	 fluxUp=fluxUp(:, :), fluxDown=fluxDown(:, :), fluxAbsorbed=fluxAbsorbed(:, :), &
 	 absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
         call printStatus(status)
+if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after reportResults", RSS, "rank= ", &
+                thisProc, "count=", i, " of ", counts
+end if
 	!
 	! Accumulate the first and second moments of each quantity over the batches
 	!
@@ -1107,7 +1137,7 @@ end if
 !  if (allocated(startingPhoton)) deallocate(startingPhoton)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: about to finalize photon stream'
 !close(51)
-  call finalize_PhotonStream (incomingPhotons)
+  
   !
   ! Accumulate statistics from across all the processors
   !

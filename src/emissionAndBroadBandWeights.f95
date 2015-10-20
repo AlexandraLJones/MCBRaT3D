@@ -395,7 +395,7 @@ end if
 
      if (theseWeights%totalPowerCDF(nlambda) .eq. 0.0_8)then
         CALL setStateToFailure(status, 'emission_weightingOLD: Neither surface nor atmosphere &
-			will emitt photons since total power is 0. Not a valid solution')
+		&	will emitt photons since total power is 0. Not a valid solution')
      else
        totalFlux=theseWeights%totalPowerCDF(nlambda)/((xPosition(nx+1)-xPosition(1))* &
 		(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8))  ! We want the units to be [Wm^-2] but the x and y positions are in km
@@ -530,7 +530,7 @@ end if
 
      if (theseWeights%totalPowerCDF(1) .eq. 0.0_8)then
         CALL setStateToFailure(status, 'emission_weightingNEW: Neither surface nor atmosphere &
-		will emitt photons since total power is 0. Not a valid solution')
+	&	will emitt photons since total power is 0. Not a valid solution')
      else
        theseWeights%spectrIntgrFlux = theseWeights%totalPowerCDF(1)/((xPosition(nx+1)-xPosition(1)) &
 			*(yPosition(ny+1)-yPosition(1))*(1000.0_8**2.0_8)) ! We want the units to be [Wm^-2] 
@@ -613,7 +613,7 @@ end if
       ncStatus( 2) = nf90_Inquire_Dimension(ncFileId, ncDimId, len = dims) 
       if(dims .ne. nLambda) &
         call setStateToFailure(status, "read_SolarSource: " // trim(fileName) // &
-                               " dimension of solar source function does not match numLambdas from namelist.")
+                      &         " dimension of solar source function does not match numLambdas from namelist.")
       ncStatus( 3) = nf90_inq_varid(ncFileId, "Lambdas", ncVarId)
       ncStatus( 4) = nf90_get_var(ncFileId, ncVarId, lambdas)
       ncStatus( 5) = nf90_inq_varid(ncFileId, "SourceFunction", ncVarId)

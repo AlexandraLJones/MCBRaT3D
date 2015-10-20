@@ -36,7 +36,7 @@ module opticalProperties
 
   type matrix
     integer                        :: numX = 0, numY  = 0
-    real, dimension(:, :), pointer :: values
+    real, dimension(:, :), pointer :: values => null()
   end type matrix
 
 
@@ -291,6 +291,7 @@ contains
 				end do
 			end do
 		end do	
+		DEALLOCATE(extinctionT, singleScatteringAlbedoT, key)
 			
 			
 	else ! unrecognizable format
@@ -336,6 +337,7 @@ contains
           call setStateToFailure(status, "read_SSPTable: Error calculating rayleigh scattering.")
     end if
     deallocate(extinction, singleScatteringAlbedo, phaseFunctionIndex)
+	CALL finalize_PhaseFunctionTable(table)
  end if
 
  if(.not. stateIsFailure(status))  call getOpticalPropertiesByComponent(thisDomain, status)
@@ -1430,6 +1432,13 @@ contains
     if(associated(thisDomain%yPosition)) NULLIFY(thisDomain%yPosition)
     if(associated(thisDomain%zPosition)) NULLIFY(thisDomain%zPosition)
     if(associated(thisDomain%temps)) NULLIFY(thisDomain%temps)
+	
+	! Cumulative arrays
+	if(associated(thisDomain%totalExt)) DEALLOCATE(thisDomain%totalExt)
+	if(associated(thisDomain%cumulativeExt)) DEALLOCATE(thisDomain%cumulativeExt)
+	if(associated(thisDomain%ssa)) DEALLOCATE(thisDomain%ssa)
+	if(associated(thisDomain%phaseFunctionIndex)) DEALLOCATE(thisDomain%phaseFunctionIndex)
+	
     !  Optical components
     if(containsComponents(thisDomain)) then
       do i = 1, size(thisDomain%components)
