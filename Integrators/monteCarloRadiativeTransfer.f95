@@ -1519,7 +1519,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     
     
     thisIntegrator%useSurfaceBDRF = pristineI%useSurfaceBDRF 
-!    call finalize_surfaceDescription(thisIntegrator%surfaceBDRF)
+    call finalize_surfaceDescription(thisIntegrator%surfaceBDRF)
 
     thisIntegrator%recScatOrd   = pristineI%recScatOrd
     thisIntegrator%numrecScatOrd= pristineI%numRecScatOrd
@@ -1542,6 +1542,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     if(associated(thisIntegrator%fluxUpByScatOrd))    deallocate(thisIntegrator%fluxUpByScatOrd)
     if(associated(thisIntegrator%fluxDownByScatOrd))  deallocate(thisIntegrator%fluxDownByScatOrd)
     if(associated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
+    if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent)
 
   end subroutine finalize_Integrator
   !------------------------------------------------------------------------------------------

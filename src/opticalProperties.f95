@@ -956,10 +956,10 @@ contains
   subroutine getOpticalPropertiesByComponent(thisDomain, status)
     type(domain),                    intent(inout) :: thisDomain
     type(ErrorMessage),              intent(inout) :: status
-    real(8),    allocatable, dimension(:, :, :)		 :: totalExtinction
-    real(8),    allocatable, dimension(:, :, :, :)	 :: cumulativeExtinction, singleScatteringAlbedo
-    integer, allocatable, dimension(:, :, :, :)		 :: phaseFunctionIndex
-    type(phaseFunctionTable), allocatable, dimension(:)	 :: phaseFunctions
+    !real(8),    allocatable, dimension(:, :, :)		 :: totalExtinction
+    !real(8),    allocatable, dimension(:, :, :, :)	 :: cumulativeExtinction, singleScatteringAlbedo
+    !integer, allocatable, dimension(:, :, :, :)		 :: phaseFunctionIndex
+    !type(phaseFunctionTable), allocatable, dimension(:)	 :: phaseFunctions
     
     ! 
     ! Fill the optical properties of the domain, component by component. 
@@ -993,22 +993,21 @@ contains
       ! Checks for x, y, z, sizes
       numX = size(thisDomain%xPosition) - 1; numY = size(thisDomain%yPosition) - 1
       numZ = size(thisDomain%zPosition) - 1; numComponents = size(thisDomain%components)
-      allocate(totalExtinction(numX,numY,numZ), thisDomain%totalExt(1:numX,1:numY,1:numZ))
-      allocate(cumulativeExtinction(numX,numY,numZ,numComponents), thisDomain%cumulativeExt(1:numX,1:numY,1:numZ,1:numComponents))
-      allocate(singleScatteringAlbedo(numX,numY,numZ,numComponents), thisDomain%ssa(1:numX,1:numY,1:numZ,1:numComponents))
-      allocate(phaseFunctionIndex(numX,numY,numZ,numComponents), &
-	thisDomain%phaseFunctionIndex(1:numX,1:numY,1:numZ,1:numComponents))
-      allocate(phaseFunctions(numComponents),thisDomain%forwardTables(1:numComponents))
+      allocate(thisDomain%totalExt(1:numX,1:numY,1:numZ))
+      allocate(thisDomain%cumulativeExt(1:numX,1:numY,1:numZ,1:numComponents))
+      allocate(thisDomain%ssa(1:numX,1:numY,1:numZ,1:numComponents))
+      allocate(thisDomain%phaseFunctionIndex(1:numX,1:numY,1:numZ,1:numComponents))
+      allocate(thisDomain%forwardTables(1:numComponents))
     end if 
 
     ! -----------------------
     !   Everything looks ok for now. 
     !
     if(.not. stateIsFailure(status)) then 
-      totalExtinction       (:, :, :)    = 0.
-      cumulativeExtinction  (:, :, :, :) = 0.
-      singleScatteringAlbedo(:, :, :, :) = 0.
-      phaseFunctionIndex    (:, :, :, :) = 0
+!      totalExtinction       (:, :, :)    = 0.
+!      cumulativeExtinction  (:, :, :, :) = 0.
+!      singleScatteringAlbedo(:, :, :, :) = 0.
+!      phaseFunctionIndex    (:, :, :, :) = 0
       
       do i = 1, numComponents
         minZ = thisDomain%components(i)%zLevelBase
@@ -1018,24 +1017,24 @@ contains
         ! In this loop cumulativeExtinction is the extinction by component 
         !
         if(.not. thisDomain%components(i)%horizontallyUniform) then 
-          cumulativeExtinction  (:, :, minZ:maxZ, i) = thisDomain%components(i)%extinction(:, :, :)
-          singleScatteringAlbedo(:, :, minZ:maxZ, i) = thisDomain%components(i)%singleScatteringAlbedo(:, :, :)
-          phaseFunctionIndex    (:, :, minZ:maxZ, i) = thisDomain%components(i)%phaseFunctionIndex(:, :, :)
+          thisDomain%cumulativeExt  (:, :, minZ:maxZ, i) = thisDomain%components(i)%extinction(:, :, :)
+          thisDomain%ssa(:, :, minZ:maxZ, i) = thisDomain%components(i)%singleScatteringAlbedo(:, :, :)
+          thisDomain%phaseFunctionIndex    (:, :, minZ:maxZ, i) = thisDomain%components(i)%phaseFunctionIndex(:, :, :)
         else
-          cumulativeExtinction(:, :, minZ:maxZ, i) =                                                      &
+          thisDomain%cumulativeExt(:, :, minZ:maxZ, i) =                                                      &
                                              spread(spread(thisDomain%components(i)%extinction(1, 1, :),  &
                                                            1, nCopies = numX), 2, nCopies = numY)
-          singleScatteringAlbedo(:, :, minZ:maxZ, i) =                                                               &
+          thisDomain%ssa(:, :, minZ:maxZ, i) =                                                               &
                                              spread(spread(thisDomain%components(i)%singleScatteringAlbedo(1, 1, :), &
                                                            1, nCopies = numX), 2, nCopies = numY)
-          phaseFunctionIndex    (:, :, minZ:maxZ, i) =                                                           &
+          thisDomain%phaseFunctionIndex    (:, :, minZ:maxZ, i) =                                                           &
                                              spread(spread(thisDomain%components(i)%phaseFunctionIndex(1, 1, :), &
                                                            1, nCopies = numX), 2, nCopies = numY)
         end if
         ! We don't finalize the array element phaseFunctions(i) in case something else is pointing to the 
         !   underlying memory. Users should finalize before they pass the array in. 
         ! 
-         phaseFunctions(i) = copy_PhaseFunctionTable(thisDomain%components(i)%table)
+         thisDomain%forwardTables(i) = copy_PhaseFunctionTable(thisDomain%components(i)%table)
         
       end do 
       !
@@ -1043,18 +1042,19 @@ contains
       !   Every element of cumulativeExtinction(:, :, :, numComponents) should equal 1 by definition
       !
       do i = 2, numComponents
-        cumulativeExtinction(:, :, :, i) = cumulativeExtinction(:, :, :, i)  + cumulativeExtinction(:, :, :, i-1) 
+        thisDomain%cumulativeExt(:, :, :, i) = thisDomain%cumulativeExt(:, :, :, i)  + thisDomain%cumulativeExt(:, :, :, i-1) 
       end do
-      totalExtinction(:, :, :) = cumulativeExtinction(:, :, :, numComponents)
-      where(spread(totalExtinction, 4, nCopies = numComponents) > tiny(totalExtinction)) &
-        cumulativeExtinction(:, :, :, :) = cumulativeExtinction(:, :, :, :)  / spread(totalExtinction, 4, nCopies = numComponents)
+      thisDomain%totalExt(:, :, :) = thisDomain%cumulativeExt(:, :, :, numComponents)
+      where(spread(thisDomain%totalExt, 4, nCopies = numComponents) > tiny(thisDomain%totalExt)) &
+        thisDomain%cumulativeExt(:, :, :, :) = thisDomain%cumulativeExt(:, :, :, :)  / &
+						spread(thisDomain%totalExt, 4, nCopies = numComponents)
     end if
 
-    thisDomain%totalExt = totalExtinction
-    thisDomain%cumulativeExt = cumulativeExtinction
-    thisDomain%ssa = singleScatteringAlbedo
-    thisDomain%phaseFunctionIndex = phaseFunctionIndex
-    thisDomain%forwardTables = phaseFunctions
+    !thisDomain%totalExt = totalExtinction
+    !thisDomain%cumulativeExt = cumulativeExtinction
+    !thisDomain%ssa = singleScatteringAlbedo
+    !thisDomain%phaseFunctionIndex = phaseFunctionIndex
+    !thisDomain%forwardTables = phaseFunctions
   
   !!!!! CAN'T FIGURE OUT HOW TO FREE THE MEMORY ASSOCIATED WITH THISDOMAIN%COMPONENTS SINCE IT'S A POINTER 
     
