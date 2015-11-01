@@ -1823,7 +1823,11 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
           contributions(:) - thisIntegrator%maxIntensityContribution
         contributions(:) = thisIntegrator%maxIntensityContribution
       end where
-    end if 
+    end if
+    DO i = 1, numComps
+      call finalize_Matrix(tabulatedPhaseFunctions(i))
+      call finalize_Matrix(tabulatedOrigPhaseFunctions(i)) 
+    END DO
     deallocate(phaseFuncI, tabulatedPhaseFunctions,tabulatedOrigPhaseFunctions) 
   end subroutine computeIntensityContribution
   !------------------------------------------------------------------------------------------

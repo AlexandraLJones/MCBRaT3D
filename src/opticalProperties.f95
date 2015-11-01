@@ -456,7 +456,7 @@ contains
 !  function new_Domain(xPosition, yPosition, zPosition, lambda, lambdaI, nlambda, albedo, temps, status)
 !    real(8),  dimension(:), intent(in   ) :: xPosition, yPosition, zPosition
 !    real(8),  dimension(:,:,:), intent(in) :: temps
-    type(commonDomain), TARGET, intent(in)       :: commonD
+    type(commonDomain), TARGET,  intent(in)       :: commonD
     real(8), intent(in)			 :: lambda, albedo
     integer, intent(in)			 :: lambdaI, nlambda
     type(ErrorMessage),    intent(inout) :: status
@@ -574,9 +574,9 @@ contains
     !   optical component objects.  
 
     ! Local variables
-    integer                               :: nComponents
+    integer                               :: nComponents, i
     type(opticalComponent), &
-                    dimension(:), pointer :: tempComponents
+                    dimension(:), allocatable :: tempComponents
     integer                               :: baseLevel 
 
     ! -----------------
@@ -611,8 +611,18 @@ contains
                               phaseFunctionIndex, baseLevel, phaseFunctions)
       
       ! Free the memory associated with the old array
-      if(associated(thisDomain%components)) deallocate(thisDomain%components)       
-      thisDomain%components => tempComponents !   and point to the new array
+      if(associated(thisDomain%components)) then
+	Do i = 1, nComponents
+	   call finalizeComponent(thisDomain%components(i))
+	End Do
+	deallocate(thisDomain%components)       
+      end if
+      allocate(thisDomain%components(nComponents + 1))
+      thisDomain%components = tempComponents 
+      Do i = 1, nComponents+1
+           call finalizeComponent(tempComponents(i))
+      End Do
+      deallocate(tempComponents)
       
       call setStateToSuccess(status)
     else
@@ -1035,8 +1045,9 @@ contains
         !   underlying memory. Users should finalize before they pass the array in. 
         ! 
          thisDomain%forwardTables(i) = copy_PhaseFunctionTable(thisDomain%components(i)%table)
-        
+         call finalizeComponent(thisDomain%components(i))  
       end do 
+	!!! But don't deallocate thisDomain%Components !!!
       !
       ! Compute total extinction and convert cumulative extinction to fractional cumulative extinction. 
       !   Every element of cumulativeExtinction(:, :, :, numComponents) should equal 1 by definition
@@ -1447,7 +1458,7 @@ contains
       if(associated(thisDomain%components)) deallocate(thisDomain%components)
     end if
     ! phaseTables
-     do i = 1, size(thisDomain%components)
+     do i = size(thisDomain%components), 1, -1
 	if(associated(thisDomain%forwardTables)) CALL finalize_PhaseFunctionTable(thisDomain%forwardTables(i))
 	if(associated(thisDomain%tabulatedPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedPhaseFunctions(i))
 	if(associated(thisDomain%tabulatedOrigPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedOrigPhaseFunctions(i))
@@ -1626,7 +1637,7 @@ contains
   end function asLogical
   !------------------------------------------------------------------------------------------
   function new_Matrix(array)
-    real, dimension(:, :) :: array
+    real, dimension(:, :), intent(in) :: array
     type(matrix)          :: new_Matrix
 
     new_Matrix%numX         = size(array, 1)

@@ -164,7 +164,7 @@ program monteCarloDriver
   integer, parameter     :: EXIT_TAG = 99, NEW_FREQ = 1, SAME_FREQ = 2, FIRST_FREQ=0, PHOTONS = 4
 
    ! I3RC Monte Carlo code derived type variables
-  type(commonDomain)         :: commonPhysical!, commonConcen
+  type(commonDomain), TARGET         :: commonPhysical!, commonConcen
   type(domain)               :: thisDomain, tempDomain
   type(ErrorMessage)         :: status
   type(randomNumberSequence), allocatable, dimension(:) :: randoms
