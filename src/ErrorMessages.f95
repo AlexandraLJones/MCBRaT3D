@@ -69,6 +69,9 @@ module ErrorMessages
   
   ! -- Introspection: inquire about the maximum lengths of strings
   public :: getErrorMessageLimits
+
+  !------ routines for quereying memory usage
+  public :: memcheck
   
   ! Usage: 
   
@@ -86,7 +89,15 @@ module ErrorMessages
   !   end do historyLoop
   ! end program example
 
-contains  
+contains 
+  subroutine memcheck(RSS)
+    integer, intent(out)                :: RSS
+    integer                             :: temp
+
+    open(unit=5, file="/proc/self/statm", status='OLD')
+    read(5,*) temp, RSS, temp, temp, temp, temp, temp
+    close(5)
+  end subroutine memcheck 
   ! -----------
   !  Functions for initializing or setting state with optional messages
   ! -----------

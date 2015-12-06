@@ -118,7 +118,7 @@ program monteCarloDriver
    ! Local variables
   character(len=256)   :: namelistFileName, voxel_file, voxel_file2, horiz_file, level_file, col_file, row_file, diff_file, photon_file, batch_file
   integer              :: nX, nY, nZ, phtn
-  integer              :: i, j, k, batch, ix, iy, iz
+  integer              :: i, j, k, batch, ix, iy, iz, RSS
   integer              :: numRadDir
   integer              :: numberOfComponents
   logical              :: computeIntensity
@@ -159,6 +159,11 @@ program monteCarloDriver
   !
 !PRINT*, 'about to call initializeProcesses' 
   call initializeProcesses(numProcs, thisProc)
+ if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory after initializing procs ", RSS, "rank= ", thisProc
+  end if
+
 !PRINT*, 'returned from initializeProcesses'
 
 ! temporary output file for the purposes of debugging
@@ -240,7 +245,49 @@ program monteCarloDriver
   !  Read the domain file
   !
   
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just before read_Domain ", RSS, "rank= ", thisProc
+  end if
   call read_Domain(domainFileName, thisDomain, status)
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just after read_Domain ", RSS, "rank= ", thisProc
+  end if
+!!!!!!!!!!!!TEST PORTION!!!!!!!!!!!!1111
+call finalize_Domain(thisDomain)
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just after finalize_Domain ", RSS, "rank= ", thisProc
+  end if
+call read_Domain(domainFileName, thisDomain, status)
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just after *SECOND* read_Domain ", RSS, "rank= ", thisProc
+  end if
+call finalize_Domain(thisDomain)
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just after *SECOND* finalize_Domain ", RSS, "rank= ", thisProc
+  end if
+call read_Domain(domainFileName, thisDomain, status)
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just after *THIRD* read_Domain ", RSS, "rank= ", thisProc
+  end if
+call finalize_Domain(thisDomain)
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just after *THIRD* finalize_Domain ", RSS, "rank= ", thisProc
+  end if
+call read_Domain(domainFileName, thisDomain, status)
+  if(thisProc .lt. 2)then
+        call memcheck(RSS)
+        PRINT*, "Driver: memory just after *FOURTH* read_Domain ", RSS, "rank= ", thisProc
+  end if
+
+STOP
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !PRINT *, 'Driver: Read Domain'  
   !call printStatus(status)
   !call write_Domain(thisDomain, 'test_write.dom', status)
