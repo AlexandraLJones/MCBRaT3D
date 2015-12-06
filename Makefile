@@ -37,7 +37,7 @@ Libs        =
 #### Compiler-specific entries (may override marcos above) 
 
 # Macros are available for ifort, g95, xlf, absoft, ftn
- compiler=tau
+ compiler=ftn
  debug=no
 
 ifeq (${compiler},tau)

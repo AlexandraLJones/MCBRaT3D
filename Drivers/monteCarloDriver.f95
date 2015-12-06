@@ -320,8 +320,9 @@ if(thisProc .lt. 2)then
         call memcheck(RSS)
         PRINT*, "Driver: memory before LW setup iteration ", RSS, "rank= ", thisProc
 end if
-     DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1  
-PRINT *, "in LW loop at iteration ", i
+     DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1 
+	call memcheck(RSS) 
+PRINT *, "Proc", thisProc, "in LW loop at iteration ", i, "memory is ", RSS
         call read_SSPTable(SSPFileID, i, commonPhysical, thisDomain,.True.,.False., status) ! domain is initialized within this routine
         call printStatus(status)
 	call getInfo_Domain(thisDomain, lambda=lambda, status=status)
@@ -402,6 +403,8 @@ if(thisProc .lt. 2)then
         call memcheck(RSS)
         PRINT*, "Driver: memory after LW setup iteration ", RSS, "rank= ", thisProc
 end if
+
+STOP
 
      n = 1
      DO
