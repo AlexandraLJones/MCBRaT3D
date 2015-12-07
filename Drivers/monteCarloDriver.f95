@@ -165,14 +165,14 @@ program monteCarloDriver
 
    ! I3RC Monte Carlo code derived type variables
   type(commonDomain), TARGET         :: commonPhysical!, commonConcen
-  type(domain)               :: thisDomain, tempDomain
+  type(domain), ALLOCATABLE           :: thisDomain, tempDomain
   type(ErrorMessage)         :: status
   type(randomNumberSequence), allocatable, dimension(:) :: randoms
 !  type(photonStream)         :: incomingPhotons
 !  type(photonStream), allocatable, dimension(:) :: incomingBBPhotons
   type(photonStream)         :: incomingPhotons
   type(integrator)           :: mcIntegrator
-  type(Weights)              :: theseWeights
+  type(Weights), ALLOCATABLE :: theseWeights
 
   ! Variables related to splitting up the job across processors
   integer            :: thisProc, thisThread=0            ! ID OF CURRENT PROCESSOR; default 0
@@ -323,6 +323,7 @@ end if
      DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1 
 	call memcheck(RSS) 
 PRINT *, "Proc", thisProc, "in LW loop at iteration ", i, "memory is ", RSS
+	ALLOCATE(thisDomain)
         call read_SSPTable(SSPFileID, i, commonPhysical, thisDomain,.True.,.False., status) ! domain is initialized within this routine
         call printStatus(status)
 	call getInfo_Domain(thisDomain, lambda=lambda, status=status)
@@ -331,12 +332,16 @@ PRINT *, "Proc", thisProc, "in LW loop at iteration ", i, "memory is ", RSS
         if (i .eq. thisProc*lambdaPerProc+1)then
            call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status=status)
            call printStatus(status)
-
+	   ALLOCATE(tempDomain)
 	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain,.True.,.False., status) ! domain is initialized within this routine   
 	   call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
            call printStatus(status)
 	   if (i .gt. 1) then ! we have a more accurate way to calculate dLambda
+	      if(ALLOCATED(tempDomain))then
 		  call finalize_Domain(tempDomain)
+		  DEALLOCATE(tempDomain)
+	      end if
+		  ALLOCATE(tempDomain)
 	      call read_SSPTable(SSPFileID, i-1, commonPhysical, tempDomain, .True.,.False., status) ! domain is initialized within this routine
               call getInfo_Domain(tempDomain, lambda=lambdaBelow, status=status)
               call printStatus(status)
@@ -347,7 +352,11 @@ PRINT *, "Proc", thisProc, "in LW loop at iteration ", i, "memory is ", RSS
 	   lambdaBelow=lambda
 	   lambda=lambdaAbove
 	elseif(i .gt. thisProc*lambdaPerProc+1 .and. i .lt. numLambda)then
-	   call finalize_Domain(tempDomain)
+	   if(ALLOCATED(tempDomain))then
+	      call finalize_Domain(tempDomain)
+	      DEALLOCATE(tempDomain)
+	   end if
+	   ALLOCATE(tempDomain)
 	   call read_SSPTable(SSPFileID, i+1, commonPhysical, tempDomain, .True.,.False., status) ! domain is initialized within this routine
            call getInfo_Domain(tempDomain, lambda=lambdaAbove, status=status)
            call printStatus(status)
@@ -358,13 +367,18 @@ PRINT *, "Proc", thisProc, "in LW loop at iteration ", i, "memory is ", RSS
 	   dLambda=ABS(lambda-lambdaBelow)
 	   
         end if
+	if (ALLOCATED(tempDomain))then
 		call finalize_Domain(tempDomain)
+		DEALLOCATE(tempDomain)
+	end if
+	ALLOCATE(theseWeights)
         theseWeights = new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=1, status=status)
         call printStatus(status)
         call emission_weighting(thisDomain, numLambda, i, theseWeights, surfaceTemp, &
 		instrResponseFile, dLambda=dLambda, totalFlux=emittedFlux, status=status)
         call printStatus(status)
 		if (i .lt. MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc)) call finalize_Domain(thisDomain)
+	DEALLOCATE(thisDomain)
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'returned from emission_weighting'
 
 !    write(32,"(36F12.8)") level_weights(:,1)
@@ -397,6 +411,7 @@ PRINT *, "Proc", thisProc, "in LW loop at iteration ", i, "memory is ", RSS
 !    close(12)
 	fluxCDF(i)=emittedFlux
 	call finalize_Weights(theseWeights)
+	DEALLOCATE(theseWeights)
      END DO
 
 if(thisProc .lt. 2)then
