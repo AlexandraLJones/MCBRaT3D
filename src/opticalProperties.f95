@@ -149,7 +149,7 @@ contains
     integer, dimension(4), intent(in)    :: ncFileIds
     integer,            intent(in)    :: lambdaIndex
     type(commonDomain), intent(in)    :: commonD
-    type(Domain), intent(out)         :: thisDomain
+    type(Domain), intent(inout)         :: thisDomain
     logical, intent(in)               :: setup, calcRayl
     type(ErrorMessage), intent(inout) :: status
 
@@ -346,7 +346,7 @@ contains
 
    subroutine read_Common(filename, commonD, status)
     character(len = *), intent(in   ) :: fileName
-    type(commonDomain), intent(out)   :: commonD
+    type(commonDomain), intent(inout)   :: commonD
     type(ErrorMessage), intent(inout) :: status
 
     integer, dimension(16)             :: ncStatus
@@ -801,18 +801,18 @@ contains
  			    inversePhaseFuncs, tabPhase, tabOrigPhase, status)
  
     type(domain),                    intent(in   ) :: thisDomain
-    integer,               optional, intent(  out) :: numX, numY, numZ, lambdaIndex
-    real(8), optional, intent(out)                    :: lambda, albedo
-    real(8),    dimension(:), optional, intent(  out) :: xPosition, yPosition, zPosition
-    real(8), dimension(:,:,:), optional, intent( out) :: temps, totalExt
-    integer,               optional, intent(  out) :: numberOfComponents
+    integer,               optional, intent(inout) :: numX, numY, numZ, lambdaIndex
+    real(8), optional, intent(inout)                    :: lambda, albedo
+    real(8),    dimension(:), optional, intent(inout) :: xPosition, yPosition, zPosition
+    real(8), dimension(:,:,:), optional, intent(inout) :: temps, totalExt
+    integer,               optional, intent(inout) :: numberOfComponents
     integer,		optional, intent(in)	   :: namelistNumLambda
-    integer,            optional, intent(out)       :: domainNumLambda
+    integer,            optional, intent(inout)       :: domainNumLambda
     character(len = *), &
-             dimension(:), optional, intent(  out) :: componentNames
-    real(8), dimension(:,:,:,:), optional, intent(  out) :: cumExt, ssa, ext
-    integer, dimension(:,:,:,:), optional, intent(  out) :: phaseFuncI
-    type(matrix), dimension(:), optional, intent(out)  :: inversePhaseFuncs, tabPhase, tabOrigPhase
+             dimension(:), optional, intent(inout) :: componentNames
+    real(8), dimension(:,:,:,:), optional, intent(inout) :: cumExt, ssa, ext
+    integer, dimension(:,:,:,:), optional, intent(inout) :: phaseFuncI
+    type(matrix), dimension(:), optional, intent(inout)  :: inversePhaseFuncs, tabPhase, tabOrigPhase
     type(ErrorMessage),              intent(inout) :: status
     
     integer                                        :: j
@@ -1003,11 +1003,11 @@ contains
       ! Checks for x, y, z, sizes
       numX = size(thisDomain%xPosition) - 1; numY = size(thisDomain%yPosition) - 1
       numZ = size(thisDomain%zPosition) - 1; numComponents = size(thisDomain%components)
-      allocate(thisDomain%totalExt(1:numX,1:numY,1:numZ))
-      allocate(thisDomain%cumulativeExt(1:numX,1:numY,1:numZ,1:numComponents))
-      allocate(thisDomain%ssa(1:numX,1:numY,1:numZ,1:numComponents))
-      allocate(thisDomain%phaseFunctionIndex(1:numX,1:numY,1:numZ,1:numComponents))
-      allocate(thisDomain%forwardTables(1:numComponents))
+      if(.not. ASSOCIATED(thisDomain%totalExt))allocate(thisDomain%totalExt(1:numX,1:numY,1:numZ))
+      if(.not. ASSOCIATED(thisDomain%cumulativeExt))allocate(thisDomain%cumulativeExt(1:numX,1:numY,1:numZ,1:numComponents))
+      if(.not. ASSOCIATED(thisDomain%ssa))allocate(thisDomain%ssa(1:numX,1:numY,1:numZ,1:numComponents))
+      if(.not.  ASSOCIATED(thisDomain%phaseFunctionIndex))allocate(thisDomain%phaseFunctionIndex(1:numX,1:numY,1:numZ,1:numComponents))
+      if(.not. ASSOCIATED(thisDomain%forwardTables))allocate(thisDomain%forwardTables(1:numComponents))
     end if 
 
     ! -----------------------
@@ -1430,7 +1430,7 @@ contains
   !------------------------------------------------------------------------------------------
   subroutine finalize_Domain(thisDomain) 
     ! Return the variable to it uninitialized state
-    type(domain), intent(out) :: thisDomain
+    type(domain), intent(inout) :: thisDomain
     
     ! Loca variable
     integer :: i
@@ -1647,7 +1647,7 @@ contains
   end function new_Matrix
   !------------------------------------------------------------------------------------------
   subroutine finalize_Matrix(thisMatrix)
-    type(matrix), intent(out) :: thisMatrix
+    type(matrix), intent(inout) :: thisMatrix
 
     thisMatrix%numX = 0; thisMatrix%numY = 0
     if(associated(thisMatrix%values)) deallocate(thisMatrix%values)

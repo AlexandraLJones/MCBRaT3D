@@ -1484,7 +1484,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
   ! Finalization 
   !------------------------------------------------------------------------------------------
   subroutine finalize_Integrator(thisIntegrator)
-    type(integrator), intent(out) :: thisIntegrator
+    type(integrator), intent(inout) :: thisIntegrator
     
     !
     ! Finalize by copying component values from a variable that's never been used

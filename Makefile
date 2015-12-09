@@ -38,7 +38,7 @@ Libs        =
 
 # Macros are available for ifort, g95, xlf, absoft, ftn
  compiler=ftn
- debug=yes
+ debug=no
 
 ifeq (${compiler},tau)
 #   Tau fortran wrapper 

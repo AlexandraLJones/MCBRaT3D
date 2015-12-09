@@ -1475,10 +1475,12 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
           if(associated(table%phaseFunctions(i)%scatteringAngle)) deallocate(table%phaseFunctions(i)%scatteringAngle)
         end do
         call finalize_PhaseFunction(table%phaseFunctions(1))
-      else 
-        do i = 1, size(table%phaseFunctions) 
-          call finalize_PhaseFunction(table%phaseFunctions(i))
-        end do
+      else
+	if(associated(table%phaseFunctions))then 
+          do i = 1, size(table%phaseFunctions) 
+            call finalize_PhaseFunction(table%phaseFunctions(i))
+          end do
+	end if
       end if
       
       ! Next we delete the members of the table itself. 
