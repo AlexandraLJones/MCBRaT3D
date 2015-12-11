@@ -11,13 +11,21 @@ rtObjs =  $(CodeDir)/characterUtils.o $(CodeDir)/numericUtilities.o \
           $(CodeDir)/surfaceProperties.o $(IntegDir)/monteCarloRadiativeTransfer.o \
           $(CodeDir)/emissionAndBroadBandWeights.o
 
-Targets = monteCarloDriver 
+setUpObjs = $(CodeDir)/userInterface_Unix.o $(CodeDir)/RandomNumbersForMC.o \
+	    $(CodeDir)/$(multipleProcCode) $(CodeDir)/ErrorMessages.o \
+	    $(CodeDir)/opticalProperties.o $(CodeDir)/emissionAndBroadBandWeights.o \
+	    $(CodeDir)/numericUtilities.o $(CodeDir)/scatteringPhaseFunctions.o \
+	    $(CodeDir)/characterUtils.o $(CodeDir)/inversePhaseFunctions.o
+
+Targets = monteCarloDriver BBsetupDriver
 
 all: $(Targets)
 
 monteCarloDriver: monteCarloDriver.o $(rtObjs)
 monteCarloDriver.o: monteCarloDriver.f95 $(rtObjs)
 
+BBsetupDriver: BBsetupDriver.o $(setUpObjs)
+BBsetupDriver.o: BBsetupDriver.f95 $(setUpObjs)
 
 
 
