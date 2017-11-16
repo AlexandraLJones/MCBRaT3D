@@ -195,7 +195,7 @@ contains
   !   Finalization
   !------------------------------------------------------------------------------------------
   subroutine finalize_surfaceDescription(thisSurface)
-    type(surfaceDescription), intent(out) :: thisSurface
+    type(surfaceDescription), intent(inout) :: thisSurface
     
     if(associated(thisSurface%xPosition)) deallocate(thisSurface%xPosition)
     if(associated(thisSurface%yPosition)) deallocate(thisSurface%yPosition)
