@@ -61,10 +61,10 @@ module monteCarloRadiativeTransfer
                                                 zRegularlySpaced = .false. 
     real(8)                                    :: deltaX = 0.0_8, deltaY = 0.0_8 , deltaZ = 0.0_8, &
                                                x0 = 0.0_8, y0= 0.0_8, z0 = 0.0_8
-    real(8),    dimension(:),          pointer :: xPosition => null() 
-    real(8),    dimension(:),          pointer :: yPosition => null()
-    real(8),    dimension(:),          pointer :: zPosition => null()
-    real(8), pointer, dimension(:,:,:)      :: temps => null()
+    real(8),    allocatable,dimension(:)           :: xPosition  
+    real(8),    allocatable,dimension(:)           :: yPosition  
+    real(8),    allocatable,dimension(:)           :: zPosition 
+    real(8), allocatable, dimension(:,:,:)      :: temps 
     real                                    :: LW_flag = -1.
     ! Surface reflection BDRF
     logical                          :: useSurfaceBDRF = .false.
@@ -74,7 +74,7 @@ module monteCarloRadiativeTransfer
     !
     ! Direction cosines at which to compute intensity
     !
-    real, dimension(:, :),    pointer :: intensityDirections => null()
+    real, dimension(:, :),    allocatable :: intensityDirections 
     
     ! -------------------------------------------------------------------------= 
     ! Variables for variance reduction for intensity calculations
@@ -94,21 +94,21 @@ module monteCarloRadiativeTransfer
     logical                              :: limitIntensityContributions = .false. 
     real                                 :: maxIntensityContribution    = &
                                                         defaultMaxIntensityContrib
-    real, dimension(:, :),       pointer :: intensityExcess => null()
+    real, dimension(:, :),       allocatable:: intensityExcess 
 
     ! -------------------------------------------------------------------------=                                           
     ! Output arrays
     
-    real, dimension(:, :),    pointer :: fluxUp => null(), fluxDown => null(), &
-                                         fluxAbsorbed => null()
-    real, dimension(:, :, :), pointer :: volumeAbsorption => null()
-    real, dimension(:, :, :), pointer :: intensity => null()
+    real, dimension(:, :),    allocatable :: fluxUp , fluxDown , &
+                                         fluxAbsorbed 
+    real, dimension(:, :, :), allocatable :: volumeAbsorption 
+    real, dimension(:, :, :), allocatable :: intensity 
     real, dimension(:, :, :, :), &
-                              pointer :: intensityByComponent => null()
+                              allocatable :: intensityByComponent 
 
     !output arrays for upward flux, downward flux, intensiies by number of scattering events
-    real, dimension(:, :, :), pointer :: fluxUpByScatOrd => null(), fluxDownByScatOrd => null()
-    real, dimension(:,:,:,:), pointer :: intensityByScatOrd => null()
+    real, dimension(:, :, :), allocatable :: fluxUpByScatOrd , fluxDownByScatOrd 
+    real, dimension(:,:,:,:), allocatable :: intensityByScatOrd 
 
     !logical values to decide whether or not to record the number of scatterings
     logical                           :: recScatOrd = .false.
@@ -254,21 +254,21 @@ contains
       ! We want the intensity arrays to be zero'd even if we're not computing new 
       !   intensity values
       !
-      if(associated(thisIntegrator%intensity)) thisIntegrator%intensity(:, :, :) = 0. 
-      if(associated(thisIntegrator%intensityByComponent)) &
+      if(allocated(thisIntegrator%intensity)) thisIntegrator%intensity(:, :, :) = 0. 
+      if(allocated(thisIntegrator%intensityByComponent)) &
                                                thisIntegrator%intensityByComponent(:, :, :, :) = 0. 
-      if(associated(thisIntegrator%intensityExcess)) &
+      if(allocated(thisIntegrator%intensityExcess)) &
                                                thisIntegrator%intensityExcess(:, :) = 0. 
 
       !
       ! We want the arrays by scattering order to be zero'd even if we're not computing
       !    new intensity values
       !
-      if(associated(thisIntegrator%fluxUpByScatOrd)) thisIntegrator%fluxUpByScatOrd(:, :, :)   = 0.
-      if(associated(thisIntegrator%fluxDownByScatOrd)) &
+      if(allocated(thisIntegrator%fluxUpByScatOrd)) thisIntegrator%fluxUpByScatOrd(:, :, :)   = 0.
+      if(allocated(thisIntegrator%fluxDownByScatOrd)) &
                                                thisIntegrator%fluxDownByScatOrd(:, :, :) = 0.
         
-      if(associated(thisIntegrator%intensityByScatOrd)) &
+      if(allocated(thisIntegrator%intensityByScatOrd)) &
                                                thisIntegrator%intensityByScatOrd(:, :, :,  :) = 0.
    
 
@@ -980,7 +980,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     ! Domain-averaged intensity
     !
     if(present(meanIntensity)) then
-      if(.not. associated(thisIntegrator%intensity)) then 
+      if(.not. allocated(thisIntegrator%intensity)) then 
         call setStateToFailure(status, "reportResults: intensity information not available") 
       else if (size(thisIntegrator%intensity, 3) /= size(meanIntensity)) then 
         call setStateToFailure(status, "reportResults: requesting mean intensity in the wrong number of directions.") 
@@ -996,7 +996,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     ! Pixel-by-pixel intensity
     !
     if(present(intensity)) then
-      if(.not. associated(thisIntegrator%intensity)) then 
+      if(.not. allocated(thisIntegrator%intensity)) then 
         call setStateToFailure(status, "reportResults: intensity information not available") 
       else if (any( (/ size(               intensity, 1), size(               intensity, 2), &
                        size(               intensity, 3) /) /=                               &
@@ -1152,7 +1152,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
       if(.not. computeIntensity .and. present(intensityMus))                                                             &
         call setStateToWarning(status, "specifyParameters: intensity directions *and* computeIntensity set to false." // &
                                        "Will compute intensity at given angles.") 
-      if(computeIntensity .and. .not. present(intensityMus) .and. .not. associated(thisIntegrator%intensityDirections)) &
+      if(computeIntensity .and. .not. present(intensityMus) .and. .not. allocated(thisIntegrator%intensityDirections)) &
         call setStateToFailure(status, "specifyParameters: Can't compute intensity without specifying directions.") 
     end if
     
@@ -1243,20 +1243,20 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
       ! Intensity 
       !
       if(present(intensityMus)) then 
-        if(associated(thisIntegrator%intensityDirections))  deallocate(thisIntegrator%intensityDirections)
+        if(allocated(thisIntegrator%intensityDirections))  deallocate(thisIntegrator%intensityDirections)
         allocate(thisIntegrator%intensityDirections(3, size(intensityMus)))
 
-        if(associated(thisIntegrator%intensity))            deallocate(thisIntegrator%intensity)
+        if(allocated(thisIntegrator%intensity))            deallocate(thisIntegrator%intensity)
         allocate(thisIntegrator%intensity(size(thisIntegrator%xPosition)-1, &
                                           size(thisIntegrator%yPosition)-1, &
                                           size(intensityMus)))
 
-        if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent) 
+        if(allocated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent) 
         allocate(thisIntegrator%intensityByComponent(size(thisIntegrator%xPosition)-1, &
                                                      size(thisIntegrator%yPosition)-1, &
                                                      size(intensityMus),               &
                                                      0:numComps))
-        if(associated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
+        if(allocated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
         if(thisIntegrator%recScatOrd) then 
           allocate(thisIntegrator%intensityByScatOrd(size(thisIntegrator%xPosition)-1, &
                                                      size(thisIntegrator%yPosition)-1, &
@@ -1276,25 +1276,25 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
         !    so there's nothing to do. 
         !
         if(.not. computeIntensity .and. .not. present(intensityMus)) then
-          if(associated(thisIntegrator%intensityDirections))  deallocate(thisIntegrator%intensityDirections)
-          if(associated(thisIntegrator%intensity))            deallocate(thisIntegrator%intensity)
-          if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent)
-          if(associated(thisIntegrator%intensityByScatOrd))   deallocate(thisIntegrator%intensityByScatOrd)
+          if(allocated(thisIntegrator%intensityDirections))  deallocate(thisIntegrator%intensityDirections)
+          if(allocated(thisIntegrator%intensity))            deallocate(thisIntegrator%intensity)
+          if(allocated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent)
+          if(allocated(thisIntegrator%intensityByScatOrd))   deallocate(thisIntegrator%intensityByScatOrd)
           thisIntegrator%computeIntensity = .false.
         end if 
       end if 
             
       if(thisIntegrator%computeIntensity .and. thisIntegrator%limitIntensityContributions) then
-        if(associated(thisIntegrator%intensityExcess))      deallocate(thisIntegrator%intensityExcess)
+        if(allocated(thisIntegrator%intensityExcess))      deallocate(thisIntegrator%intensityExcess)
         allocate(thisIntegrator%intensityExcess(size(thisIntegrator%intensityDirections, 2), &
                                                 0:numComps))
       end if
 
       !allow recScatOrd to be set to true only if numRecScatOrd is set concurrently
       if(present(numRecScatOrd)) then 
-        if(associated(thisIntegrator%fluxUpByScatOrd))    deallocate(thisIntegrator%fluxUpByScatOrd)
-        if(associated(thisIntegrator%fluxDownByScatOrd))  deallocate(thisIntegrator%fluxDownByScatOrd)
-        if(associated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
+        if(allocated(thisIntegrator%fluxUpByScatOrd))    deallocate(thisIntegrator%fluxUpByScatOrd)
+        if(allocated(thisIntegrator%fluxDownByScatOrd))  deallocate(thisIntegrator%fluxDownByScatOrd)
+        if(allocated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
 
         if(numRecScatOrd >= 0)  then
           thisIntegrator%recScatOrd=.true.
@@ -1319,9 +1319,9 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
 
       if(present(recScatOrd)) then
         if(.not. recScatOrd .and. .not.present(numRecScatOrd)) then
-          if(associated(thisIntegrator%fluxUpByScatOrd))    deallocate(thisIntegrator%fluxUpByScatOrd)
-          if(associated(thisIntegrator%fluxDownByScatOrd))  deallocate(thisIntegrator%fluxDownByScatOrd)
-          if(associated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)       
+          if(allocated(thisIntegrator%fluxUpByScatOrd))    deallocate(thisIntegrator%fluxUpByScatOrd)
+          if(allocated(thisIntegrator%fluxDownByScatOrd))  deallocate(thisIntegrator%fluxDownByScatOrd)
+          if(allocated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)       
           thisIntegrator%recScatOrd = .false.
           thisIntegrator%numRecScatOrd = -1
         end if
@@ -1398,17 +1398,17 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     !
     ! Location vectors
     !
-    if(associated(original%xPosition)) then
+    if(allocated(original%xPosition)) then
       allocate(copy%xPosition(size(original%xPosition)))
       copy%xPosition(:) = original%xPosition(:)
     end if
 
-    if(associated(original%yPosition)) then
+    if(allocated(original%yPosition)) then
       allocate(copy%yPosition(size(original%yPosition)))
       copy%yPosition(:) = original%yPosition(:)
     end if
 
-    if(associated(original%zPosition)) then
+    if(allocated(original%zPosition)) then
       allocate(copy%zPosition(size(original%zPosition)))
       copy%zPosition(:) = original%zPosition(:)
     end if
@@ -1417,7 +1417,7 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     !
     ! Intensity directions
     !
-    if(associated(original%intensityDirections)) then
+    if(allocated(original%intensityDirections)) then
       allocate(copy%intensityDirections(size(original%intensityDirections, 1), size(original%intensityDirections, 2)))
       copy%intensityDirections(:, :)  = original%intensityDirections(:, :)
     end if 
@@ -1425,51 +1425,51 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     !
     ! Output arrays
     !
-    if(associated(original%fluxUp)) then
+    if(allocated(original%fluxUp)) then
       allocate(copy%fluxUp(size(original%fluxUp, 1), &
                            size(original%fluxUp, 2)))
       copy%fluxUp(:, :) = original%fluxUp(:, :)
     end if
 
-    if(associated(original%fluxDown)) then
+    if(allocated(original%fluxDown)) then
       allocate(copy%fluxDown(size(original%fluxDown, 1), &
                              size(original%fluxDown, 2)))
       copy%fluxDown(:, :) = original%fluxDown(:, :)
     end if
 
-    if(associated(original%fluxAbsorbed)) then
+    if(allocated(original%fluxAbsorbed)) then
       allocate(copy%fluxAbsorbed(size(original%fluxAbsorbed, 1), &
                                  size(original%fluxAbsorbed, 2)))
       copy%fluxAbsorbed(:, :) = original%fluxAbsorbed(:, :)
     end if
     
-    if(associated(original%volumeAbsorption)) then
+    if(allocated(original%volumeAbsorption)) then
       allocate(copy%volumeAbsorption(size(original%volumeAbsorption, 1), &
                                      size(original%volumeAbsorption, 2), &
                                      size(original%volumeAbsorption, 3)))
       copy%volumeAbsorption(:, :, :) = original%volumeAbsorption(:, :, :)
     end if
     
-    if(associated(original%intensity)) then
+    if(allocated(original%intensity)) then
       allocate(copy%intensity(size(original%intensity, 1), &
                               size(original%intensity, 2), &
                               size(original%intensity, 3)))
       copy%intensity(:, :, :) = original%intensity(:, :, :)
     end if
 
-    if(associated(original%fluxUpByScatOrd)) then
+    if(allocated(original%fluxUpByScatOrd)) then
        allocate(copy%fluxUpByScatOrd   (size(original%fluxUpByScatOrd, 1), &
                                         size(original%fluxUpByScatOrd, 2), &
                                         size(original%fluxUpByScatOrd, 3)))
        copy%fluxUpByScatOrd(:, :, :)       = original%fluxUpByScatOrd(:, :, :)
     end if
-    if(associated(original%fluxDownByScatOrd)) then   
+    if(allocated(original%fluxDownByScatOrd)) then   
        allocate(copy%fluxDownByScatOrd  (size(original%fluxDownByScatOrd, 1), &
                                          size(original%fluxDownByScatOrd, 2), &
                                          size(original%fluxDownByScatOrd, 3)))
        copy%fluxDownByScatOrd(:, :, :)     = original%fluxDownByScatOrd(:, :, :)
     end if
-    if(associated(original%intensityByScatOrd)) then   
+    if(allocated(original%intensityByScatOrd)) then   
        allocate(copy%intensityByScatOrd (size(original%intensityByScatOrd, 1), &
                                          size(original%intensityByScatOrd, 2), &
                                          size(original%intensityByScatOrd, 3), &
@@ -1524,25 +1524,25 @@ CALL getNextPhoton(incomingPhotons, xPos, yPos, zPos, mu, phi, status, current)
     thisIntegrator%recScatOrd   = pristineI%recScatOrd
     thisIntegrator%numrecScatOrd= pristineI%numRecScatOrd
     
-    if(associated(thisIntegrator%xPosition))          deallocate(thisIntegrator%xPosition)
-    if(associated(thisIntegrator%yPosition))          deallocate(thisIntegrator%yPosition)
-    if(associated(thisIntegrator%zPosition))          deallocate(thisIntegrator%zPosition)
+    if(allocated(thisIntegrator%xPosition))          deallocate(thisIntegrator%xPosition)
+    if(allocated(thisIntegrator%yPosition))          deallocate(thisIntegrator%yPosition)
+    if(allocated(thisIntegrator%zPosition))          deallocate(thisIntegrator%zPosition)
 
     
-    if(associated(thisIntegrator%intensityDirections))    deallocate(thisIntegrator%intensityDirections)
+    if(allocated(thisIntegrator%intensityDirections))    deallocate(thisIntegrator%intensityDirections)
     
     !
     ! Output arrays
     !
-    if(associated(thisIntegrator%fluxUp))             deallocate(thisIntegrator%fluxUp)
-    if(associated(thisIntegrator%fluxDown))           deallocate(thisIntegrator%fluxDown)
-    if(associated(thisIntegrator%fluxAbsorbed))       deallocate(thisIntegrator%fluxAbsorbed)
-    if(associated(thisIntegrator%volumeAbsorption))   deallocate(thisIntegrator%volumeAbsorption)
-    if(associated(thisIntegrator%intensity))          deallocate(thisIntegrator%intensity)
-    if(associated(thisIntegrator%fluxUpByScatOrd))    deallocate(thisIntegrator%fluxUpByScatOrd)
-    if(associated(thisIntegrator%fluxDownByScatOrd))  deallocate(thisIntegrator%fluxDownByScatOrd)
-    if(associated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
-    if(associated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent)
+    if(allocated(thisIntegrator%fluxUp))             deallocate(thisIntegrator%fluxUp)
+    if(allocated(thisIntegrator%fluxDown))           deallocate(thisIntegrator%fluxDown)
+    if(allocated(thisIntegrator%fluxAbsorbed))       deallocate(thisIntegrator%fluxAbsorbed)
+    if(allocated(thisIntegrator%volumeAbsorption))   deallocate(thisIntegrator%volumeAbsorption)
+    if(allocated(thisIntegrator%intensity))          deallocate(thisIntegrator%intensity)
+    if(allocated(thisIntegrator%fluxUpByScatOrd))    deallocate(thisIntegrator%fluxUpByScatOrd)
+    if(allocated(thisIntegrator%fluxDownByScatOrd))  deallocate(thisIntegrator%fluxDownByScatOrd)
+    if(allocated(thisIntegrator%intensityByScatOrd)) deallocate(thisIntegrator%intensityByScatOrd)
+    if(allocated(thisIntegrator%intensityByComponent)) deallocate(thisIntegrator%intensityByComponent)
 
   end subroutine finalize_Integrator
   !------------------------------------------------------------------------------------------
