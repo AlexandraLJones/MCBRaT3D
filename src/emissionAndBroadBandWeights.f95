@@ -13,12 +13,12 @@ module emissionAndBBWeights
   type weights
     private
     real(8)                                  :: spectrIntgrFlux = 0.0_8
-    real(8), dimension(:), pointer            :: fracAtmsPower  => null()
-    real(8), dimension(:), pointer            :: totalPowerCDF  => null()
+    real(8), allocatable, dimension(:)            :: fracAtmsPower  
+    real(8), allocatable, dimension(:)            :: totalPowerCDF 
 
     real(8), dimension(:,:), pointer          :: levelWeights => null()
     real(8), dimension(:,:,:), pointer        :: colWeights => null()
-    real(8), dimension(:,:,:,:), pointer      :: voxelWeights => null()
+    real(8), dimension(:,:,:,:),pointer      :: voxelWeights => null() 
   end type weights
 
 
@@ -37,19 +37,21 @@ module emissionAndBBWeights
 
   contains
 
-   function new_Weights(numX, numY, numZ, numLambda, status) result(theseWeights)
+   subroutine new_Weights(theseWeights,numX, numY, numZ, numLambda, status) 
     integer, optional, intent(in)      :: numX, numY, numZ
     integer, intent(in)                :: numLambda
+    type(Weights), intent(inout)       :: theseWeights
     type(ErrorMessage), intent(inout) :: status
-    type(Weights)                      :: theseWeights
+    
 
-    allocate(theseWeights%fracAtmsPower(1:numLambda), theseWeights%totalPowerCDF(1:numLambda))
+    if(.not. ALLOCATED(theseWeights%fracAtmsPower))allocate(theseWeights%fracAtmsPower(1:numLambda))
+    if(.not. ALLOCATED(theseWeights%totalPowerCDF))allocate(theseWeights%totalPowerCDF(1:numLambda))
     theseWeights%fracAtmsPower = 0.0_8
     theseWeights%totalPowerCDF  = 0.0_8
 
     if(present(numX) .or. present(numY) .or. present(numZ))then
       if(present(numX) .and. present(numY) .and. present(numZ))then
-	allocate(theseWeights%voxelWeights(1:numX, 1:numY, 1:numZ, 1:numLambda))
+	if(.not. ASSOCIATED(theseWeights%voxelWeights))allocate(theseWeights%voxelWeights(1:numX, 1:numY, 1:numZ, 1:numLambda))
 	theseWeights%voxelWeights(:,:,:,:) = 0.0_8
 	theseWeights%colWeights => theseWeights%voxelWeights(numX, :, :, :)
 	theseWeights%levelWeights => theseWeights%colWeights(numY, :, :)
@@ -57,17 +59,16 @@ module emissionAndBBWeights
 	call setStateToFailure(status, "new_Weights: must supply all physical dimensions for emission weighting arrays")
       end if
     end if
-   end function new_Weights
+   end subroutine new_Weights
 
    subroutine finalize_Weights(theseWeights)
      type(Weights), intent(inout)  :: theseWeights
 
-     deallocate(theseWeights%fracAtmsPower, theseWeights%totalPowerCDF)
-     if (associated(theseWeights%voxelWeights))then
-        NULLIFY(theseWeights%levelWeights)
-        NULLIFY(theseWeights%colWeights)
-        DEALLOCATE(theseWeights%voxelWeights)
-     end if
+     if(allocated(theseWeights%fracAtmsPower))deallocate(theseWeights%fracAtmsPower)
+      if(allocated(theseWeights%totalPowerCDF))deallocate(theseWeights%totalPowerCDF)
+     if(ASSOCIATED(theseWeights%levelWeights))NULLIFY(theseWeights%levelWeights)
+     if(ASSOCIATED(theseWeights%colWeights))NULLIFY(theseWeights%colWeights)
+     if(ASSOCIATED(theseWeights%voxelWeights))DEALLOCATE(theseWeights%voxelWeights)
    end subroutine finalize_Weights
 
    subroutine getInfo_Weights(theseWeights, iLambda, numX, numY, numZ, fracAtmsPower, &

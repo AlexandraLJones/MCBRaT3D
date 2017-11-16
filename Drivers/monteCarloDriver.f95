@@ -358,7 +358,7 @@ PRINT *, "in LW loop at iteration ", i
 	   
         end if
 		call finalize_Domain(tempDomain)
-        theseWeights = new_Weights(numX=nX, numY=nY, numZ=nZ, numlambda=1, status=status)
+        call new_Weights(theseWeights=theseWeights,numX=nX, numY=nY, numZ=nZ, numlambda=1, status=status)
         call printStatus(status)
         call emission_weighting(thisDomain, numLambda, i, theseWeights, surfaceTemp, &
 		instrResponseFile, dLambda=dLambda, totalFlux=emittedFlux, status=status)
@@ -474,7 +474,7 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
      END DO
      call getInfo_Domain(thisDomain, numX = nx, numY = ny, numZ = nZ, status=status)
      call printStatus(status)
-     theseWeights=new_Weights(numLambda=numLambda, status=status)
+     call new_Weights(theseWeights=theseWeights,numLambda=numLambda, status=status)
      call printStatus(status)
      allocate(solarSourceFunction(1:numLambda))
      allocate(centralLambdas(1:numLambda))
@@ -940,7 +940,7 @@ if(thisProc .lt. 2)then
                 thisProc, "count=", i, " of ", counts
 end if
           if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
-             theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
+             call new_Weights(theseWeights=theseWeights,numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
 	     CALL printStatus(status)
 	     CALL emission_weighting(thisDomain, numLambda, indexes(i), theseWeights, surfaceTemp, instrResponseFile, status=status)
 	     CALL printStatus(status)
