@@ -1430,7 +1430,7 @@ contains
   !------------------------------------------------------------------------------------------
   subroutine finalize_Domain(thisDomain) 
     ! Return the variable to it uninitialized state
-    type(domain), intent(out) :: thisDomain
+    type(domain), intent(inout) :: thisDomain
     
     ! Loca variable
     integer :: i
