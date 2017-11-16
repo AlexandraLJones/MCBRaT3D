@@ -1647,7 +1647,7 @@ contains
   end function new_Matrix
   !------------------------------------------------------------------------------------------
   subroutine finalize_Matrix(thisMatrix)
-    type(matrix), intent(out) :: thisMatrix
+    type(matrix), intent(inout) :: thisMatrix
 
     thisMatrix%numX = 0; thisMatrix%numY = 0
     if(associated(thisMatrix%values)) deallocate(thisMatrix%values)
