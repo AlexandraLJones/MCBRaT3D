@@ -98,7 +98,7 @@ module opticalProperties
     !   arbitrary accuracy at any time.
     !
     type(phaseFunctionTable), &
-             dimension(:),    pointer :: forwardTables => null()
+             dimension(:),    allocatable :: forwardTables 
 
     ! We store tabulated phase function and inverse (cumulative) phase functions in
     !   two-D arrays, but these arrays can be different sizes for different components.
@@ -1459,13 +1459,13 @@ contains
     end if
     ! phaseTables
      do i = size(thisDomain%components), 1, -1
-	if(associated(thisDomain%forwardTables)) CALL finalize_PhaseFunctionTable(thisDomain%forwardTables(i))
+	if(allocated(thisDomain%forwardTables)) CALL finalize_PhaseFunctionTable(thisDomain%forwardTables(i))
 	if(associated(thisDomain%tabulatedPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedPhaseFunctions(i))
 	if(associated(thisDomain%tabulatedOrigPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedOrigPhaseFunctions(i))
 	if(associated(thisDomain%inversePhaseFunctions)) CALL finalize_Matrix(thisDomain%inversePhaseFunctions(i))
      end do
       if(associated(thisDomain%tabulatedPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedPhaseFunctions)
-      if(associated(thisDomain%forwardTables)) DEALLOCATE(thisDomain%forwardTables)
+      if(allocated(thisDomain%forwardTables)) DEALLOCATE(thisDomain%forwardTables)
       if(associated(thisDomain%tabulatedOrigPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedOrigPhaseFunctions)
       if(associated(thisDomain%inversePhaseFunctions)) DEALLOCATE(thisDomain%inversePhaseFunctions)
     

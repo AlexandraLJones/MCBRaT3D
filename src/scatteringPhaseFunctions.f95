@@ -34,9 +34,9 @@ module scatteringPhaseFunctions
     !   It has members for both types of representations
     !   but only the one in use gets allocated. 
     private
-    real, dimension(:), pointer :: scatteringAngle  => null()
-    real, dimension(:), pointer :: value            => null()
-    real, dimension(:), pointer :: legendreCoefficients  => null()
+    real, dimension(:), allocatable :: scatteringAngle  
+    real, dimension(:), allocatable :: value            
+    real, dimension(:), allocatable :: legendreCoefficients  
     real(8)                        :: extinction             = defaultExtinction, &
                                    singleScatteringAlbedo = defaultSSA
     character(len = maxSingleDescriptorLength) &
@@ -47,10 +47,10 @@ module scatteringPhaseFunctions
     ! This holds a series of phase functions, a real valued key into the table, 
     !   and an optional description
     private 
-    type(phaseFunction), dimension(:), pointer :: phaseFunctions  => null()
-    real,                dimension(:), pointer :: key             => null()
+    type(phaseFunction), dimension(:),  allocatable:: phaseFunctions  
+    real,                dimension(:), allocatable :: key             
     character(len = maxSingleDescriptorLength), &
-                         dimension(:), pointer :: phaseFunctionDescriptions  => null()
+                         dimension(:), allocatable :: phaseFunctionDescriptions  
     character(len = maxTableDescriptorLength)  :: description = ""
     logical                                    :: oneAngleSet = .false.
   end type phaseFunctionTable
@@ -318,7 +318,7 @@ contains
       forall(i = 2:nEntries)
         ! Phase function is normalized as in routine newPhaseFunctionTablulated
         table%phaseFunctions(i)%value(:) = values(:, i)
-        table%phaseFunctions(i)%scatteringAngle => table%phaseFunctions(1)%scatteringAngle(:)
+        table%phaseFunctions(i)%scatteringAngle = table%phaseFunctions(1)%scatteringAngle(:)
       end forall
       ! Normalize the phase functions
       do i = 1, nEntries
@@ -739,8 +739,8 @@ contains
     ! Has this phase function been filled in? 
     !   All the other checks should have been done when the 
     !   variable is initialized
-    isReady_phaseFunction = associated(testPhaseFunction%value) .or. &
-                            associated(testPhaseFunction%legendreCoefficients)
+    isReady_phaseFunction = allocated(testPhaseFunction%value) .or. &
+                            allocated(testPhaseFunction%legendreCoefficients)
 
   end function isReady_phaseFunction
   !------------------------------------------------------------------------------------------
@@ -753,7 +753,7 @@ contains
     !
     integer :: i
     
-    isReady_phaseFunctionTable = associated(table%phaseFunctions)
+    isReady_phaseFunctionTable = allocated(table%phaseFunctions)
     if(isReady_phaseFunctionTable) then
       do i = 1, size(table%phaseFunctions)
         isReady_phaseFunctionTable = isReady_phaseFunctionTable .and. &
@@ -824,7 +824,7 @@ contains
     !
     integer             :: i 
     ! ------------------------
-    if(.not. associated(table%phaseFunctions)) &
+    if(.not. allocated(table%phaseFunctions)) &
       call setStateToFailure(status, "getKeyInfo: phase function table hasn't been initialized.")
     
     ! ------------------------
@@ -855,7 +855,7 @@ contains
       end if
       
       if(present(phaseFunctionDescriptions)) then
-        if(associated(table%phaseFunctionDescriptions)) then 
+        if(allocated(table%phaseFunctionDescriptions)) then 
           if(size(phaseFunctionDescriptions) /= size(table%phaseFunctionDescriptions)) &
             call setStateToWarning(status, "getKeyInfo: number of phaseFunctionDescriptions not the same as table size.") 
           phaseFunctionDescriptions(:) = ""
@@ -882,7 +882,7 @@ contains
     !   Users should ensure that the variable is properly finalized 
     
     ! ------------------------
-    if(.not. associated(table%phaseFunctions)) &
+    if(.not. allocated(table%phaseFunctions)) &
       call setStateToFailure(status, "getElement: phase function table hasn't been initialized.")
     if(.not. stateIsFailure(status)) then
       if(n < 1 .or. n > size(table%phaseFunctions)) &
@@ -1450,9 +1450,9 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
     !   a pristine state
     
     ! ------------------------
-    if(associated(phaseFunctionVar%legendreCoefficients)) deallocate(phaseFunctionVar%legendreCoefficients)
-    if(associated(phaseFunctionVar%scatteringAngle))      deallocate(phaseFunctionVar%scatteringAngle)
-    if(associated(phaseFunctionVar%value))                deallocate(phaseFunctionVar%value)
+    if(allocated(phaseFunctionVar%legendreCoefficients)) deallocate(phaseFunctionVar%legendreCoefficients)
+    if(allocated(phaseFunctionVar%scatteringAngle))      deallocate(phaseFunctionVar%scatteringAngle)
+    if(allocated(phaseFunctionVar%value))                deallocate(phaseFunctionVar%value)
     phaseFunctionVar%extinction             = defaultExtinction
     phaseFunctionVar%singleScatteringAlbedo = defaultSSA
     phaseFunctionVar%description            = ""
@@ -1471,8 +1471,8 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
       ! First we finalize each of the phase functions we've stored
       if(table%oneAngleSet) then
         do i = 2, size(table%phaseFunctions)
-          if(associated(table%phaseFunctions(i)%value))           deallocate(table%phaseFunctions(i)%value)
-          if(associated(table%phaseFunctions(i)%scatteringAngle)) deallocate(table%phaseFunctions(i)%scatteringAngle)
+          if(allocated(table%phaseFunctions(i)%value))           deallocate(table%phaseFunctions(i)%value)
+          if(allocated(table%phaseFunctions(i)%scatteringAngle)) deallocate(table%phaseFunctions(i)%scatteringAngle)
         end do
         call finalize_PhaseFunction(table%phaseFunctions(1))
       else 
@@ -1482,9 +1482,9 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
       end if
       
       ! Next we delete the members of the table itself. 
-      if(associated(table%phaseFunctions)) deallocate(table%phaseFunctions)
-      if(associated(table%key))            deallocate(table%key)
-      if(associated(table%phaseFunctionDescriptions)) &
+      if(allocated(table%phaseFunctions)) deallocate(table%phaseFunctions)
+      if(allocated(table%key))            deallocate(table%key)
+      if(allocated(table%phaseFunctionDescriptions)) &
                                            deallocate(table%phaseFunctionDescriptions)
       table%description = ""
       table%oneAngleSet = .false.
@@ -1499,22 +1499,22 @@ PRINT *, "read_PhaseFunctionTable: noerror= ", nf90_NoErr, "but ncstatus= ", ncS
      ! Has this phase function been filled in? 
      !   All the other checks should have been done when the 
      !   variable is initialized
-     isValid = associated(testPhaseFunction%value) .or. &
-               associated(testPhaseFunction%legendreCoefficients)
+     isValid = allocated(testPhaseFunction%value) .or. &
+               allocated(testPhaseFunction%legendreCoefficients)
   end function isValid
   !------------------------------------------------------------------------------------------
   elemental function storedAsLegendre(testPhaseFunction)
     type(phaseFunction), intent(in) :: testPhaseFunction
      logical                                  :: storedAsLegendre
      
-     storedAsLegendre = associated(testPhaseFunction%legendreCoefficients)
+     storedAsLegendre = allocated(testPhaseFunction%legendreCoefficients)
   end function storedAsLegendre
   !------------------------------------------------------------------------------------------
   elemental function storedAsTabulated(testPhaseFunction)
     type(phaseFunction), intent(in) :: testPhaseFunction
      logical                                  :: storedAsTabulated
      
-     storedAsTabulated = associated(testPhaseFunction%value)
+     storedAsTabulated = allocated(testPhaseFunction%value)
   end function storedAsTabulated
   !------------------------------------------------------------------------------------------
   pure function normalizePhaseFunction(scatteringAngle, values) result(normalized)
