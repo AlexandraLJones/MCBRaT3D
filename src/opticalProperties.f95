@@ -54,9 +54,9 @@ module opticalProperties
     character (len = maxNameLength)      :: name       = ""
     integer                              :: zLevelBase = 0
     logical                              :: horizontallyUniform = .false.
-    real(8),    dimension(:, :, :), pointer :: extinction             => null()
-    real(8),    dimension(:, :, :), pointer :: singleScatteringAlbedo => null()
-    integer, dimension(:, :, :), pointer :: phaseFunctionIndex     => null()
+    real(8),    dimension(:, :, :),  allocatable:: extinction             
+    real(8),    dimension(:, :, :), allocatable :: singleScatteringAlbedo 
+    integer, dimension(:, :, :), allocatable :: phaseFunctionIndex     
     type(phaseFunctionTable)             :: table
   end type opticalComponent
 
@@ -86,7 +86,7 @@ module opticalProperties
     real(8)				    :: surfaceAlbedo
     logical                              :: xyRegularlySpaced = .false., zRegularlySpaced = .false. 
     type(opticalComponent), &
-                   dimension(:), pointer :: components  => null()
+                   dimension(:),  allocatable:: components  
     real(8),    dimension(:, :, :),    pointer :: totalExt           => null()
     real(8),    dimension(:, :, :, :), pointer :: cumulativeExt      => null()
     real(8),    dimension(:, :, :, :), pointer :: ssa                => null()
@@ -611,7 +611,7 @@ contains
                               phaseFunctionIndex, baseLevel, phaseFunctions)
       
       ! Free the memory associated with the old array
-      if(associated(thisDomain%components)) then
+      if(allocated(thisDomain%components)) then
 	Do i = 1, nComponents
 	   call finalizeComponent(thisDomain%components(i))
 	End Do
@@ -757,7 +757,7 @@ contains
 
     ! Local variables
     type(opticalComponent), &
-      dimension(size(thisDomain%components) - 1), target :: tempComponents
+      dimension(size(thisDomain%components) - 1) :: tempComponents
     
     ! --------------------
     if(.not. isValid(thisDomain)) &
@@ -1455,7 +1455,7 @@ contains
       do i = 1, size(thisDomain%components)
         call finalizeComponent(thisDomain%components(i))
       end do
-      if(associated(thisDomain%components)) deallocate(thisDomain%components)
+      if(allocated(thisDomain%components)) deallocate(thisDomain%components)
     end if
     ! phaseTables
      do i = size(thisDomain%components), 1, -1
@@ -1473,11 +1473,11 @@ contains
   !------------------------------------------------------------------------------------------
   subroutine finalizeComponent(component) 
     ! Return the variable to it uninitialized state
-    type(opticalComponent), intent(out) :: component
+    type(opticalComponent), intent(inout) :: component
     
-    if(associated(component%extinction))             deallocate(component%extinction)
-    if(associated(component%singleScatteringAlbedo)) deallocate(component%singleScatteringAlbedo)
-    if(associated(component%phaseFunctionIndex))     deallocate(component%phaseFunctionIndex)
+    if(allocated(component%extinction))             deallocate(component%extinction)
+    if(allocated(component%singleScatteringAlbedo)) deallocate(component%singleScatteringAlbedo)
+    if(allocated(component%phaseFunctionIndex))     deallocate(component%phaseFunctionIndex)
     
     call finalize_PhaseFunctionTable(component%table)
 
@@ -1605,7 +1605,7 @@ contains
     type(domain), intent(in) :: thisDomain
     ! Checks to see if this domain contains any optical components. 
     
-    containsComponents = associated(thisDomain%components)
+    containsComponents = allocated(thisDomain%components)
   end function containsComponents
   !------------------------------------------------------------------------------------------
   function makePrefix(i) 
