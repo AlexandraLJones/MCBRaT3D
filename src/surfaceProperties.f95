@@ -31,8 +31,8 @@ module surfaceProperties
   !------------------------------------------------------------------------------------------
   type surfaceDescription
     private
-    real(8), dimension(:),       pointer :: xPosition => null(), yPosition => null()
-    real, dimension(:, :, :), pointer :: BRDFParameters => null()
+    real(8), dimension(:),        allocatable:: xPosition, yPosition 
+    real, dimension(:, :, :), allocatable :: BRDFParameters 
   end type surfaceDescription
   
   !------------------------------------------------------------------------------------------
@@ -166,9 +166,9 @@ contains
     type(surfaceDescription), intent(in) :: thisSurface
     logical                              :: isReady_surfaceDescription
     
-    isReady_surfaceDescription = associated(thisSurface%xPosition) .and. &
-                                 associated(thisSurface%yPosition) .and. &
-                                 associated(thisSurface%BRDFParameters)
+    isReady_surfaceDescription = allocated(thisSurface%xPosition) .and. &
+                                 allocated(thisSurface%yPosition) .and. &
+                                 allocated(thisSurface%BRDFParameters)
 
   end function isReady_surfaceDescription
   !------------------------------------------------------------------------------------------
@@ -197,9 +197,9 @@ contains
   subroutine finalize_surfaceDescription(thisSurface)
     type(surfaceDescription), intent(inout) :: thisSurface
     
-    if(associated(thisSurface%xPosition)) deallocate(thisSurface%xPosition)
-    if(associated(thisSurface%yPosition)) deallocate(thisSurface%yPosition)
-    if(associated(thisSurface%BRDFParameters)) &
+    if(allocated(thisSurface%xPosition)) deallocate(thisSurface%xPosition)
+    if(allocated(thisSurface%yPosition)) deallocate(thisSurface%yPosition)
+    if(allocated(thisSurface%BRDFParameters)) &
                                           deallocate(thisSurface%BRDFParameters)
 
   end subroutine finalize_surfaceDescription

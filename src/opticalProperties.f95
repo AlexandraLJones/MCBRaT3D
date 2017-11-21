@@ -87,10 +87,10 @@ module opticalProperties
     logical                              :: xyRegularlySpaced = .false., zRegularlySpaced = .false. 
     type(opticalComponent), &
                    dimension(:),  allocatable:: components  
-    real(8),    dimension(:, :, :),    pointer :: totalExt           => null()
-    real(8),    dimension(:, :, :, :), pointer :: cumulativeExt      => null()
-    real(8),    dimension(:, :, :, :), pointer :: ssa                => null()
-    integer, dimension(:, :, :, :), pointer :: phaseFunctionIndex => null()
+    real(8),    dimension(:, :, :),    allocatable :: totalExt        
+    real(8),    dimension(:, :, :, :), allocatable :: cumulativeExt   
+    real(8),    dimension(:, :, :, :), allocatable :: ssa             
+    integer, dimension(:, :, :, :), allocatable :: phaseFunctionIndex 
     !
     ! We store the original forward phase function tables even though calculations
     !   inside the module use the matrix representations below. The originals don't
@@ -1445,10 +1445,10 @@ contains
     if(associated(thisDomain%temps)) NULLIFY(thisDomain%temps)
 	
 	! Cumulative arrays
-	if(associated(thisDomain%totalExt)) DEALLOCATE(thisDomain%totalExt)
-	if(associated(thisDomain%cumulativeExt)) DEALLOCATE(thisDomain%cumulativeExt)
-	if(associated(thisDomain%ssa)) DEALLOCATE(thisDomain%ssa)
-	if(associated(thisDomain%phaseFunctionIndex)) DEALLOCATE(thisDomain%phaseFunctionIndex)
+	if(allocated(thisDomain%totalExt)) DEALLOCATE(thisDomain%totalExt)
+	if(allocated(thisDomain%cumulativeExt)) DEALLOCATE(thisDomain%cumulativeExt)
+	if(allocated(thisDomain%ssa)) DEALLOCATE(thisDomain%ssa)
+	if(allocated(thisDomain%phaseFunctionIndex)) DEALLOCATE(thisDomain%phaseFunctionIndex)
 	
     !  Optical components
     if(containsComponents(thisDomain)) then
