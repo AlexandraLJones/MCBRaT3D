@@ -36,7 +36,7 @@ module opticalProperties
 
   type matrix
     integer                        :: numX = 0, numY  = 0
-    real, dimension(:, :), pointer :: values => null()
+    real, dimension(:, :), allocatable :: values 
   end type matrix
 
 
@@ -106,11 +106,11 @@ module opticalProperties
     !   (one matrix for each component).
     !
     type(matrix), &
-          dimension(:),       pointer :: tabulatedPhaseFunctions => null()
+          dimension(:),       allocatable :: tabulatedPhaseFunctions 
     type(matrix), &
-          dimension(:),       pointer :: tabulatedOrigPhaseFunctions => null()
+          dimension(:),       allocatable :: tabulatedOrigPhaseFunctions 
     type(matrix), &
-          dimension(:),       pointer :: inversePhaseFunctions => null()
+          dimension(:),       allocatable :: inversePhaseFunctions 
     ! -------------------------------------------------------------------------=    
   end type domain
   !------------------------------------------------------------------------------------------
@@ -1460,14 +1460,14 @@ contains
     ! phaseTables
      do i = size(thisDomain%components), 1, -1
 	if(allocated(thisDomain%forwardTables)) CALL finalize_PhaseFunctionTable(thisDomain%forwardTables(i))
-	if(associated(thisDomain%tabulatedPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedPhaseFunctions(i))
-	if(associated(thisDomain%tabulatedOrigPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedOrigPhaseFunctions(i))
-	if(associated(thisDomain%inversePhaseFunctions)) CALL finalize_Matrix(thisDomain%inversePhaseFunctions(i))
+	if(allocated(thisDomain%tabulatedPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedPhaseFunctions(i))
+	if(allocated(thisDomain%tabulatedOrigPhaseFunctions)) CALL finalize_Matrix(thisDomain%tabulatedOrigPhaseFunctions(i))
+	if(allocated(thisDomain%inversePhaseFunctions)) CALL finalize_Matrix(thisDomain%inversePhaseFunctions(i))
      end do
-      if(associated(thisDomain%tabulatedPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedPhaseFunctions)
+      if(allocated(thisDomain%tabulatedPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedPhaseFunctions)
       if(allocated(thisDomain%forwardTables)) DEALLOCATE(thisDomain%forwardTables)
-      if(associated(thisDomain%tabulatedOrigPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedOrigPhaseFunctions)
-      if(associated(thisDomain%inversePhaseFunctions)) DEALLOCATE(thisDomain%inversePhaseFunctions)
+      if(allocated(thisDomain%tabulatedOrigPhaseFunctions)) DEALLOCATE(thisDomain%tabulatedOrigPhaseFunctions)
+      if(allocated(thisDomain%inversePhaseFunctions)) DEALLOCATE(thisDomain%inversePhaseFunctions)
     
   end subroutine finalize_Domain
   !------------------------------------------------------------------------------------------
@@ -1650,7 +1650,7 @@ contains
     type(matrix), intent(inout) :: thisMatrix
 
     thisMatrix%numX = 0; thisMatrix%numY = 0
-    if(associated(thisMatrix%values)) deallocate(thisMatrix%values)
+    if(allocated(thisMatrix%values)) deallocate(thisMatrix%values)
   end subroutine finalize_Matrix
   !------------------------------------------------------------------------------------------
   subroutine accumulateExtinctionAlongPath(thisDomain, directionCosines,         &
@@ -1829,7 +1829,7 @@ contains
     real, dimension(:, :), allocatable :: tempMatrix
 
     numComponents = size(thisDomain%forwardTables)
-    if(.not. associated(thisDomain%inversePhaseFunctions)) &
+    if(.not. allocated(thisDomain%inversePhaseFunctions)) &
         allocate(thisDomain%inversePhaseFunctions(numComponents))
 
     componentLoop: do i = 1, numComponents
@@ -1837,7 +1837,7 @@ contains
       ! Does the table already exist at high enough resolution?
       !
       computeThisTable = .true.
-      if(associated(thisDomain%inversePhaseFunctions(i)%values)) then
+      if(allocated(thisDomain%inversePhaseFunctions(i)%values)) then
         if(thisDomain%inversePhaseFunctions(i)%numX >= tableSize) computeThisTable = .false.
       end if
 
@@ -1886,9 +1886,9 @@ contains
     ! We store the forward tables as matrices evenly spaced in angle to make interpolation simple.
     !
     numComponents = size(thisDomain%forwardTables)
-    if(.not. associated(thisDomain%tabulatedPhaseFunctions)) &
+    if(.not. allocated(thisDomain%tabulatedPhaseFunctions)) &
         allocate(thisDomain%tabulatedPhaseFunctions(numComponents))
-    if(.not. associated(thisDomain%tabulatedOrigPhaseFunctions)) &
+    if(.not. allocated(thisDomain%tabulatedOrigPhaseFunctions)) &
         allocate(thisDomain%tabulatedOrigPhaseFunctions(numComponents))
 
     componentLoop: do i = 1, numComponents
@@ -1897,7 +1897,7 @@ contains
       !   The tabulated phase functions and the original versions are always computed at the same resolution
       !
       computeThisTable = .true.
-      if(associated(thisDomain%tabulatedPhaseFunctions(i)%values)) then
+      if(allocated(thisDomain%tabulatedPhaseFunctions(i)%values)) then
         if(thisDomain%tabulatedPhaseFunctions(i)%numX >= tableSize) computeThisTable = .false.
       end if
 
