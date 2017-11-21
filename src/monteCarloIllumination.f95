@@ -34,11 +34,11 @@ module monteCarloIllumination
   !------------------------------------------------------------------------------------------
   type photonStream
     integer                     :: currentPhoton = 0
-    real(8), dimension(:), pointer :: xPosition    => null()
-    real(8), dimension(:), pointer :: yPosition    => null()
-    real(8), dimension(:), pointer :: zPosition    => null()
-    real, dimension(:), pointer :: solarMu      => null()
-    real, dimension(:), pointer :: solarAzimuth => null()
+    real(8), dimension(:), allocatable :: xPosition    
+    real(8), dimension(:), allocatable :: yPosition    
+    real(8), dimension(:), allocatable :: zPosition    
+    real, dimension(:), allocatable :: solarMu      
+    real, dimension(:), allocatable :: solarAzimuth 
   end type photonStream
   
   !------------------------------------------------------------------------------------------
@@ -595,11 +595,11 @@ deallocate (levelWeights, colWeights, voxelWeights)
     type(photonStream), intent(inout) :: photons
     ! Free memory and nullify pointers. This leaves the variable in 
     !   a pristine state
-    if(associated(photons%xPosition))    deallocate(photons%xPosition)
-    if(associated(photons%yPosition))    deallocate(photons%yPosition)
-    if(associated(photons%zPosition))    deallocate(photons%zPosition)
-    if(associated(photons%solarMu))      deallocate(photons%solarMu)
-    if(associated(photons%solarAzimuth)) deallocate(photons%solarAzimuth)
+    if(allocated(photons%xPosition))    deallocate(photons%xPosition)
+    if(allocated(photons%yPosition))    deallocate(photons%yPosition)
+    if(allocated(photons%zPosition))    deallocate(photons%zPosition)
+    if(allocated(photons%solarMu))      deallocate(photons%solarMu)
+    if(allocated(photons%solarAzimuth)) deallocate(photons%solarAzimuth)
     
     photons%currentPhoton = 0
   end subroutine finalize_PhotonStream
