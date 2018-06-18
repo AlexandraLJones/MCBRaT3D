@@ -185,10 +185,10 @@ program monteCarloDriver
   !
 !PRINT*, 'about to call initializeProcesses' 
   call initializeProcesses(numProcs, thisProc)
-  if(thisProc .lt. 2)then
-  	call memcheck(RSS)
-  	PRINT*, "Driver: memory after initializing procs ", RSS, "rank= ", thisProc
-  end if
+!  if(thisProc .lt. 2)then
+!  	call memcheck(RSS)
+!  	PRINT*, "Driver: memory after initializing procs ", RSS, "rank= ", thisProc
+!  end if
   
  !!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thisThread)
     
@@ -291,10 +291,10 @@ program monteCarloDriver
   !
 !  allocate(BBDomain(numLambda))
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'namelist numLambda= ', numLambda
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory before read_common ", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory before read_common ", RSS, "rank= ", thisProc
+!end if
 
   call read_Common(physDomainFile, commonPhysical, status)
   call printStatus(status)
@@ -316,10 +316,10 @@ end if
 	if(len_trim(SSPfilename(n)).le.0)EXIT
      END DO
 
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory before LW setup iteration ", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory before LW setup iteration ", RSS, "rank= ", thisProc
+!end if
      DO i = thisProc*lambdaPerProc+1, MIN(numLambda, thisProc*lambdaPerProc+lambdaPerProc), 1  
 PRINT *, "in LW loop at iteration ", i
         call read_SSPTable(SSPFileID, i, commonPhysical, thisDomain,.True.,.False., status) ! domain is initialized within this routine
@@ -398,10 +398,10 @@ PRINT *, "in LW loop at iteration ", i
 	call finalize_Weights(theseWeights)
      END DO
 
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after LW setup iteration ", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after LW setup iteration ", RSS, "rank= ", thisProc
+!end if
 
      n = 1
      DO
@@ -504,10 +504,10 @@ if(MasterProc .and. thisThread .eq. 0)PRINT *, "in SW part about to read ", SSPf
      freqDistr(:) = sumAcrossProcesses(freqDistr)
   end if
 	if(.NOT. MasterProc) DEALLOCATE(freqDistr, photonCDF)
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after setup ", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after setup ", RSS, "rank= ", thisProc
+!end if
 
   if(MasterProc .and. thisThread .eq. 0)PRINT *, 'solarFlux=', solarFlux
 !  if(MasterProc .and. thisThread .eq. 0)PRINT*, 'frequency distribution:', freqDistr
@@ -641,10 +641,10 @@ end if
   if (MasterProc) &
     print *, "Setup CPU time (secs, approx): ", int(cpuTimeSetup)
 !PRINT *, "setup completed"
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory before batches ", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory before batches ", RSS, "rank= ", thisProc
+!end if
   ! --------------------------------------------------------------------------
 
   ! The  loop over batches is for estimating the uncertainty in the flux and
@@ -908,11 +908,11 @@ PRINT *, "Done with batches"
 	if(mpiStatus(MPI_TAG) .eq. EXIT_TAG)EXIT
        allocate(left(1:counts), indexes(1:counts))
 
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory just before computation of the next batch", RSS, "rank= ", &
-		thisProc, "with this many freq bins", counts
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory just before computation of the next batch", RSS, "rank= ", &
+!		thisProc, "with this many freq bins", counts
+!end if
 
        CALL MPI_RECV(left, counts, MPI_INTEGER8, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr) ! recieve initial work assignment
        CALL MPI_RECV(indexes, counts, MPI_INTEGER, 0, MPI_ANY_TAG, MPI_COMM_WORLD, mpiStatus, ierr)
@@ -923,22 +923,22 @@ end if
 	     CALL finalize_Domain(thisDomain)
 	    
 	  end if
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after domain finalized", RSS, "rank= ", &
-                thisProc, "count=", i, " of ", counts
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after domain finalized", RSS, "rank= ", &
+!                thisProc, "count=", i, " of ", counts
+!end if
 !if(thisProc .lt. 2)then
 !        call memcheck(RSS)
 !        PRINT*, "Driver: memory just before computation of count", i, RSS, "rank= ", thisProc
 !end if
 
 	  CALL read_SSPTable(SSPFileID, indexes(i), commonPhysical, thisDomain,.False., calcRayl, status)
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after readSSP", RSS, "rank= ", &
-                thisProc, "count=", i, " of ", counts
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after readSSP", RSS, "rank= ", &
+!                thisProc, "count=", i, " of ", counts
+!end if
           if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
              call new_Weights(theseWeights=theseWeights,numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
 	     CALL printStatus(status)
@@ -958,11 +958,11 @@ end if
 !	PRINT *, 'For its first work, Rank ', thisProc, 'initialized ', MIN(numPhotonsPerBatch, left), 'photons. Tag is: ', mpiStatus(MPI_TAG)
              CALL printStatus(status)  
           end if
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after photonInitialization", RSS, "rank= ", &
-                thisProc, "count=", i, " of ", counts
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after photonInitialization", RSS, "rank= ", &
+!                thisProc, "count=", i, " of ", counts
+!end if
 
 !    if(LW_flag >= 0.0)then   ! need to reconstruct a domain and weighting array
 !        theseWeights=new_Weights(numX=nX, numY=nY, numZ=nZ, numLambda=1, status=status)
@@ -992,11 +992,11 @@ end if
 	! Now we compute the radiative transfer for this batch of photons.
         call computeRadiativeTransfer (mcIntegrator, thisDomain, randoms(thisThread), incomingPhotons,&
 					 numPhotonsPerBatch, numPhotonsProcessed, status)
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after computeRadiativeTransfer", RSS, "rank= ", &
-                thisProc, "count=", i, " of ", counts
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after computeRadiativeTransfer", RSS, "rank= ", &
+!                thisProc, "count=", i, " of ", counts
+!end if
         call printStatus(status)
 		call finalize_PhotonStream (incomingPhotons)
         totalPhotonsProcessed=totalPhotonsProcessed+numPhotonsProcessed
@@ -1010,11 +1010,11 @@ end if
 	 fluxUp=fluxUp(:, :), fluxDown=fluxDown(:, :), fluxAbsorbed=fluxAbsorbed(:, :), &
 	 absorbedProfile=absorbedProfile(:), volumeAbsorption=absorbedVolume(:, :, :), status = status)
         call printStatus(status)
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after reportResults", RSS, "rank= ", &
-                thisProc, "count=", i, " of ", counts
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after reportResults", RSS, "rank= ", &
+!                thisProc, "count=", i, " of ", counts
+!end if
 	!
 	! Accumulate the first and second moments of each quantity over the batches
 	!
@@ -1128,10 +1128,10 @@ end if
 !PRINT *, 'thisProc=', thisProc,  'RadianceStatsSums=', RadianceStats(1,1,1,1:3)
   end if !  end do batches
 
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory after having completed all batches", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory after having completed all batches", RSS, "rank= ", thisProc
+!end if
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: finished tracing photons'
   if(allocated(freqDistr))deallocate(freqDistr)
 !  if (allocated(startingPhoton)) deallocate(startingPhoton)
@@ -1227,10 +1227,10 @@ end if
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'RadianceStats=', RadianceStats(:, :, :,1:3)
   endif
 
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory just before writing", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory just before writing", RSS, "rank= ", thisProc
+!end if
 !if(MasterProc .and. thisThread .eq. 0)PRINT *, 'Driver: calculated radiative quantities. Mean and error of FluxUp'
   if(MasterProc) then ! Write a single output file. 
 !    open(unit=12, file=trim(photon_file) , status='UNKNOWN')
@@ -1313,10 +1313,10 @@ end if
   call finalize_RandomNumberSequence(randoms(thisThread))
   call finalize_Integrator (mcIntegrator)
 
-if(thisProc .lt. 2)then
-        call memcheck(RSS)
-        PRINT*, "Driver: memory just before completion", RSS, "rank= ", thisProc
-end if
+!if(thisProc .lt. 2)then
+!        call memcheck(RSS)
+!        PRINT*, "Driver: memory just before completion", RSS, "rank= ", thisProc
+!end if
 
 contains
 
