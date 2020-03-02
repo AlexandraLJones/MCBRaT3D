@@ -1,0 +1,57 @@
+#!/bin/csh
+
+#$ -l h_rt=02:00:00
+#$ -q development #(2hr runtime max and 256 proc max)
+##$ -q normal #24 hr runtime limit and 4096 processors
+#$ -V
+#$ -cwd
+#$ -j y
+#$ -pe 16way 64
+#$ -o $JOB_NAME.o$JOB_ID
+#$ -N angles_50000p
+#$ -m bea
+#$ -M aljones4@illinois.edu
+
+cd $WORK/I3RC/run
+
+foreach lambda (LW)
+#foreach lambda (SW LW)
+	if ($lambda == "SW")then
+		set LW_flag = -1.0
+	else
+		set LW_flag = 1.0
+	endif
+#	echo lambda= $lambda LW_flag= $LW_flag	
+
+	foreach atms (abs )
+#		set domfile =(`echo ../${lambda}/${atms}_atm/*.dom`)
+		set domfile =(`echo ../Domain-Files/test_${lambda}_${atms}_atm.dom`)
+#	foreach albedo (0.0)
+		foreach albedo (0.0 0.3 1.0)
+#		foreach seed (87)
+#		foreach seed (10 21 32 43 54 65 76 87 98)
+#			foreach photons (50 100)
+#                        foreach photons (56250000 62500000)
+			foreach batches (64 80 100 120 140 160 180 200 400 600 800 1000 1200 1400 1600 1800 2000 4000 6000 8000 10000 12000 14000 16000 18000 20000)
+				set outfile =(`echo ../out/angles_${lambda}_${atms}_${albedo}_${batches}_50000.nc`)
+				
+				cat main1.txt > ../namelist/batches_${lambda}.nml
+				echo surfaceAlbedo = $albedo, >> ../namelist/batches_${lambda}.nml
+				cat main2.txt >> ../namelist/batches_${lambda}.nml
+				echo LW_flag = $LW_flag >> ../namelist/batches_${lambda}.nml
+				cat main3b.txt >> ../namelist/batches_${lambda}.nml
+				echo numBatches = $batches, >> ../namelist/batches_${lambda}.nml
+				cat main4b.txt >> ../namelist/batches_${lambda}.nml
+				echo domainFileName = \"${domfile}\", >> ../namelist/batches_${lambda}.nml
+				echo outputNetcdfFile = \"${outfile}\" >> ../namelist/batches_${lambda}.nml
+				cat main5.txt >> ../namelist/batches_${lambda}.nml
+
+				echo started  run from $domfile at `date` ouput to $outfile
+
+				ibrun ../Drivers/monteCarloDriver ../namelist/batches_${lambda}.nml
+
+				echo "job finished at `date`"
+			end
+		end
+	end
+end

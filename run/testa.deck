@@ -1,0 +1,19 @@
+#!/bin/csh
+
+#SBATCH -J PP3.7        # Job Name
+#SBATCH -o PP3.7.o%j    # Output and error file name (%j expands to jobID)
+#SBATCH -n 1600        # Total number of mpi tasks requested
+#SBATCH -N 100           # nodes requested (typically 16 tasks per node)
+#SBATCH -p normal  # Queue (partition) name -- normal, development, etc.
+#SBATCH -t 05:00:00     # Run time (hh:mm:ss) - 1.5 hours
+#SBATCH --mail-user=aljones4@illinois.edu
+#SBATCH --mail-type=ALL
+
+
+echo "started at `date`"
+ 
+cd /work/02168/aljones4/I3RC/namelist
+
+ibrun ../Drivers/monteCarloDriver PP3.7namelist.nml
+
+echo "job finished at `date`"

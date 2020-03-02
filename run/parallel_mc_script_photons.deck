@@ -1,0 +1,60 @@
+#!/bin/csh
+
+#$ -l h_rt=02:00:00
+#$ -q development #(2hr runtime max and 256 proc max)
+##$ -q normal #24 hr runtime limit and 4096 processors
+#$ -V
+#$ -cwd
+#$ -j y
+#$ -pe 16way 64
+#$ -o $JOB_NAME.o$JOB_ID
+#$ -N test_320b
+#$ -m bea
+#$ -M aljones4@illinois.edu
+
+cd $WORK/I3RC/run
+
+#foreach lambda (LW)
+foreach lambda (SW LW)
+	if ($lambda == "SW")then
+		set LW_flag = -1.0
+	else
+		set LW_flag = 1.0
+	endif
+	echo lambda= $lambda LW_flag= $LW_flag	
+
+	foreach atms (abs no)
+#		set domfile =(`echo ../${lambda}/${atms}_atm/*.dom`)
+		set domfile =(`echo ../Domain-Files/test_${lambda}_${atms}_atm.dom`)
+#	foreach albedo (0.0)
+		foreach albedo (0.0 0.3 1.0)
+		foreach seed (87)
+#		foreach seed (10 21 32 43 54 65 76 87 98)
+#			foreach photons (50 100)
+#                        foreach photons (56250000 62500000)
+			foreach photons (10000 20000 30000 40000 50000 56250 62500 125000 187500 250000 312500 375000 437500 500000 562500 625000 1250000 1875000 2500000 3125000)
+				set outfile =(`echo ../out/test_${lambda}_${atms}_${albedo}_${photons}_320sd${seed}.nc`)
+				
+				cat main1.txt > ../namelist/photons_sd${seed}${lambda}.nml
+				echo surfaceAlbedo = $albedo, >> ../namelist/photons_sd${seed}${lambda}.nml
+				cat main2.txt >> ../namelist/photons_sd${seed}${lambda}.nml
+				echo LW_flag = $LW_flag >> ../namelist/photons_sd${seed}${lambda}.nml
+				cat main3.txt >> ../namelist/photons_sd${seed}${lambda}.nml
+				echo numPhotonsPerBatch = $photons, >> ../namelist/photons_sd${seed}${lambda}.nml
+				cat main3a.txt >> ../namelist/photons_sd${seed}${lambda}.nml
+				echo iseed = $seed, >> ../namelist/photons_sd${seed}${lambda}.nml
+				cat main4a.txt >> ../namelist/photons_sd${seed}${lambda}.nml
+				echo domainFileName = \"${domfile}\", >> ../namelist/photons_sd${seed}${lambda}.nml
+				echo outputNetcdfFile = \"${outfile}\" >> ../namelist/photons_sd${seed}${lambda}.nml
+				cat main5.txt >> ../namelist/photons_sd${seed}${lambda}.nml
+
+				echo started  run from $domfile at `date` ouput to $outfile
+
+				ibrun ../Drivers/monteCarloDriver ../namelist/photons_sd${seed}${lambda}.nml
+
+				echo "job finished at `date`"
+				end
+			end
+		end
+	end
+end

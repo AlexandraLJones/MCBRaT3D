@@ -1,0 +1,66 @@
+#!/bin/csh
+
+#PBS -l nodes=31:ppn=32:xe
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=01:00:00
+## set the wallclock time
+#PBS -N I3RC_scal_var_bpc
+## set the job name
+#PBS -q normal
+#PBS -e ${PBS_JOBID}.err
+#PBS -o ${PBS_JOBID}.out
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+
+cd $HOME
+ mkdir -p /scratch/sciteam/aljones4/$PBS_JOBID
+ cp -r ./I3RC/* /scratch/sciteam/aljones4/$PBS_JOBID
+cd /scratch/sciteam/aljones4/$PBS_JOBID
+
+foreach lambda (LW)
+#foreach lambda (SW LW)
+	if ($lambda == "SW")then
+		set LW_flag = -1.0
+	else
+		set LW_flag = 1.0
+	endif
+#	echo lambda= $lambda LW_flag= $LW_flag	
+
+#	foreach atms (abs no)
+#        foreach atms (no)
+#		set domfile =(`echo ../${lambda}/${atms}_atm/*.dom`)
+#		set domfile =(`echo ./Domain-Files/test_${lambda}_${atms}_atm.dom`)
+		set domfile =(`echo ./Domain-Files/i3rc_Case4_lescu.dom`)
+	foreach albedo (0.1)
+#		foreach albedo (0.0 0.3 1.0)
+#		foreach seed (87)
+#		foreach seed (10 21 32 43 54 65 76 87 98)
+#			foreach photons (50 100)
+                        foreach photons (10000)
+                         foreach batches(100000)
+#                        foreach batches (120000 140000 160000 180000 200000 400000 600000 800000 1000000)
+#			foreach batches (4000 6000 8000 10000 12000 14000 16000 18000 20000 40000 60000 80000 100000 1200000 1400000 1600000 1800000 2000000 4000000 6000000 8000000 10000000 12000000 14000000 16000000 18000000 20000000)
+				set outfile =(`echo ./out/test_${photons}_${batches}_10E9.nc`)
+				
+				cat ./run/main1.txt > ./namelist/scaling_${lambda}.nml
+				echo surfaceAlbedo = $albedo, >> ./namelist/scaling_${lambda}.nml
+				cat ./run/main2.txt >> ./namelist/scaling_${lambda}.nml
+				echo LW_flag = $LW_flag >> ./namelist/scaling_${lambda}.nml
+				cat ./run/main3.txt >> ./namelist/scaling_${lambda}.nml
+				echo numPhotonsPerBatch = $photons >> ./namelist/scaling_${lambda}.nml
+				echo numBatches = $batches, >> ./namelist/scaling_${lambda}.nml
+				cat ./run/main4b.txt >> ./namelist/scaling_${lambda}.nml
+				echo domainFileName = \"${domfile}\", >> ./namelist/scaling_${lambda}.nml
+				echo outputNetcdfFile = \"${outfile}\" >> ./namelist/scaling_${lambda}.nml
+				cat ./run/main5.txt >> ./namelist/scaling_${lambda}.nml
+
+				echo started  run from $domfile at `date` ouput to $outfile
+
+				aprun -n 992 ./Drivers/monteCarloDriver ./namelist/scaling_${lambda}.nml
+
+				echo "job finished at `date`"
+			end
+		end
+	end
+end

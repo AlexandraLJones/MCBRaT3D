@@ -1,0 +1,63 @@
+#!/bin/csh
+
+#PBS -l nodes=1:ppn=32:xe
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=06:00:00
+## set the wallclock time
+#PBS -N I3RC_LWenv32_50000
+## set the job name
+#PBS -q normal
+#PBS -o ${PBS_JOBID}.out
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+
+cd $HOME
+ mkdir -p /scratch/sciteam/aljones4/$PBS_JOBID
+ cp -r ./I3RC/* /scratch/sciteam/aljones4/$PBS_JOBID
+cd /scratch/sciteam/aljones4/$PBS_JOBID
+
+foreach lambda (LW)
+#foreach lambda (SW LW)
+	if ($lambda == "SW")then
+		set LW_flag = -1.0
+	else
+		set LW_flag = 1.0
+	endif
+#	echo lambda= $lambda LW_flag= $LW_flag	
+
+#	foreach atms (abs no)
+        foreach atms (abs)
+#		set domfile =(`echo ../${lambda}/${atms}_atm/*.dom`)
+		set domfile =(`echo ./Domain-Files/test_${lambda}_${atms}_atm.dom`)
+	foreach albedo (0.3)
+#		foreach albedo (1.0 0.3 0.0)
+#		foreach seed (87)
+#		foreach seed (10 21 32 43 54 65 76 87 98)
+#			foreach photons (50 100)
+#                        foreach photons (56250000 62500000)
+#                         foreach batches(16000000 18000000)
+#                        foreach batches (120000 140000 160000 180000 200000 400000 600000 800000 1000000)
+			foreach batches (32 96 192 288 384 512 608 704 800 896 1024 2048 3072 4000 5120 6144 7168 8192 9216 10240 15360)
+				set outfile =(`echo ./out/test_${lambda}_${atms}_${albedo}_${batches}_50000SD11.nc`)
+				
+				cat ./run/main1.txt > ./namelist/batches3_${lambda}.nml
+				echo surfaceAlbedo = $albedo, >> ./namelist/batches3_${lambda}.nml
+				cat ./run/main2.txt >> ./namelist/batches3_${lambda}.nml
+				echo LW_flag = $LW_flag >> ./namelist/batches3_${lambda}.nml
+				cat ./run/main3b.txt >> ./namelist/batches3_${lambda}.nml
+				echo numBatches = $batches, >> ./namelist/batches3_${lambda}.nml
+				cat ./run/main4b.txt >> ./namelist/batches3_${lambda}.nml
+				echo domainFileName = \"${domfile}\", >> ./namelist/batches3_${lambda}.nml
+				echo outputNetcdfFile = \"${outfile}\" >> ./namelist/batches3_${lambda}.nml
+				cat ./run/main5.txt >> ./namelist/batches3_${lambda}.nml
+
+				echo started  run from $domfile at `date` ouput to $outfile
+
+				aprun -n 32 ./Drivers/monteCarloDriver ./namelist/batches3_${lambda}.nml
+
+				echo "job finished at `date`"
+			end
+		end
+	end
+end

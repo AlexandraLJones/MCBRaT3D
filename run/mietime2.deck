@@ -1,0 +1,24 @@
+#!/bin/csh
+
+#PBS -S /bin/csh
+#PBS -l nodes=1:ppn=32:xe
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=00:10:00
+## set the wallclock time
+#PBS -N mietime0.2t8
+## set the job name
+#PBS -q normal
+#PBS -A jrm
+#PBS -o ${PBS_JOBID}.out
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+##PBS -W depend=afterok:2139028
+
+set OMP_NUM_THREADS = 16
+
+cd /mnt/a/u/sciteam/aljones4/I3RC/Tools
+
+echo started 0.2 at `date`
+	time aprun -n 1 -d 16 -cc 1,5,9,13,17,21,25,29 ./MieSSPTableCreate 
+echo ended 0.2 at `date`

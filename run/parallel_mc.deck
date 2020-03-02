@@ -1,0 +1,26 @@
+#!/bin/csh
+
+# ====== WRF template for SGI UV - Ember ================
+#PBS -l walltime=06:00:00
+#PBS -l mem=4096mb
+#PBS -l ncpus=12
+#PBS -q normal
+#PBS -V
+#PBS -A gfv
+#PBS -N I3RC
+#PBS -m be
+#PBS -M aljones4@illinois.edu
+#
+setenv NPROCS $TOT_NCPUS
+
+echo "started at `date`"
+ 
+#cd ~/I3RC/I3RC/test/error_tests
+#cd ~/I3RC/I3RC/test/homogeneous/LW/abs_atm
+#cd ~/511test
+
+mpirun -np $NPROCS ~/I3RC/I3RC/Drivers/monteCarloDriver /net/manabe-i2/data/gdi/b/aljones4/I3RC/results/error_tests/SW_manyPhotons.nml
+
+cd ~ 
+
+echo "job finished at `date`"

@@ -1,0 +1,19 @@
+#!/bin/csh
+
+#SBATCH -J benchSW325_1248        # Job Name
+#SBATCH -o benchSW325_1248.o%j    # Output and error file name (%j expands to jobID)
+#SBATCH -n 1248           # Total number of mpi tasks requested
+#SBATCH -N 78           # nodes requested (typically 16 tasks per node)
+#SBATCH -p normal  # Queue (partition) name -- normal, development, etc.
+#SBATCH -t 10:00:00     # Run time (hh:mm:ss) - 1.5 hours
+#SBATCH --mail-user=aljones4@illinois.edu
+#SBATCH --mail-type=ALL
+
+
+echo "started at `date`"
+ 
+cd /work/02168/aljones4/I3RC/namelist
+
+ibrun ../Drivers/monteCarloDriver bench_SW_325.nml
+
+echo "job finished at `date`"

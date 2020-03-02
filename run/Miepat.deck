@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#PBS -S /bin/bash
+#PBS -j oe
+#PBS -l nodes=1:ppn=32:xe
+#PBS -l walltime=00:30:00
+#PBS -N Mie_pat
+#PBS -o ${PBS_JOBID}.out
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+
+
+cd /mnt/a/u/sciteam/aljones4/I3RC/Tools
+aprun -n1 -N1 ./MieSSPTableCreate+pat ../namelist/scheduler/MieSSP/001.nml

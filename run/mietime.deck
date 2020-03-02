@@ -1,0 +1,39 @@
+#!/bin/csh
+
+#PBS -S /bin/csh
+#PBS -l nodes=1:ppn=1:xe
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=00:30:00
+## set the wallclock time
+#PBS -N mietime
+## set the job name
+#PBS -q normal
+#PBS -A jrm
+#PBS -o ${PBS_JOBID}.out
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+##PBS -W depend=afterok:2139028
+
+cd /mnt/a/u/sciteam/aljones4/I3RC/Tools
+
+foreach lambda(0.2 0.5 2.0)
+	echo \&mie_table_input  		>  ../namelist/mie${lambda}.nml
+	echo WAVELEN1=${lambda}			>> ../namelist/mie${lambda}.nml
+	echo WAVELEN2=${lambda}           	>> ../namelist/mie${lambda}.nml
+	echo AVGFLAG=\'C\',			>> ../namelist/mie${lambda}.nml
+	echo DELTAWAVE=0.003,			>> ../namelist/mie${lambda}.nml
+	echo PARTYPE=\'W\',			>> ../namelist/mie${lambda}.nml
+	echo DISTFLAG=\'G\',			>> ../namelist/mie${lambda}.nml
+	echo ALPHA=7.3333333,			>> ../namelist/mie${lambda}.nml
+	echo NRETAB=3,				>> ../namelist/mie${lambda}.nml
+	echo SRETAB=8.0,			>> ../namelist/mie${lambda}.nml
+	echo ERETAB=9.0,			>> ../namelist/mie${lambda}.nml
+	echo MAXRADIUS=60.0,			>> ../namelist/mie${lambda}.nml
+	echo phaseFunctionTableFile=\'/mnt/a/u/sciteam/aljones4/I3RC/Domain-Files/test${lambda}.phasetab\'				>> ../namelist/mie${lambda}.nml
+	echo /					>> ../namelist/mie${lambda}.nml
+echo started $lambda at `date`
+	time aprun -n 1 ./MakeMieTable ../namelist/mie${lambda}.nml
+echo ended $lambda at `date`
+end
+#time aprun -n 1 ./MieSSPTableCreate .../namelist/.nml

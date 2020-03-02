@@ -1,0 +1,46 @@
+#!/bin/csh
+
+#PBS -l nodes=62:ppn=32:xe	
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=00:30:00	
+## set the wallclock time
+#PBS -N I3RC_62_32		
+## set the job name
+#PBS -q normal
+#PBS -e ${PBS_JOBID}.err
+#PBS -o ${PBS_JOBID}.out
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+
+ cd $HOME
+ mkdir -p /scratch/sciteam/aljones4/$PBS_JOBID
+ cp -r ./I3RC/* /scratch/sciteam/aljones4/$PBS_JOBID
+ cd /scratch/sciteam/aljones4/$PBS_JOBID
+
+#echo Running a job on MOM node ${hostname}
+
+# COMMON APRUN OPTIONS
+#-n: Number of processing elements PEs for the application 
+#-N: Number of PEs to place per node
+#-S: Number of PEs to place per NUMA node.
+#-d: Number of CPU cores required for each PE and its threads
+#-cc: Binds PEs to CPU cores.
+#-r: Number of CPU cores to be used for core specialization
+#-j: Dual or single stream/integer cores to use for a PE
+#-ss: Enables strict memory containment per NUMA node
+#-q suppress all non-fatal messages from aprun
+
+# APRUN USAGE EXAMPLES:
+#aprun -n 64.. places 32 mpi processes on a XE node by default
+#aprun -n 64 -N 8.. places 8 mpi processes on a XE node
+#aprun -n 64 -N 8 -S 2.. places 8 mpi processes on a XE node using 4 numa nodes with 2 mpi processes per numa
+#aprun -n 64 -N 8 -d 2.. places 8 mpi processes on a XE node using 2 numa nodes with 4 mpi processes per numa together with their corresponding threads
+
+#echo using the following compute nodes:
+#aprun -n 4 -N 1 ${which hostname}
+
+#pwd
+aprun -n 1984 -N 32 ./Drivers/monteCarloDriver  ./namelist/Case4_perf.nml
+
+mv /mnt/a/u/sciteam/aljones4/I3RC/run/${PBS_JOBID}*.out .

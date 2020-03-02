@@ -1,0 +1,26 @@
+#!/bin/bash
+
+#PBS -S /bin/bash
+#PBS -l nodes=32:ppn=16:xe
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=09:00:00
+## set the wallclock time
+#PBS -N mieLoop24-32.16
+## set the job name
+#PBS -q normal
+#PBS -A jq0
+#PBS -o ${PBS_JOBID}.out
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+##PBS -W depend=afterok:2139028
+
+
+cd /mnt/a/u/sciteam/aljones4/I3RC/Tools
+
+for i in $(seq -f "%03g" 475 -25 1); do
+
+	echo "started ${i} at " `date`
+	time aprun -n 512 ./MieSSPTableCreate ../namelist/scheduler/MieSSP/${i}.nml
+	echo "ended ${i} at " `date`
+done

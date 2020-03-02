@@ -1,0 +1,23 @@
+#!/bin/csh
+
+#PBS -S /bin/csh
+#PBS -l nodes=2:ppn=32:xe
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=01:00:00
+## set the wallclock time
+#PBS -N mietimetest-2.32
+## set the job name
+#PBS -q normal
+#PBS -A jq0
+#PBS -o ${PBS_JOBID}.out
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+##PBS -W depend=afterok:2139028
+
+
+cd /mnt/a/u/sciteam/aljones4/I3RC/Tools
+
+echo started test at `date`
+	time aprun -n 64 ./MieSSPTableCreate ../namelist/test.nml
+echo ended test at `date`
