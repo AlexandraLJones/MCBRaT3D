@@ -1,0 +1,118 @@
+#!/bin/csh
+
+#PBS -l nodes=32:ppn=32:xe
+## set the number of nodes and number of processes per node (max 32)
+#PBS -l walltime=08:00:00
+## set the wallclock time
+#PBS -N CIRC7aLW_loop1e8
+## set the job name
+#PBS -q normal
+#PBS -o ${PBS_JOBID}.out
+## allocation options are jq0 (professorship) or jrm (fellowship)
+#PBS -A jrm
+#PBS -j oe
+#PBS -m bea
+#PBS -M aljones4@illinois.edu
+#PBS -W depend=afterok:2271876 ##########make sure this matches the datacopy job ID ##############
+
+#setenv ATP_ENABLED 1
+#limit coredumpsize unlimited
+
+
+# set variables
+set dataJobID = (`echo 2271876`)
+set dataDir = (`echo /mnt/c/scratch/sciteam/aljones4/${dataJobID}.nid11293`)
+
+# cd into data copy directory
+echo moving to ${dataDir}
+cd ${dataDir}
+
+# set more variables pertinent to the namelist
+
+set solarMu = (`echo 0.7519548736`)
+set solarAz = (`echo 60.0`)
+set sfcT = (`echo 290.38`)
+set intensMu = (`echo `)
+set intensAz = (`echo `)
+set LWflag = (`echo 1.0`)
+set numLambda = (`echo 377737`)
+set photons = (`echo 10000`)
+set batches = (`echo 10000`)
+set physDomain = (`echo CIRCcase7PhysDomain.dom`)
+set SSPTable1 =(`echo Case7LW.abs_lookupNEW.nc`)
+set responseFile = (`echo \" \"`)
+
+foreach x (`seq 1 1 50`)
+
+echo $x
+set seed = (`hexdump -n3 -e\"%u\" /dev/random`)
+set outfile = (`echo CIRCcase7aLWInterp_${batches}_${photons}_${seed}.nc`)
+set nml = (`echo Case7_${seed}.nml`)
+
+# construct namelist
+echo \&radiativeTransfer					  > ./namelist/${nml}
+echo solarMu = $solarMu						 >> ./namelist/${nml}
+echo solarAzimuth = $solarAz					 >> ./namelist/${nml}
+echo surfaceTemp = $sfcT					 >> ./namelist/${nml}
+echo intensityMus = $intensMu					 >> ./namelist/${nml}
+echo intensityPhis = $intensAz					 >> ./namelist/${nml}
+echo angleFill = .false.					 >> ./namelist/${nml}
+echo thetaFill = -1.						 >> ./namelist/${nml}
+echo phiFill = -1.						 >> ./namelist/${nml}
+echo LW_flag = $LWflag						 >> ./namelist/${nml} #Values of 1 or greater are LW, negative values are SW
+echo numLambda = $numLambda					 >> ./namelist/${nml} #this needs to match the number of frequencies in you SSP Tables
+echo calcRayl = .True.						 >> ./namelist/${nml} #toggle on/off internal calculation of Rayleigh scattering
+echo /								 >> ./namelist/${nml}
+echo \&monteCarlo 						 >> ./namelist/${nml}
+echo numPhotonsPerBatch = $photons				 >> ./namelist/${nml}
+echo numBatches = $batches					 >> ./namelist/${nml}
+echo iseed = $seed						 >> ./namelist/${nml}
+echo nPhaseintervals = 1001					 >> ./namelist/${nml}
+echo /								 >> ./namelist/${nml}
+echo \&algorithms				 		 >> ./namelist/${nml}
+echo useRayTracing = .true.					 >> ./namelist/${nml}
+echo useRussianRoulette = .false.				 >> ./namelist/${nml}
+echo useRussianRouletteForIntensity = .false.                    >> ./namelist/${nml}
+echo zetaMin = 0.3						 >> ./namelist/${nml}
+echo useHybridPhaseFunsForIntenCalcs = .false.			 >> ./namelist/${nml}
+echo hybridPhaseFunWidth = 0.					 >> ./namelist/${nml}
+echo numOrdersOrigPhaseFunIntenCalcs = 0			 >> ./namelist/${nml}
+echo limitIntensityContributions = .false.			 >> ./namelist/${nml}
+echo maxIntensityContribution = 0.				 >> ./namelist/${nml}
+echo /              						 >> ./namelist/${nml}
+echo \&fileNames 						 >> ./namelist/${nml}
+echo SSPfilename = \"./Domain-Files/${SSPTable1}\"	         >> ./namelist/${nml}
+echo physDomainFile = \"./Domain-Files/${physDomain}\"		 >> ./namelist/${nml}
+echo outputNetcdfFile = \"./out/${outfile}\"			 >> ./namelist/${nml}
+echo instrResponseFile = \" \"					 >> ./namelist/${nml}
+echo solarSourceFile = \" \"					 >> ./namelist/${nml}
+echo /                						 >> ./namelist/${nml}
+echo \&output							 >> ./namelist/${nml}
+echo reportAbsorptionProfile = .true.				 >> ./namelist/${nml}
+echo reportVolumeAbsorption = .true.				 >> ./namelist/${nml}
+echo recScatOrd = .false.					 >> ./namelist/${nml}
+echo numRecScatOrd = -1						 >> ./namelist/${nml}
+echo /                 						 >> ./namelist/${nml}
+
+
+# print namelist to outfile 
+echo namelist used follows:
+cat ./namelist/${nml}
+
+# print modules used and environmental variables
+echo the following modules were in use at run time
+module list
+
+echo the list of environmental variables follows
+printenv
+
+# start job
+echo started  run at `date` ouput to $outfile
+
+ aprun -n 1024 ./Drivers/monteCarloDriver ./namelist/${nml}
+
+echo job finished at `date`
+
+end
+
+echo finished with all simulations
